@@ -1,0 +1,75 @@
+[package]
+name = "annembed"
+version = "0.0.1"
+authors = ["jeanpierre.both@gmail.com"]
+repository = "https://github.com/jean-pierreBoth/annembed"
+description = "a Rust implemntation of a dimension reduction à la Umap "
+license = "MIT/Apache-2.0"
+readme = "README.md"
+keywords = ["algorithms", "ann", "embedding", "dimension reduction"]
+#repository = "https://github.com/jean-pierreBoth/hnswlib-rs"
+documentation = "https://docs.rs/annembed"
+edition= "2018"
+
+[features]
+
+# declare a feature with no dependancy to get some modulated debug print
+# to be run with cargo build --features verbose_1
+#verbose_1 = [ ]
+
+[profile.release]
+lto = true
+opt-level = 3
+
+[lib]
+# cargo rustc --lib -- --crate-type dylib [or staticlib] or rlib (default)
+# if we want to avoid specifying in advance crate-type 
+path = "src/lib.rs"
+#crate-type = ["cdylib"]
+
+
+
+#[[example]]
+
+[dependencies]
+# default is version spec is ^ meaning can update up to max non null version number
+# cargo doc --no-deps avoid dependencies doc generation
+#
+
+serde= {version = "1.0"}
+serde_derive={ version = "1.0"}
+
+
+# for //
+parking_lot = "0.11"
+rayon = {version = "0.9.0"}
+num_cpus = {version = "1.8.0"}
+crossbeam-utils = {version = "0.7"}
+crossbeam-channel = {version = "0.5"}
+simdeez = {version = "1.0"}
+
+cpu-time = {version = "1.0"}
+time = {version = "0.2"}
+
+ndarray = {version = "0.13"}
+clap = {version = "2.29"}
+#  for hashing . hashbrown still needed beccause of get_key_value(&key)
+hashbrown = {version = "0.9"}
+
+# hnsw_rs =  {git = "https://gitlab.com/jpboth/hnswlib-rs.git"}
+hnsw_rs = {path = "../hnswlib-rs"}
+
+# rand utilis
+rand_xoshiro = {version = "0.4"}
+rand = {version = "0.7"}
+rand_distr = {version = "0.3"}
+
+
+lazy_static = { version = "1.4"}
+# for benchmark reading
+hdf5 = {version="0.7"}
+# decreasing order of log for debug build : (max_level_)trace debug info warn error off
+# decreasing order of log for release build (release_max_level_)  .. idem
+#log = { version = "0.4", features = ["max_level_debug", "release_max_level_info"] }
+log = { version = "0.4"}
+env_logger = { version = "0.7"}
