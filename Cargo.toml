@@ -36,8 +36,7 @@ path = "src/lib.rs"
 # cargo doc --no-deps avoid dependencies doc generation
 #
 
-serde= {version = "1.0"}
-serde_derive={ version = "1.0"}
+
 
 
 # for //
@@ -51,7 +50,7 @@ simdeez = {version = "1.0"}
 cpu-time = {version = "1.0"}
 time = {version = "0.2"}
 
-ndarray = {version = "0.13"}
+ndarray = {version = "0.14", features=["rayon"]}
 clap = {version = "2.29"}
 #  for hashing . hashbrown still needed beccause of get_key_value(&key)
 hashbrown = {version = "0.9"}
@@ -60,16 +59,20 @@ hashbrown = {version = "0.9"}
 hnsw_rs = {path = "../hnswlib-rs"}
 
 # rand utilis
-rand_xoshiro = {version = "0.4"}
-rand = {version = "0.7"}
-rand_distr = {version = "0.3"}
+rand_xoshiro = {version = "0.6"}
+rand = {version = "0.8"}
+rand_distr = {version = "0.4"}
 
 
 lazy_static = { version = "1.4"}
-# for benchmark reading
-hdf5 = {version="0.7"}
 # decreasing order of log for debug build : (max_level_)trace debug info warn error off
 # decreasing order of log for release build (release_max_level_)  .. idem
 #log = { version = "0.4", features = ["max_level_debug", "release_max_level_info"] }
 log = { version = "0.4"}
 env_logger = { version = "0.7"}
+
+[package.metadata.docs.rs]
+rustdoc-args = [
+    "--html-in-header",
+    "./katex.html",
+]
