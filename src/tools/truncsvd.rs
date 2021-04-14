@@ -78,9 +78,29 @@ impl RandomGaussianGenerator {
 
 
 /// compute an approximate truncated svf
-pub struct TruncSvd {
+pub struct TruncSvd<'a> {
     /// matrix we want to approximate range of
-    data : Array2<f64>,
+    data : &'a Array2<f64>,
     /// asked rank
-    rank
-}
+    rank : u32,
+    /// matrix of left eigen vectors
+    left_vectors : Option<Array2<f64>>,
+    /// transpose matrix of right vectors
+    right_vec_t: Option<Array2<f64>>,
+    lambdas : Option<Array1<f64>>
+} // end of struct TruncSvd 
+
+
+
+impl <'a> TruncSvd<'a> {
+
+    pub fn new(data : &'a Array2<f64>, rank:u32) -> Self {
+        TruncSvd{data, rank, left_vectors : None , right_vec_t : None , lambdas : None} 
+
+
+    }
+    // algo 42. from Halko-Tropp
+    fn adaptative_normal_sampling(&mut self) {
+
+    }
+}  // end of impl TruncSvd

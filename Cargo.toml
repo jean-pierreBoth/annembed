@@ -6,7 +6,7 @@ repository = "https://github.com/jean-pierreBoth/annembed"
 description = "a Rust implemntation of a dimension reduction à la Umap "
 license = "MIT/Apache-2.0"
 readme = "README.md"
-keywords = ["algorithms", "ann", "embedding", "dimension reduction"]
+keywords = ["algorithms", "ann", "hdbscan single linkage", "dimension reduction"]
 #repository = "https://github.com/jean-pierreBoth/hnswlib-rs"
 documentation = "https://docs.rs/annembed"
 edition= "2018"
@@ -45,7 +45,6 @@ rayon = {version = "0.9.0"}
 num_cpus = {version = "1.8.0"}
 crossbeam-utils = {version = "0.7"}
 crossbeam-channel = {version = "0.5"}
-simdeez = {version = "1.0"}
 
 cpu-time = {version = "1.0"}
 time = {version = "0.2"}
@@ -63,6 +62,8 @@ rand_xoshiro = {version = "0.6"}
 rand = {version = "0.8"}
 rand_distr = {version = "0.4"}
 
+pathfinding = {version= "2.1"}
+ordered-float = {version = "2.1"}
 
 lazy_static = { version = "1.4"}
 # decreasing order of log for debug build : (max_level_)trace debug info warn error off
@@ -71,6 +72,7 @@ lazy_static = { version = "1.4"}
 log = { version = "0.4"}
 env_logger = { version = "0.7"}
 
+# from katex-doc
 [package.metadata.docs.rs]
 rustdoc-args = [
     "--html-in-header",
