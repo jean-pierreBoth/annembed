@@ -10,8 +10,11 @@ extern crate env_logger;
 #[macro_use]
 extern crate lazy_static;
 
-pub mod entropy;
-pub mod truncsvd;
+
+
+pub mod tools;
+
+pub mod fromhnsw;
 
 
 lazy_static! {

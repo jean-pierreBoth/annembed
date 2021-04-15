@@ -64,7 +64,7 @@ rand_distr = {version = "0.4"}
 
 pathfinding = {version= "2.1"}
 ordered-float = {version = "2.1"}
-
+num-traits = {version = "0.2"}
 lazy_static = { version = "1.4"}
 # decreasing order of log for debug build : (max_level_)trace debug info warn error off
 # decreasing order of log for release build (release_max_level_)  .. idem

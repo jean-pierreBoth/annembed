@@ -3,6 +3,9 @@
 //! Halko-Tropp 2011 P 242-245
 //! Mahoney Lectures notes on randomized linearAlgebra 2016. P 149-150
 //! We use gaussian matrix (instead SRTF as we have a small rank)
+//! 
+
+#![allow(dead_code)]
 
 
 use rand::prelude::*;
