@@ -5,6 +5,9 @@
 
 #![allow(dead_code)]
 
+use num_traits::{Float};
+use core::ops::*;  // for  AddAssign + SubAssign + MulAssign + DivAssign + RemAssign 
+
 /// A discrete probability
 /// 
 /// normalized set to true if normalization has been checked
@@ -89,6 +92,26 @@ impl  DiscreteProba {
     } // end of relative_entropy
 
 } // end impl ProbaDistribution
+
+
+fn near_to_1<F:Float>(f:F) -> bool {
+    let one = num_traits::identities::one::<F>();
+    let val = if (f - one).abs() < Float::epsilon() {
+        true
+    }
+    else {
+        false
+    };
+    val
+}
+
+
+
+    /// compute for q = 1 it is Shannon entropy
+    fn renyi_entropy_gen<F:Float + AddAssign + SubAssign + MulAssign + DivAssign + std::iter::Sum>(p : Vec<F>) -> F {
+        let entropy = p.iter().map( |&v| if v > F::zero() { -v * v.ln() } else {F::zero()}).sum();
+        return entropy;
+    }
 
 //=================================================================================
 
