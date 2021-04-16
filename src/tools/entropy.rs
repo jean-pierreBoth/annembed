@@ -8,26 +8,59 @@
 use num_traits::{Float};
 use core::ops::*;  // for  AddAssign + SubAssign + MulAssign + DivAssign + RemAssign 
 
+
+
+//=================================================================================
+
+#[derive(Clone,Copy, Debug)]
+enum EntropyKind  {
+    Renyi,
+    Shannon,
+}
+
+///  Renyi entropy value
+#[derive(Copy, Clone, Debug)]
+pub struct RenyiEntropy<F> {
+    kind : EntropyKind,
+    q : F,
+    value : F,
+}
+
+impl <F> RenyiEntropy<F> 
+    where F:Float + AddAssign + SubAssign + MulAssign + DivAssign + std::iter::Sum {
+    pub fn new(q:F, value : F) -> Self {
+        RenyiEntropy{kind : EntropyKind::Renyi, q, value }
+    }
+}
+
+
+//======================================================================================
+
+
 /// A discrete probability
 /// 
 /// normalized set to true if normalization has been checked
 /// 
-pub struct DiscreteProba {
-    p : Vec<f64>,
-    entropy :Option<Vec<RenyiEntropy>>,
+pub struct DiscreteProba<F>
+    where F:Float + AddAssign + SubAssign + MulAssign + DivAssign + std::iter::Sum {
+    p : Vec<F>,
+    entropy :Option< Vec<RenyiEntropy<F>> >,
 }
 
-impl  DiscreteProba {
+impl  <F> DiscreteProba<F> 
+    where F:Float + AddAssign + SubAssign + MulAssign + DivAssign + std::iter::Sum
+ {
 
-    pub fn new(p: &Vec<f64>) -> Self {
-        let mut sum = 0f64;
+    pub fn new(p: &Vec<F>) -> Self {
+        let mut sum = F::zero();
+        let zero = F::zero();
         for x in p.iter() {
-            if *x < 0. {
+            if *x < zero {
                 log::error!("negative value in probability");
                 std::panic!("negative value in probability");
             }
             else {
-                sum +=x;
+                sum += *x;
             }
         }
         let np = p.iter().map( |&x| x/sum ).collect();
@@ -38,43 +71,51 @@ impl  DiscreteProba {
 
 
     /// compute for q = 1 it is Shannon entropy
-    fn renyi_entropy_1(&self) -> f64 {
-        let entropy = self.p.iter().map( |&v| if v > 0. { -v * v.ln() } else {0.}).sum();
+    fn renyi_entropy_1(&self) -> F {
+        let zero = F::zero();
+        let entropy = self.p.iter().map( |&v| if v > zero { -v * v.ln() } else {zero}).sum();
         return entropy;
     }
 
+
     /// cmpute for q!= 1. 
     /// See Leinster. Entropy and diversity
-    fn renyi_entropy_not_1(&self,  q: f64) -> f64 {
-        let entropy : f64 = self.p.iter().map( |&v| if v > 0. { v.powf(q)} else {0.} ).sum();
-        entropy.ln() / (1. - q)
+    fn renyi_entropy_not_1(&self,  q: F) -> F {
+        let zero = F::zero();
+        let entropy : F = self.p.iter().map( |&v| if v > zero { v.powf(q)} else {zero} ).sum();
+        entropy.ln() / (F::one() - q)
     }
 
 
     /// compute Renyi entrpy of a for a vector of order
-    pub fn renyi_entropy(&mut self, order: &[f64]) -> Vec<RenyiEntropy> {
-        let mut entropy = Vec::<RenyiEntropy>::with_capacity(order.len());
+    pub fn renyi_entropy(&mut self, order: &[F]) -> Vec<RenyiEntropy<F> > {
+        let mut entropy_v = Vec::<RenyiEntropy<F> >::with_capacity(order.len());
         for q in order.iter() {
-            if (*q-1.).abs() < 1.0E-5  {
-                entropy.push(RenyiEntropy::new(1., self.renyi_entropy_1()));
+            if near_to_1(*q) {
+                let entropy = self.renyi_entropy_not_1(*q);
+                entropy_v.push(RenyiEntropy::new(F::one(), entropy));
             }
             else {
-                entropy.push(RenyiEntropy::new(*q, self.renyi_entropy_not_1(*q)));
+                let entropy = self.renyi_entropy_not_1(*q);
+                entropy_v.push(RenyiEntropy::new(*q, entropy));
             }  
         }
-        return entropy;
+        return entropy_v;
     } // end of entropy_renyi
 
 
     // compute relative entropy at q=1 
-    fn relative_renyi_entropy_1(&self, other : &DiscreteProba) -> f64 {
-        let entropy = self.p.iter().zip(other.p.iter()).map(|t| if *t.0 > 0. {*t.0 * (*t.1/ *t.0).ln() } else { 0.}).sum();
+    fn relative_renyi_entropy_1(&self, other : &DiscreteProba<F>) -> F {
+        let zero = F::zero();
+        let entropy = self.p.iter().zip(other.p.iter()).map(|t| if *t.0 > zero {*t.0 * (*t.1/ *t.0).ln() } else { zero}).sum();
+//        let ent_f64 : f64 = num_traits::cast::cast::<F, f64>(entropy).unwrap();
         entropy
     }
 
     //
-    fn relative_renyi_entropy_q(&self, other : &DiscreteProba, q : f64) -> f64 {
-        let entropy = self.p.iter().zip(other.p.iter()).map(|t| if *t.0 > 0. {*t.0 * (*t.1 / *t.0).powf(q) } else { 0.}).sum();
+    fn relative_renyi_entropy_q(&self, other : &DiscreteProba<F>, q : F) -> F {
+        let zero = F::zero();
+        let entropy = self.p.iter().zip(other.p.iter()).map(|t| if *t.0 > zero {*t.0 * (*t.1 / *t.0).powf(q) } else { zero}).sum();
         entropy        
     }
 
@@ -82,8 +123,8 @@ impl  DiscreteProba {
     /// ```math
     /// \sum_{i self.p_{i} != 0} self.p_{i} * \phi( other.p_{i}/ self.p_{i})
     /// ```
-    pub fn relative_renyi_entropy(&self, other : &DiscreteProba, q: f64) ->f64 {
-        if (q-1.).abs() < 1.0E-5 {
+    pub fn relative_renyi_entropy(&self, other : &DiscreteProba<F>, q: F) -> F {
+        if  near_to_1(q) {
             return self.relative_renyi_entropy_1(other);
         } 
         else {
@@ -93,7 +134,7 @@ impl  DiscreteProba {
 
 } // end impl ProbaDistribution
 
-
+#[inline]
 fn near_to_1<F:Float>(f:F) -> bool {
     let one = num_traits::identities::one::<F>();
     let val = if (f - one).abs() < Float::epsilon() {
@@ -113,27 +154,7 @@ fn near_to_1<F:Float>(f:F) -> bool {
         return entropy;
     }
 
-//=================================================================================
 
-#[derive(Clone,Copy, Debug)]
-enum EntropyKind  {
-    Renyi,
-    Shannon,
-}
-
-///  Renyi entropy value
-#[derive(Copy, Clone, Debug)]
-pub struct RenyiEntropy {
-    kind : EntropyKind,
-    q : f64,
-    value : f64,
-}
-
-impl RenyiEntropy {
-    pub fn new(q:f64, value : f64) -> Self {
-        RenyiEntropy{kind : EntropyKind::Renyi, q, value }
-    }
-}
 
 //==================================================================================
 
@@ -142,20 +163,22 @@ impl RenyiEntropy {
 /// If y1 ,   , yn are the points in neigbourhood aroud y0
 /// lambda * d()
 
-pub struct ProbaNeighbour {
+pub struct ProbaNeighbour<F>
+        where F:Float + AddAssign + SubAssign + MulAssign + DivAssign + std::iter::Sum {    
     point_id : u32,
     /// list of neighbour's point_id
     neighbours_id : Vec<u32>,
     /// distance to each neighbour
-    distance : Vec<f64>,
+    distance : Vec<F>,
     /// probability transition deduced from distances
-    proba : DiscreteProba,
+    proba : DiscreteProba<F>,
     // rescale coefficient 
     lambda : f64
 } // end of ProbaNeighbour
 
 
-impl ProbaNeighbour {
+impl <F> ProbaNeighbour<F>
+    where F:Float + AddAssign + SubAssign + MulAssign + DivAssign + std::iter::Sum {
 
 }
 
