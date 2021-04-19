@@ -1,6 +1,6 @@
 //! This module implements a randomized truncated svd
-//! par multiplication by random orthogonal matrix and Q.R decomposition
-//! Halko-Tropp 2011 P 242-245
+//! by multiplication by random orthogonal matrix and Q.R decomposition
+//! Halko-Tropp Probabilistic Algorithms For Matrix Decomposition 2011 P 242-245
 //! Mahoney Lectures notes on randomized linearAlgebra 2016. P 149-150
 //! We use gaussian matrix (instead SRTF as we have a small rank)
 //! 
@@ -80,7 +80,9 @@ impl RandomGaussianGenerator {
 }  // end of impl RandomGaussianGenerator
 
 
+// Recall that ndArray is C-order row order.
 /// compute an approximate truncated svf
+/// The data matrix is supposed given as a (m,n) matrix. n is the number of data and m their dimension.
 pub struct TruncSvd<'a> {
     /// matrix we want to approximate range of
     data : &'a Array2<f64>,
@@ -94,6 +96,10 @@ pub struct TruncSvd<'a> {
 } // end of struct TruncSvd 
 
 
+#[inline]
+pub fn norm_l2(v : &Array1<f64>) -> f64 {
+    v.into_iter().map(|x| x*x).sum::<f64>().sqrt()
+}
 
 impl <'a> TruncSvd<'a> {
 
@@ -102,8 +108,42 @@ impl <'a> TruncSvd<'a> {
 
 
     }
-    // algo 42. from Halko-Tropp
-    fn adaptative_normal_sampling(&mut self) {
+
+    /// return  y - projection of y on space spanned by y.
+    fn orthogonalize_with_Q(Q: &Vec<Array1<f64>>, y: &mut Array1<f64>) {
+        let nb_q = Q.len();
+        if nb_q == 0 {
+            return;
+        }
+        let size_d = y.len();
+        // check dimension coherence between Q and y
+        assert_eq!(Q[nb_q - 1].len(),size_d);
+        //
+        let mut proj_qy = Array1::<f64>::zeros(size_d);
+        for i in 0..nb_q {
+            proj_qy  += &(Q[i].dot(y) * &Q[i]);
+        }
+        *y -= &proj_qy;
+    }  // end of orthogonalize_with_Q
+
+
+
+    /// Adaptive Randomized Range Finder algo 4.2. from Halko-Tropp
+    fn adaptative_normal_sampling(&mut self, epsil:f64, rank : usize) {
+        let mut rng = RandomGaussianGenerator::new();
+        let Q = Vec::<Array1<f64>>::with_capacity(rank);
+        let mut Y = Vec::<Array1<f64>>::new();
+        // 
+        let data_shape = self.data.shape();
+        // we store omaga_i vector as row vector as Rust has C order it is easier to extract rows !!
+        let omega = rng.generate_matrix(Dim([rank, data_shape[1]]));
+        for i in 0..rank {
+            Y.push(self.data.dot(&omega.gauss_mat.row(i)));
+        }
+        // This vectors stores L2-norm of each Y vector
+        let mut norms_Y : Array1<f64> = Y.into_iter().map( |y| norm_l2(&y)).collect();        
+        //  to get Q as an Array2 : Array2::from_shape_vec((nrows, ncols), data)?;
+    //    let y_Qy = orthogonalize_with_Q(&Q, &mut y);
 
     }
 }  // end of impl TruncSvd
