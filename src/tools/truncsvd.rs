@@ -82,9 +82,9 @@ impl RandomGaussianGenerator {
 
 // Recall that ndArray is C-order row order.
 /// compute an approximate truncated svf
-/// The data matrix is supposed given as a (m,n) matrix. n is the number of data and m their dimension.
+/// The data matrix is supposed given as a (m,n) matrix. m is the number of data and n their dimension.
 pub struct TruncSvd<'a> {
-    /// matrix we want to approximate range of
+    /// matrix we want to approximate range of. We s
     data : &'a Array2<f64>,
     /// asked rank
     rank : u32,
@@ -97,9 +97,29 @@ pub struct TruncSvd<'a> {
 
 
 #[inline]
-pub fn norm_l2(v : &Array1<f64>) -> f64 {
+pub fn norm_l2(v : &ArrayView1<f64>) -> f64 {
     v.into_iter().map(|x| x*x).sum::<f64>().sqrt()
 }
+
+
+/// return  y - projection of y on space spanned by y.
+fn orthogonalize_with_q(q: &Vec<Array1<f64>>, y: &mut ArrayViewMut1<f64>) {
+    let nb_q = q.len();
+    if nb_q == 0 {
+        return;
+    }
+    let size_d = y.len();
+    // check dimension coherence between Q and y
+    assert_eq!(q[nb_q - 1].len(),size_d);
+    //
+    let mut proj_qy = Array1::<f64>::zeros(size_d);
+    for i in 0..nb_q {
+        proj_qy  += &(q[i].dot(y) * &q[i]);
+    }
+    *y -= &proj_qy;
+}  // end of orthogonalize_with_Q
+
+
 
 impl <'a> TruncSvd<'a> {
 
@@ -109,41 +129,76 @@ impl <'a> TruncSvd<'a> {
 
     }
 
-    /// return  y - projection of y on space spanned by y.
-    fn orthogonalize_with_Q(Q: &Vec<Array1<f64>>, y: &mut Array1<f64>) {
-        let nb_q = Q.len();
-        if nb_q == 0 {
-            return;
-        }
-        let size_d = y.len();
-        // check dimension coherence between Q and y
-        assert_eq!(Q[nb_q - 1].len(),size_d);
-        //
-        let mut proj_qy = Array1::<f64>::zeros(size_d);
-        for i in 0..nb_q {
-            proj_qy  += &(Q[i].dot(y) * &Q[i]);
-        }
-        *y -= &proj_qy;
-    }  // end of orthogonalize_with_Q
 
 
 
     /// Adaptive Randomized Range Finder algo 4.2. from Halko-Tropp
     fn adaptative_normal_sampling(&mut self, epsil:f64, rank : usize) {
         let mut rng = RandomGaussianGenerator::new();
-        let Q = Vec::<Array1<f64>>::with_capacity(rank);
-        let mut Y = Vec::<Array1<f64>>::new();
-        // 
         let data_shape = self.data.shape();
+        // q_mat and y_mat store vector of interest as rows to tzke care of Rust order.
+        let mut q_mat = Vec::<Array1<f64>>::new();         // q_mat stores vectors of size m
+        // 
         // we store omaga_i vector as row vector as Rust has C order it is easier to extract rows !!
-        let omega = rng.generate_matrix(Dim([rank, data_shape[1]]));
-        for i in 0..rank {
-            Y.push(self.data.dot(&omega.gauss_mat.row(i)));
+        let omega = rng.generate_matrix(Dim([rank, data_shape[1]]));    //  omega is (r, n)
+        let mut y_mat = self.data.dot(&omega.gauss_mat.t());            // so Y is a (data_shape[0], rank) or (m,r) with Tropp notations
+        // This vectors stores L2-norm of each Y column vector of which there are r
+        let norms_y : Array1<f64> = (0..rank).into_iter().map( |i| norm_l2(&y_mat.column(i))).collect();
+        assert_eq!(norms_y.len() , rank); 
+        let mut norm_sup_y;
+        norm_sup_y = norms_y.iter().max_by(|x,y| x.partial_cmp(y).unwrap()).unwrap();
+        let mut j = 0;
+        while norm_sup_y > &epsil {
+            orthogonalize_with_q(&q_mat, &mut y_mat.row_mut(j));
+            let y_j = y_mat.row(j);
+            let n_j =  norm_l2(&y_j);
+            let q_j = &y_j / n_j;
+            // we add q_j to q_mat
+            q_mat.push(q_j.clone());
+            // we sample a new omega_j vector
+            let omega_j_p1 = rng.generate_stdn_vect(Ix1(data_shape[1]));
+            let mut y_j_p1 = self.data.dot(&omega_j_p1);
+            // we orthogonalize new y with all q's i.e q_mat
+            orthogonalize_with_q(&q_mat, &mut y_j_p1.view_mut());
+            // we orthogonalize old y's with new q_j
+            for j in 0..rank {
+                let y_j = &mut y_mat.row_mut(j);
+                let prodq_y = q_j.view().dot(y_j) * &q_j;
+                *y_j -= &prodq_y;
+        //        orthogonalize_with_q(vec![q_j], &mut y_mat.row_mut(j));
+            }
+//            let omega_j = 
+
+            // we update 
+            j = j+1;
         }
-        // This vectors stores L2-norm of each Y vector
-        let mut norms_Y : Array1<f64> = Y.into_iter().map( |y| norm_l2(&y)).collect();        
+        // We must return q_mat as an Array2
         //  to get Q as an Array2 : Array2::from_shape_vec((nrows, ncols), data)?;
-    //    let y_Qy = orthogonalize_with_Q(&Q, &mut y);
 
     }
 }  // end of impl TruncSvd
+
+
+
+mod tests {
+
+use ndarray::array;
+use ndarray::prelude::*;
+
+
+#[allow(dead_code)]
+fn log_init_test() {
+    let _ = env_logger::builder().is_test(true).try_init();
+}  
+
+#[test]
+fn test_arrayview_mut() {
+    let mut array = array![[1, 2], [3, 4]];
+    let to_add =  array![1, 1];
+    let mut row_mut = array.row_mut(0);
+    row_mut += &to_add;
+    assert_eq!(array[[0,0]], 2);
+    assert_eq!(array[[0,1]], 3);
+}
+
+}

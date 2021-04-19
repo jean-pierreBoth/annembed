@@ -1,5 +1,6 @@
-//! This module computes various entropy
-//! 
+//! This module computes entropy (mostly Renyi at present time) on a discrete probability
+//! Vectors are dependant on the type F:Float + AddAssign + SubAssign + MulAssign + DivAssign + std::iter::Sum 
+//! which in fact imposes f32 or 64. 
 //! 
 //! 
 
@@ -87,7 +88,7 @@ impl  <F> DiscreteProba<F>
     }
 
 
-    /// compute Renyi entrpy of a for a vector of order
+    /// compute Renyi entrpy of a for a slice of order values
     pub fn renyi_entropy(&mut self, order: &[F]) -> Vec<RenyiEntropy<F> > {
         let mut entropy_v = Vec::<RenyiEntropy<F> >::with_capacity(order.len());
         for q in order.iter() {
@@ -134,6 +135,7 @@ impl  <F> DiscreteProba<F>
 
 } // end impl ProbaDistribution
 
+
 #[inline]
 fn near_to_1<F:Float>(f:F) -> bool {
     let one = num_traits::identities::one::<F>();
@@ -147,12 +149,6 @@ fn near_to_1<F:Float>(f:F) -> bool {
 }
 
 
-
-    /// compute for q = 1 it is Shannon entropy
-    fn renyi_entropy_gen<F:Float + AddAssign + SubAssign + MulAssign + DivAssign + std::iter::Sum>(p : Vec<F>) -> F {
-        let entropy = p.iter().map( |&v| if v > F::zero() { -v * v.ln() } else {F::zero()}).sum();
-        return entropy;
-    }
 
 
 
