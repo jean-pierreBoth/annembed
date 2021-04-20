@@ -134,9 +134,10 @@ impl <'a> RangeApprox<'a> {
     // 2. we othogonalize them with vectors in q_mat
     // 3. We normalize the y and add them in q_mat.
     /// Adaptive Randomized Range Finder algo 4.2. from Halko-Tropp
-    fn adaptative_normal_sampling(&mut self, epsil:f64, r : usize) {
+    fn adaptative_normal_sampling(&mut self, epsil:f64, r : usize) -> Array2<f64> {
         let mut rng = RandomGaussianGenerator::new();
         let data_shape = self.data.shape();
+        let m = data_shape[0];
         // q_mat and y_mat store vector of interest as rows to take care of Rust order.
         let mut q_mat = Vec::<Array1<f64>>::new();         // q_mat stores vectors of size m
         let stop_val : f64 = epsil/(10. * (2. * f64::FRAC_1_PI()).sqrt());
@@ -186,7 +187,16 @@ impl <'a> RangeApprox<'a> {
         //  to get Q as an Array2 : Array2::from_shape_vec((nrows, ncols), data)?;
         // https://docs.rs/ndarray/0.15.1/ndarray/struct.ArrayBase.html#method.view_mut
         //
-    }
+
+        let mut q_as_array2  = Array2::zeros((q_mat.len(), m));
+        for i in 0..q_mat.len() {
+            for j in 0..m {
+                q_as_array2[[j,i]] = q_mat[i][j];
+            }
+        }
+        // we return an array2 where each row is a data of reduced dimension
+       q_as_array2
+    } // end of adaptative_normal_sampling
 }  // end of impl RangeApprox
 
 
