@@ -8,7 +8,6 @@
 #![allow(dead_code)]
 
 
-use rand::prelude::*;
 
 use rand_distr::{Distribution, StandardNormal};
 use rand_xoshiro::Xoshiro256PlusPlus;
@@ -131,50 +130,55 @@ impl <'a> TruncSvd<'a> {
 
 
 
-
+    // 1. we sample y vectors by batches of size r, 
+    // 2. we othogonalize them with vectors in q_mat
+    // 3. We normalize the y and add them in q_mat.
     /// Adaptive Randomized Range Finder algo 4.2. from Halko-Tropp
-    fn adaptative_normal_sampling(&mut self, epsil:f64, rank : usize) {
+    fn adaptative_normal_sampling(&mut self, epsil:f64, r : usize) {
         let mut rng = RandomGaussianGenerator::new();
         let data_shape = self.data.shape();
-        // q_mat and y_mat store vector of interest as rows to tzke care of Rust order.
+        // q_mat and y_mat store vector of interest as rows to take care of Rust order.
         let mut q_mat = Vec::<Array1<f64>>::new();         // q_mat stores vectors of size m
         // 
         // we store omaga_i vector as row vector as Rust has C order it is easier to extract rows !!
-        let omega = rng.generate_matrix(Dim([rank, data_shape[1]]));    //  omega is (r, n)
-        let mut y_mat = self.data.dot(&omega.gauss_mat.t());            // so Y is a (data_shape[0], rank) or (m,r) with Tropp notations
+        let omega = rng.generate_matrix(Dim([r, data_shape[1]]));    //  omega is (r, n)
+        // so Y is a (data_shape[0], rank) or (m,r) with Tropp notations
+        // It will contains the last r vector sampled
+        let mut y_mat = self.data.dot(&omega.gauss_mat.t());
         // This vectors stores L2-norm of each Y column vector of which there are r
-        let norms_y : Array1<f64> = (0..rank).into_iter().map( |i| norm_l2(&y_mat.column(i))).collect();
-        assert_eq!(norms_y.len() , rank); 
+        let norms_y : Array1<f64> = (0..r).into_iter().map( |i| norm_l2(&y_mat.column(i))).collect();
+        assert_eq!(norms_y.len() , r); 
         let mut norm_sup_y;
         norm_sup_y = norms_y.iter().max_by(|x,y| x.partial_cmp(y).unwrap()).unwrap();
         let mut j = 0;
         while norm_sup_y > &epsil {
+            // numerical stabilization
             orthogonalize_with_q(&q_mat, &mut y_mat.row_mut(j));
             let y_j = y_mat.row(j);
             let n_j =  norm_l2(&y_j);
             let q_j = &y_j / n_j;
             // we add q_j to q_mat
             q_mat.push(q_j.clone());
-            // we sample a new omega_j vector
+            // we sample a new omega_j vector of size n
             let omega_j_p1 = rng.generate_stdn_vect(Ix1(data_shape[1]));
-            let mut y_j_p1 = self.data.dot(&omega_j_p1);
+            let mut y_j_p1 = self.data.dot(&omega_j_p1);    // y_j_p1 is of size m 
             // we orthogonalize new y with all q's i.e q_mat
             orthogonalize_with_q(&q_mat, &mut y_j_p1.view_mut());
+            // the new y will takes the place of old y at rank j%r so we always have the last r y that have been sampled
+            for k in 0..y_j_p1.len() {
+                y_mat.column_mut(j%r)[k] = y_j_p1[k];
+            }
             // we orthogonalize old y's with new q_j
-            for j in 0..rank {
+            for j in 0..r {
                 let y_j = &mut y_mat.row_mut(j);
                 let prodq_y = q_j.view().dot(y_j) * &q_j;
                 *y_j -= &prodq_y;
-        //        orthogonalize_with_q(vec![q_j], &mut y_mat.row_mut(j));
             }
-//            let omega_j = 
-
             // we update 
             j = j+1;
         }
-        // We must return q_mat as an Array2
         //  to get Q as an Array2 : Array2::from_shape_vec((nrows, ncols), data)?;
-
+        // https://docs.rs/ndarray/0.15.1/ndarray/struct.ArrayBase.html#method.view_mut
     }
 }  // end of impl TruncSvd
 
@@ -182,9 +186,7 @@ impl <'a> TruncSvd<'a> {
 
 mod tests {
 
-use ndarray::array;
-use ndarray::prelude::*;
-
+use super::*;
 
 #[allow(dead_code)]
 fn log_init_test() {
