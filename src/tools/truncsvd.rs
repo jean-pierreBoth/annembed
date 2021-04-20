@@ -1,7 +1,8 @@
 //! This module implements a randomized truncated svd
 //! by multiplication by random orthogonal matrix and Q.R decomposition
+//! 
 //! Halko-Tropp Probabilistic Algorithms For Matrix Decomposition 2011 P 242-245
-//! Mahoney Lectures notes on randomized linearAlgebra 2016. P 149-150
+//! See also Mahoney Lectures notes on randomized linearAlgebra 2016. P 149-150
 //! We use gaussian matrix (instead SRTF as we have a small rank)
 //! 
 
@@ -15,6 +16,7 @@ use rand_xoshiro::rand_core::SeedableRng;
 
 use ndarray::prelude::*;
 
+use num_traits::float::*;    // tp get FRAC_1_PI from FloatConst
 
 // Halko Tropp Algo 4.2 P 243
 // We are given a matrix A of dimension (m,n) and we want to get approximate its image at rank r
@@ -82,7 +84,7 @@ impl RandomGaussianGenerator {
 // Recall that ndArray is C-order row order.
 /// compute an approximate truncated svf
 /// The data matrix is supposed given as a (m,n) matrix. m is the number of data and n their dimension.
-pub struct TruncSvd<'a> {
+pub struct RangeApprox<'a> {
     /// matrix we want to approximate range of. We s
     data : &'a Array2<f64>,
     /// asked rank
@@ -92,7 +94,7 @@ pub struct TruncSvd<'a> {
     /// transpose matrix of right vectors
     right_vec_t: Option<Array2<f64>>,
     lambdas : Option<Array1<f64>>
-} // end of struct TruncSvd 
+} // end of struct RangeApprox 
 
 
 #[inline]
@@ -102,7 +104,7 @@ pub fn norm_l2(v : &ArrayView1<f64>) -> f64 {
 
 
 /// return  y - projection of y on space spanned by y.
-fn orthogonalize_with_q(q: &Vec<Array1<f64>>, y: &mut ArrayViewMut1<f64>) {
+fn orthogonalize_with_q(q: &[Array1<f64>], y: &mut ArrayViewMut1<f64>) {
     let nb_q = q.len();
     if nb_q == 0 {
         return;
@@ -120,12 +122,10 @@ fn orthogonalize_with_q(q: &Vec<Array1<f64>>, y: &mut ArrayViewMut1<f64>) {
 
 
 
-impl <'a> TruncSvd<'a> {
+impl <'a> RangeApprox<'a> {
 
     pub fn new(data : &'a Array2<f64>, rank:u32) -> Self {
-        TruncSvd{data, rank, left_vectors : None , right_vec_t : None , lambdas : None} 
-
-
+        RangeApprox{data, rank, left_vectors : None , right_vec_t : None , lambdas : None} 
     }
 
 
@@ -139,6 +139,7 @@ impl <'a> TruncSvd<'a> {
         let data_shape = self.data.shape();
         // q_mat and y_mat store vector of interest as rows to take care of Rust order.
         let mut q_mat = Vec::<Array1<f64>>::new();         // q_mat stores vectors of size m
+        let stop_val : f64 = epsil/(10. * (2. * f64::FRAC_1_PI()).sqrt());
         // 
         // we store omaga_i vector as row vector as Rust has C order it is easier to extract rows !!
         let omega = rng.generate_matrix(Dim([r, data_shape[1]]));    //  omega is (r, n)
@@ -146,41 +147,47 @@ impl <'a> TruncSvd<'a> {
         // It will contains the last r vector sampled
         let mut y_mat = self.data.dot(&omega.gauss_mat.t());
         // This vectors stores L2-norm of each Y column vector of which there are r
-        let norms_y : Array1<f64> = (0..r).into_iter().map( |i| norm_l2(&y_mat.column(i))).collect();
+        let mut norms_y : Array1<f64> = (0..r).into_iter().map( |i| norm_l2(&y_mat.column(i))).collect();
         assert_eq!(norms_y.len() , r); 
         let mut norm_sup_y;
         norm_sup_y = norms_y.iter().max_by(|x,y| x.partial_cmp(y).unwrap()).unwrap();
         let mut j = 0;
-        while norm_sup_y > &epsil {
+        while norm_sup_y > &stop_val {
             // numerical stabilization
-            orthogonalize_with_q(&q_mat, &mut y_mat.row_mut(j));
+            if q_mat.len() > 1 {
+                orthogonalize_with_q(&q_mat[0..q_mat.len()-1], &mut y_mat.row_mut(j));
+            }
             let y_j = y_mat.row(j);
             let n_j =  norm_l2(&y_j);
             let q_j = &y_j / n_j;
-            // we add q_j to q_mat
+            // we add q_j to q_mat so we consumed on y vector
             q_mat.push(q_j.clone());
-            // we sample a new omega_j vector of size n
+            // we make another y, first we sample a new omega_j vector of size n
             let omega_j_p1 = rng.generate_stdn_vect(Ix1(data_shape[1]));
             let mut y_j_p1 = self.data.dot(&omega_j_p1);    // y_j_p1 is of size m 
             // we orthogonalize new y with all q's i.e q_mat
             orthogonalize_with_q(&q_mat, &mut y_j_p1.view_mut());
             // the new y will takes the place of old y at rank j%r so we always have the last r y that have been sampled
             for k in 0..y_j_p1.len() {
-                y_mat.column_mut(j%r)[k] = y_j_p1[k];
+                y_mat.column_mut(j)[k] = y_j_p1[k];
             }
+            norms_y[j] = norm_l2(&y_mat.column(j));
             // we orthogonalize old y's with new q_j
             for j in 0..r {
                 let y_j = &mut y_mat.row_mut(j);
                 let prodq_y = q_j.view().dot(y_j) * &q_j;
                 *y_j -= &prodq_y;
             }
-            // we update 
-            j = j+1;
+            // we update j
+            j = (j+1)%r;
+            // we update norm_sup_y
+            norm_sup_y = norms_y.iter().max_by(|x,y| x.partial_cmp(y).unwrap()).unwrap();
         }
         //  to get Q as an Array2 : Array2::from_shape_vec((nrows, ncols), data)?;
         // https://docs.rs/ndarray/0.15.1/ndarray/struct.ArrayBase.html#method.view_mut
+        //
     }
-}  // end of impl TruncSvd
+}  // end of impl RangeApprox
 
 
 
@@ -188,19 +195,19 @@ mod tests {
 
 use super::*;
 
-#[allow(dead_code)]
-fn log_init_test() {
-    let _ = env_logger::builder().is_test(true).try_init();
-}  
+    #[allow(dead_code)]
+    fn log_init_test() {
+        let _ = env_logger::builder().is_test(true).try_init();
+    }  
 
 #[test]
-fn test_arrayview_mut() {
-    let mut array = array![[1, 2], [3, 4]];
-    let to_add =  array![1, 1];
-    let mut row_mut = array.row_mut(0);
-    row_mut += &to_add;
-    assert_eq!(array[[0,0]], 2);
-    assert_eq!(array[[0,1]], 3);
-}
+    fn test_arrayview_mut() {
+        let mut array = array![[1, 2], [3, 4]];
+        let to_add =  array![1, 1];
+        let mut row_mut = array.row_mut(0);
+        row_mut += &to_add;
+        assert_eq!(array[[0,0]], 2);
+        assert_eq!(array[[0,1]], 3);
+    }
 
 }
