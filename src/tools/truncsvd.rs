@@ -29,7 +29,7 @@ use num_traits::float::*;    // tp get FRAC_1_PI from FloatConst
 
 
 struct RandomGaussianMatrix {
-    gauss_mat : Array2::<f64>
+    mat : Array2::<f64>
 }
 
 
@@ -40,11 +40,11 @@ impl RandomGaussianMatrix {
     pub fn new(dims : Ix2) -> Self {
         let mut rng = Xoshiro256PlusPlus::seed_from_u64(4664397);
         let stdnormal = StandardNormal{};
-        let gauss_mat : Array2::<f64> = ArrayBase::from_shape_fn(dims, |_| {
+        let mat : Array2::<f64> = ArrayBase::from_shape_fn(dims, |_| {
             stdnormal.sample(&mut rng)
         });
         //
-        RandomGaussianMatrix{gauss_mat}
+        RandomGaussianMatrix{mat}
     }
 
 }  // end of impl block for RandomGaussianMatrix
@@ -69,11 +69,10 @@ impl RandomGaussianGenerator {
 
     // generate a standard N(0,1) vector of N(0,1) of dimension dim
     fn generate_stdn_vect(&mut self, dim: Ix1) -> Array1<f64> {
-        let mut  gauss_v = Array1::zeros(dim);
         let stdnormal = StandardNormal{};
-        for v in gauss_v.iter_mut() {
-            *v = stdnormal.sample(&mut self.rng);
-        }
+        let gauss_v : Array1<f64> =  ArrayBase::from_shape_fn(dim, |_| {
+            stdnormal.sample(&mut self.rng)
+        });
         gauss_v
     }
 }  // end of impl RandomGaussianGenerator
@@ -144,13 +143,14 @@ impl <'a> RangeApprox<'a> {
         let stop_val : f64 = epsil/(10. * (2. * f64::FRAC_1_PI()).sqrt());
         // 
         // we store omaga_i vector as row vector as Rust has C order it is easier to extract rows !!
-        let omega = rng.generate_matrix(Dim([r, data_shape[1]]));    //  omega is (r, n)
-        // so Y is a (data_shape[0], rank) or (m,r) with Tropp notations
+        let omega = rng.generate_matrix(Dim([data_shape[1], r]));    //  omega is (r, n)
+        // so Y is a (data_shape[0], r) or (m,r) with Tropp notations
         // It will contains the last r vector sampled
-        let mut y_mat = self.data.dot(&omega.gauss_mat.t());
+        let mut y_mat = self.data.dot(&omega.mat);
         // This vectors stores L2-norm of each Y column vector of which there are r
         let mut norms_y : Array1<f64> = (0..r).into_iter().map( |i| norm_l2(&y_mat.column(i))).collect();
         assert_eq!(norms_y.len() , r); 
+        //
         let mut norm_sup_y;
         norm_sup_y = norms_y.iter().max_by(|x,y| x.partial_cmp(y).unwrap()).unwrap();
         log::debug!(" norm_sup {} ",norm_sup_y);
@@ -161,12 +161,12 @@ impl <'a> RangeApprox<'a> {
         while norm_sup_y > &stop_val && nb_iter <= max_iter {
             // numerical stabilization
             if q_mat.len() > 0 {
-                orthogonalize_with_q(&q_mat[0..q_mat.len()], &mut y_mat.row_mut(j));
+                orthogonalize_with_q(&q_mat[0..q_mat.len()], &mut y_mat.column_mut(j));
             }
-            let y_j = y_mat.row(j);
+            let y_j = y_mat.column(j);
             let n_j =  norm_l2(&y_j);
             if n_j < f64::EPSILON {
-                log::debug!("exiting at nb_iter {} with n_j {:.3e} ", j, n_j);
+                log::debug!("exiting at nb_iter {} with n_j {:.3e} ", nb_iter, n_j);
                 break;
             }
             println!("j {} n_j {:.3e} ", j, n_j);
@@ -187,7 +187,7 @@ impl <'a> RangeApprox<'a> {
             for k in 0..r {
                 if k != j {
                     // avoid k = j as the j vector is the new one
-                    let y_k = &mut y_mat.row_mut(k);
+                    let y_k = &mut y_mat.column_mut(k);
                     let prodq_y = q_j.view().dot(y_k) * &q_j;
                     *y_k -= &prodq_y;
                 }
@@ -241,17 +241,26 @@ fn log_init_test() {
     } // end of test_arrayview_mut
 
     #[test]
-
-    fn test_range_approx() {
+    fn test_range_approx_1() {
         log_init_test();
         //
-        let data = RandomGaussianGenerator::new().generate_matrix(Dim([5,50]));
-        let range_approx = RangeApprox::new(&data.gauss_mat);
+        let data = RandomGaussianGenerator::new().generate_matrix(Dim([6,50]));
+        let range_approx = RangeApprox::new(&data.mat);
         let q = range_approx.adaptative_randomized_range_finder(0.05, 5);
-        let residue = check_range_finder(&data.gauss_mat.view(), &q.view());
+        let residue = check_range_finder(&data.mat.view(), &q.view());
         log::debug!(" residue {:3.e} ", residue);
+    } // end of test_range_approx_1
 
-    } // end of test_range_approx
+    #[test]
+    fn test_range_approx_2() {
+        log_init_test();
+        //
+        let data = RandomGaussianGenerator::new().generate_matrix(Dim([50,500]));
+        let range_approx = RangeApprox::new(&data.mat);
+        let q = range_approx.adaptative_randomized_range_finder(0.05, 5);
+        let residue = check_range_finder(&data.mat.view(), &q.view());
+        log::debug!(" residue {:3.e} ", residue);
+    } // end of test_range_approx_1
 
 
 }  // end of module test
