@@ -143,12 +143,15 @@ impl <'a> RangeApprox<'a> {
         let stop_val : f64 = epsil/(10. * (2. * f64::FRAC_1_PI()).sqrt());
         // 
         // we store omaga_i vector as row vector as Rust has C order it is easier to extract rows !!
-        let omega = rng.generate_matrix(Dim([data_shape[1], r]));    //  omega is (r, n)
-        // so Y is a (data_shape[0], r) or (m,r) with Tropp notations
-        // It will contains the last r vector sampled
-        let mut y_mat = self.data.dot(&omega.mat);
-        // This vectors stores L2-norm of each Y column vector of which there are r
-        let mut norms_y : Array1<f64> = (0..r).into_iter().map( |i| norm_l2(&y_mat.column(i))).collect();
+        let omega = rng.generate_matrix(Dim([data_shape[1], r]));    //  omega is (n, r)
+        // We could store Y = data * omega as matrix (m,r), but as we use Y column,
+        // we store Y (as Q) as a Vec of Array1<f64>
+        let mut y_vec =  Vec::<Array1<f64>>::with_capacity(r);
+        for j in 0..r {
+            y_vec.push(self.data.dot(&omega.mat.column(j)));
+        }
+        // This vectors stores L2-norm of each Y  vector of which there are r
+        let mut norms_y : Array1<f64> = (0..r).into_iter().map( |i| norm_l2(&y_vec[i].view())).collect();
         assert_eq!(norms_y.len() , r); 
         //
         let mut norm_sup_y;
@@ -156,22 +159,22 @@ impl <'a> RangeApprox<'a> {
         log::debug!(" norm_sup {} ",norm_sup_y);
         let mut j = 0;
         let mut nb_iter = 0;
-        let max_iter = data_shape[0].min(data_shape[1]) + 10;
+        let max_iter = data_shape[0].min(data_shape[1]);
         //
         while norm_sup_y > &stop_val && nb_iter <= max_iter {
             // numerical stabilization
             if q_mat.len() > 0 {
-                orthogonalize_with_q(&q_mat[0..q_mat.len()], &mut y_mat.column_mut(j));
+                orthogonalize_with_q(&q_mat[0..q_mat.len()], &mut y_vec[j].view_mut());
             }
-            let y_j = y_mat.column(j);
-            let n_j =  norm_l2(&y_j);
+            // get norm of current y vector
+            let n_j =  norm_l2(&y_vec[j].view());
             if n_j < f64::EPSILON {
                 log::debug!("exiting at nb_iter {} with n_j {:.3e} ", nb_iter, n_j);
                 break;
             }
             println!("j {} n_j {:.3e} ", j, n_j);
             log::debug!("j {} n_j {:.3e} ", j, n_j);
-            let q_j = &y_j / n_j;
+            let q_j = &y_vec[j] / n_j;
             // we add q_j to q_mat so we consumed on y vector
             q_mat.push(q_j.clone());
             // we make another y, first we sample a new omega_j vector of size n
@@ -180,20 +183,17 @@ impl <'a> RangeApprox<'a> {
             // we orthogonalize new y with all q's i.e q_mat
             orthogonalize_with_q(&q_mat, &mut y_j_p1.view_mut());
             // the new y will takes the place of old y at rank j%r so we always have the last r y that have been sampled
-            for k in 0..y_j_p1.len() {
-                y_mat.column_mut(j)[k] = y_j_p1[k];
-            }
+            y_j_p1.assign_to(y_vec[j].view_mut());
             // we orthogonalize old y's with new q_j. Can be made //
             for k in 0..r {
                 if k != j {
                     // avoid k = j as the j vector is the new one
-                    let y_k = &mut y_mat.column_mut(k);
-                    let prodq_y = q_j.view().dot(y_k) * &q_j;
-                    *y_k -= &prodq_y;
+                    let prodq_y = q_j.view().dot(&y_vec[k]) * &q_j;
+                    y_vec[k] -= &prodq_y;
                 }
             }
             // we update norm_sup_y
-            norms_y[j] = norm_l2(&y_mat.column(j));
+            norms_y[j] = norm_l2(&y_vec[j].view());
             norm_sup_y = norms_y.iter().max_by(|x,y| x.partial_cmp(y).unwrap()).unwrap();
             log::debug!(" j {} norm_sup {:.3e} ", j, norm_sup_y);
             // we update j and nb_iter
