@@ -11,6 +11,11 @@
 //! the type F must verify F : Float + FromPrimitive + Scalar + ndarray::ScalarOperand
 //! so it is f32 or f64
 
+// Float provides PartialOrd which is not in Scalar.
+// ndarray::ScalarOperand provides array * F
+// ndarray_linalg::Scalar provides Exp notation + Display + Debug + Serialize and sum on iterators
+
+
 #![allow(dead_code)]
 
 
@@ -21,7 +26,7 @@ use rand_xoshiro::rand_core::SeedableRng;
 
 use ndarray::prelude::*;
 
-use ndarray_linalg::{Scalar, UVTFlag, SVD, SVDDC};
+use ndarray_linalg::{Scalar, UVTFlag, svddc::*};
 
 use std::marker::PhantomData;
 
@@ -84,7 +89,7 @@ impl <F:Float+FromPrimitive> RandomGaussianGenerator<F> {
 // Recall that ndArray is C-order row order.
 /// compute an approximate truncated svf
 /// The data matrix is supposed given as a (m,n) matrix. m is the number of data and n their dimension.
-pub struct RangeApprox<'a, F:Scalar> {
+pub struct RangeApprox<'a, F: Scalar> {
     /// matrix we want to approximate range of. We s
     data : &'a Array2<F>,
 } // end of struct RangeApprox 
@@ -217,14 +222,63 @@ impl <'a, F > RangeApprox<'a, F>
         // we return an array2 where each row is a data of reduced dimension
         unsafe{ q_as_array2.assume_init()}
     } // end of adaptative_normal_sampling
+
+
+    /// Algoithm 4.4 from Tropp
+    /// This algorith returns a (m,l) matrix approximation the range of input, q is a number of iterations
+    fn randomized_subspace_iteration(&self, l:usize, q : usize)  {
+        let mut rng = RandomGaussianGenerator::<F>::new();
+        let data_shape = self.data.shape();
+        let m = data_shape[0];
+        let omega = rng.generate_matrix(Dim([data_shape[1], l]));
+        let q = self.data.dot(&omega.mat);
+        // do first QR decomposition of q and overwrite it
+    }
+
 }  // end of impl RangeApprox
 
 
-fn check_range_finder<F:Float+Scalar> (a_mat : &ArrayView2<F>, q_mat: &ArrayView2<F>) -> F {
+fn check_range_finder<F:Float+ Scalar> (a_mat : &ArrayView2<F>, q_mat: &ArrayView2<F>) -> F {
     let residue = a_mat - q_mat.dot(&q_mat.t()).dot(a_mat);
     let norm_residue = norm_l2(&residue.view());
     norm_residue
 }
+
+
+//================================ SVD part ===============================
+
+
+pub struct SvdApprox<'a, F: Float + Scalar+ ndarray::RawData> {
+    /// matrix we want to approximate range of. We s
+    data : &'a Array2<F>,
+    u : Option<Array2<F>>,
+    s : Option<Array1<F>>,
+    vt : Option<Array1<F>>
+} // end of struct SvdApprox
+
+
+impl <'a, F> SvdApprox<'a, F>  
+     where  F : Float + Scalar + ndarray::RawData + num_traits::real::Real + ndarray::ScalarOperand  {
+
+    fn new(data : &'a Array2<F>) -> Self {
+        SvdApprox{data, u : None, s : None, vt :None}
+    }
+ 
+    // direct svd from Algo 5.1 of Halko-Tropp
+    fn direct_svd(&mut self, order : usize) {
+        let ra = RangeApprox::new(self.data);
+        // CAVEAT parameters to adjusted
+        let q = ra.adaptative_randomized_range_finder(0.2, order + 10);
+        let b = q.t().dot(self.data);
+        // we need to convert b from Array2<F> = ArrayBase<OwnedRepr<F>,Ix2>  
+        // to ArrayBase<S,Ix2> with A: Scalar + Lapack and S: DataMut<Elem = A>
+        // and b is ArrayBase<OwnedRepr<F>,Ix2>
+        let (u, sigma, vt) = b.svddc(UVTFlag::Some).unwrap();
+    } // end of do_svd
+
+} // end of block impl for SvdApprox
+
+//=========================================================================
 
 mod tests {
 
