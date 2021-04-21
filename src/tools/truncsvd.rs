@@ -8,6 +8,8 @@
 //! See also Mahoney Lectures notes on randomized linearAlgebra 2016. P 149-150
 //! We use gaussian matrix (instead SRTF as in the Ann context we have a small rank)
 //! 
+//! the type F must verify F : Float + FromPrimitive + Scalar + ndarray::ScalarOperand
+//! so it is f32 or f64
 
 #![allow(dead_code)]
 
@@ -19,29 +21,29 @@ use rand_xoshiro::rand_core::SeedableRng;
 
 use ndarray::prelude::*;
 
+use ndarray_linalg::{Scalar, UVTFlag, SVD, SVDDC};
+
+use std::marker::PhantomData;
+
 use num_traits::float::*;    // tp get FRAC_1_PI from FloatConst
-
-// Halko Tropp Algo Probabilistic Algorithms for Approximate Matrix decomposition Algo 4.2 P 243
-// We are given a matrix A of dimension (m,n) and we want to get approximate its image at rank r
-// We compute a gaussian matrix such that || (I - Q * Qt) * A || < epsil
-// - compute P = A * Q multiply right a gaussian (r, n) the matrix data M (m,n)
-// - QR decomposition of P
+use num_traits::cast::FromPrimitive;
 
 
-struct RandomGaussianMatrix {
-    mat : Array2::<f64>
+
+struct RandomGaussianMatrix<F:Float> {
+    mat : Array2::<F>
 }
 
 
 
-impl RandomGaussianMatrix {
+impl <F> RandomGaussianMatrix<F> where F:Float+FromPrimitive {
 
     /// given dimensions allocate and initialize with random gaussian values matrix
     pub fn new(dims : Ix2) -> Self {
         let mut rng = Xoshiro256PlusPlus::seed_from_u64(4664397);
         let stdnormal = StandardNormal{};
-        let mat : Array2::<f64> = ArrayBase::from_shape_fn(dims, |_| {
-            stdnormal.sample(&mut rng)
+        let mat : Array2::<F> = ArrayBase::from_shape_fn(dims, |_| {
+            F::from_f64(stdnormal.sample(&mut rng)).unwrap()
         });
         //
         RandomGaussianMatrix{mat}
@@ -50,28 +52,29 @@ impl RandomGaussianMatrix {
 }  // end of impl block for RandomGaussianMatrix
 
 
-struct RandomGaussianGenerator {
-    rng:Xoshiro256PlusPlus
+struct RandomGaussianGenerator<F> {
+    rng:Xoshiro256PlusPlus,
+    _ty : std::marker::PhantomData<F>
 }
 
 
 
-impl RandomGaussianGenerator {
+impl <F:Float+FromPrimitive> RandomGaussianGenerator<F> {
     pub fn new() -> Self {
        let rng = Xoshiro256PlusPlus::seed_from_u64(4664397);
-       RandomGaussianGenerator{rng}
+       RandomGaussianGenerator::<F>{rng, _ty: PhantomData}
     }
 
-    pub fn generate_matrix(&mut self, dims: Ix2) -> RandomGaussianMatrix {
-        RandomGaussianMatrix::new(dims)
+    pub fn generate_matrix(&mut self, dims: Ix2) -> RandomGaussianMatrix<F> {
+        RandomGaussianMatrix::<F>::new(dims)
     }
 
 
     // generate a standard N(0,1) vector of N(0,1) of dimension dim
-    fn generate_stdn_vect(&mut self, dim: Ix1) -> Array1<f64> {
+    fn generate_stdn_vect(&mut self, dim: Ix1) -> Array1<F> {
         let stdnormal = StandardNormal{};
-        let gauss_v : Array1<f64> =  ArrayBase::from_shape_fn(dim, |_| {
-            stdnormal.sample(&mut self.rng)
+        let gauss_v : Array1<F> =  ArrayBase::from_shape_fn(dim, |_| {
+            F::from_f64(stdnormal.sample(&mut self.rng)).unwrap()
         });
         gauss_v
     }
@@ -81,21 +84,22 @@ impl RandomGaussianGenerator {
 // Recall that ndArray is C-order row order.
 /// compute an approximate truncated svf
 /// The data matrix is supposed given as a (m,n) matrix. m is the number of data and n their dimension.
-pub struct RangeApprox<'a> {
+pub struct RangeApprox<'a, F:Scalar> {
     /// matrix we want to approximate range of. We s
-    data : &'a Array2<f64>,
+    data : &'a Array2<F>,
 } // end of struct RangeApprox 
 
 
 /// compute L2-norm of an array
 #[inline]
-pub fn norm_l2<D:Dimension>(v : &ArrayView<f64, D>) -> f64 {
-    v.into_iter().map(|x| x*x).sum::<f64>().sqrt()
+pub fn norm_l2<D:Dimension, F:Scalar>(v : &ArrayView<F, D>) -> F {
+    let s : F = v.into_iter().map(|x| (*x)*(*x)).sum::<F>();
+    s.sqrt()
 }
 
 
 /// return  y - projection of y on space spanned by q's vectors.
-fn orthogonalize_with_q(q: &[Array1<f64>], y: &mut ArrayViewMut1<f64>) {
+fn orthogonalize_with_q<F:Scalar + ndarray::ScalarOperand >(q: &[Array1<F>], y: &mut ArrayViewMut1<F>) {
     let nb_q = q.len();
     if nb_q == 0 {
         return;
@@ -104,18 +108,19 @@ fn orthogonalize_with_q(q: &[Array1<f64>], y: &mut ArrayViewMut1<f64>) {
     // check dimension coherence between Q and y
     assert_eq!(q[nb_q - 1].len(),size_d);
     //
-    let mut proj_qy = Array1::<f64>::zeros(size_d);
+    let mut proj_qy = Array1::<F>::zeros(size_d);
     for i in 0..nb_q {
-        proj_qy  += &(q[i].dot(y) * &q[i]);
+        proj_qy  += &(&q[i] * q[i].dot(y));
     }
     *y -= &proj_qy;
 }  // end of orthogonalize_with_Q
 
 
 
-impl <'a> RangeApprox<'a> {
+impl <'a, F > RangeApprox<'a, F> 
+     where  F : Float + Scalar + num_traits::real::Real + ndarray::ScalarOperand {
 
-    pub fn new(data : &'a Array2<f64>) -> Self {
+    pub fn new(data : &'a Array2<F>) -> Self {
         RangeApprox{data} 
     }
 
@@ -134,24 +139,24 @@ impl <'a> RangeApprox<'a> {
     //
     /// Returns a matrix Q such that || data - Q*t(Q)*data || < epsil
     /// Adaptive Randomized Range Finder algo 4.2. from Halko-Tropp
-    fn adaptative_randomized_range_finder(&self, epsil:f64, r : usize) -> Array2<f64> {
+    fn adaptative_randomized_range_finder(&self, epsil:f64, r : usize) -> Array2<F> {
         let mut rng = RandomGaussianGenerator::new();
         let data_shape = self.data.shape();
         let m = data_shape[0];
         // q_mat and y_mat store vector of interest as rows to take care of Rust order.
-        let mut q_mat = Vec::<Array1<f64>>::new();         // q_mat stores vectors of size m
-        let stop_val : f64 = epsil/(10. * (2. * f64::FRAC_1_PI()).sqrt());
+        let mut q_mat = Vec::<Array1<F>>::new();         // q_mat stores vectors of size m
+        let stop_val  = epsil/(10. * (2. * f64::FRAC_1_PI()).sqrt());
         // 
         // we store omaga_i vector as row vector as Rust has C order it is easier to extract rows !!
         let omega = rng.generate_matrix(Dim([data_shape[1], r]));    //  omega is (n, r)
         // We could store Y = data * omega as matrix (m,r), but as we use Y column,
         // we store Y (as Q) as a Vec of Array1<f64>
-        let mut y_vec =  Vec::<Array1<f64>>::with_capacity(r);
+        let mut y_vec =  Vec::<Array1<F>>::with_capacity(r);
         for j in 0..r {
             y_vec.push(self.data.dot(&omega.mat.column(j)));
         }
         // This vectors stores L2-norm of each Y  vector of which there are r
-        let mut norms_y : Array1<f64> = (0..r).into_iter().map( |i| norm_l2(&y_vec[i].view())).collect();
+        let mut norms_y : Array1<F> = (0..r).into_iter().map( |i| norm_l2(&y_vec[i].view())).collect();
         assert_eq!(norms_y.len() , r); 
         //
         let mut norm_sup_y;
@@ -161,14 +166,14 @@ impl <'a> RangeApprox<'a> {
         let mut nb_iter = 0;
         let max_iter = data_shape[0].min(data_shape[1]);
         //
-        while norm_sup_y > &stop_val && nb_iter <= max_iter {
+        while norm_sup_y > &F::from_f64(stop_val).unwrap() && nb_iter <= max_iter {
             // numerical stabilization
             if q_mat.len() > 0 {
                 orthogonalize_with_q(&q_mat[0..q_mat.len()], &mut y_vec[j].view_mut());
             }
             // get norm of current y vector
             let n_j =  norm_l2(&y_vec[j].view());
-            if n_j < f64::EPSILON {
+            if n_j < Float::epsilon() {
                 log::debug!("exiting at nb_iter {} with n_j {:.3e} ", nb_iter, n_j);
                 break;
             }
@@ -188,7 +193,7 @@ impl <'a> RangeApprox<'a> {
             for k in 0..r {
                 if k != j {
                     // avoid k = j as the j vector is the new one
-                    let prodq_y = q_j.view().dot(&y_vec[k]) * &q_j;
+                    let prodq_y = &q_j * q_j.view().dot(&y_vec[k]);
                     y_vec[k] -= &prodq_y;
                 }
             }
@@ -215,7 +220,7 @@ impl <'a> RangeApprox<'a> {
 }  // end of impl RangeApprox
 
 
-fn check_range_finder(a_mat : &ArrayView2<f64>, q_mat: &ArrayView2<f64>) -> f64{
+fn check_range_finder<F:Float+Scalar> (a_mat : &ArrayView2<F>, q_mat: &ArrayView2<F>) -> F {
     let residue = a_mat - q_mat.dot(&q_mat.t()).dot(a_mat);
     let norm_residue = norm_l2(&residue.view());
     norm_residue
@@ -244,7 +249,7 @@ fn log_init_test() {
     fn test_range_approx_1() {
         log_init_test();
         //
-        let data = RandomGaussianGenerator::new().generate_matrix(Dim([6,50]));
+        let data = RandomGaussianGenerator::<f64>::new().generate_matrix(Dim([6,50]));
         let range_approx = RangeApprox::new(&data.mat);
         let q = range_approx.adaptative_randomized_range_finder(0.05, 5);
         let residue = check_range_finder(&data.mat.view(), &q.view());
@@ -255,7 +260,7 @@ fn log_init_test() {
     fn test_range_approx_2() {
         log_init_test();
         //
-        let data = RandomGaussianGenerator::new().generate_matrix(Dim([50,500]));
+        let data = RandomGaussianGenerator::<f32>::new().generate_matrix(Dim([50,500]));
         let range_approx = RangeApprox::new(&data.mat);
         let q = range_approx.adaptative_randomized_range_finder(0.05, 5);
         let residue = check_range_finder(&data.mat.view(), &q.view());
