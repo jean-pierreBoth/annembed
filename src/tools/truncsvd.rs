@@ -24,9 +24,14 @@ use rand_distr::{Distribution, StandardNormal};
 use rand_xoshiro::Xoshiro256PlusPlus;
 use rand_xoshiro::rand_core::SeedableRng;
 
-use ndarray::prelude::*;
+//use ndarray::prelude::*;
 
-use ndarray_linalg::{Scalar, svddc::UVTFlag, svd::*, svddc::*};
+use ndarray::{Dim, Array1, Array2, ArrayBase, Dimension, ArrayView, ArrayViewMut1, ArrayView2 , Ix1, Ix2};
+
+use ndarray_linalg::{Scalar, Lapack};
+// use ndarray_linalg::{UVTFlag,svddc};
+
+use lax::{layout::MatrixLayout, UVTFlag};
 
 use std::marker::PhantomData;
 
@@ -224,7 +229,7 @@ impl <'a, F > RangeApprox<'a, F>
     } // end of adaptative_normal_sampling
 
 
-    /// Algoithm 4.4 from Tropp
+    /// Algorithm 4.4 from Tropp
     /// This algorith returns a (m,l) matrix approximation the range of input, q is a number of iterations
     fn randomized_subspace_iteration(&self, l:usize, q : usize)  {
         let mut rng = RandomGaussianGenerator::<F>::new();
@@ -248,32 +253,47 @@ fn check_range_finder<F:Float+ Scalar> (a_mat : &ArrayView2<F>, q_mat: &ArrayVie
 //================================ SVD part ===============================
 
 
-pub struct SvdApprox<'a, F: Scalar+ ndarray::RawData> {
+pub struct SvdApprox<'a, F: Scalar> {
     /// matrix we want to approximate range of. We s
     data : &'a Array2<F>,
     u : Option<Array2<F>>,
     s : Option<Array1<F>>,
-    vt : Option<Array1<F>>
+    vt : Option<Array2<F>>
 } // end of struct SvdApprox
 
 
 impl <'a, F> SvdApprox<'a, F>  
-     where  F : Float + Scalar + ndarray::RawData  + ndarray::ScalarOperand  {
+     where  F : Float + Lapack + Scalar  + ndarray::ScalarOperand  {
 
     fn new(data : &'a Array2<F>) -> Self {
         SvdApprox{data, u : None, s : None, vt :None}
     }
  
     // direct svd from Algo 5.1 of Halko-Tropp
-    fn direct_svd(&mut self, order : usize) {
+    fn direct_svd(&mut self, order : usize) -> Result<usize, String> {
         let ra = RangeApprox::new(self.data);
         // CAVEAT parameters to adjusted
         let q = ra.adaptative_randomized_range_finder(0.2, order + 10);
         let mut b = q.t().dot(self.data);
-        // we need to convert b from Array2<F> = ArrayBase<OwnedRepr<F>,Ix2>  
-        // to ArrayBase<S,Ix2> with A: Scalar + Lapack and S: DataMut<Elem = A>
-        // and b is ArrayBase<OwnedRepr<F>,Ix2>
-//        let (u, sigma, vt) = b.svddc(UVTFlag::Some).unwrap();
+        //
+        let layout = MatrixLayout::C { row: b.shape()[0] as i32, lda: b.shape()[1] as i32 };
+        let slice_for_svd_opt = b.as_slice_mut();
+        if slice_for_svd_opt.is_none() {
+            println!("direct_svd Matrix cannot be transformed into a slice : not contiguous or not in standard order");
+            return Err(String::from("not contiguous or not in standard order"));
+        }
+        let res_svd = F::svddc(layout, UVTFlag::Some, slice_for_svd_opt.unwrap());
+        if res_svd.is_err()  {
+            println!("direct_svd, svddc failed");
+        };
+        // we have to decode res and fill in SvdApprox fields.
+        // lax does encapsulte dgesvd (double) and sgesvd (single)  which returns U and Vt as vectors.
+        // We must reconstruct Array2 from slices.
+        // now we must match results
+        // u is (m,r) , vt must be (r, n) with m = self.data.shape()[0]  and n = self.data.shape()[1]
+
+        //
+        Ok(1)
     } // end of do_svd
 
 } // end of block impl for SvdApprox
@@ -284,6 +304,9 @@ mod tests {
 
 use super::*;
 
+
+
+
 #[allow(dead_code)]
 fn log_init_test() {
     let _ = env_logger::builder().is_test(true).try_init();
@@ -291,8 +314,8 @@ fn log_init_test() {
 
 #[test]
     fn test_arrayview_mut() {
-        let mut array = array![[1, 2], [3, 4]];
-        let to_add =  array![1, 1];
+        let mut array = ndarray::array![[1, 2], [3, 4]];
+        let to_add =  ndarray::array![1, 1];
         let mut row_mut = array.row_mut(0);
         row_mut += &to_add;
         assert_eq!(array[[0,0]], 2);
