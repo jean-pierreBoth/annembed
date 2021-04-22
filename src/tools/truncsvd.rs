@@ -26,7 +26,7 @@ use rand_xoshiro::rand_core::SeedableRng;
 
 use ndarray::prelude::*;
 
-use ndarray_linalg::{Scalar, UVTFlag, svddc::*};
+use ndarray_linalg::{Scalar, svddc::UVTFlag, svd::*, svddc::*};
 
 use std::marker::PhantomData;
 
@@ -123,7 +123,7 @@ fn orthogonalize_with_q<F:Scalar + ndarray::ScalarOperand >(q: &[Array1<F>], y: 
 
 
 impl <'a, F > RangeApprox<'a, F> 
-     where  F : Float + Scalar + num_traits::real::Real + ndarray::ScalarOperand {
+     where  F : Float + Scalar  + ndarray::ScalarOperand {
 
     pub fn new(data : &'a Array2<F>) -> Self {
         RangeApprox{data} 
@@ -248,7 +248,7 @@ fn check_range_finder<F:Float+ Scalar> (a_mat : &ArrayView2<F>, q_mat: &ArrayVie
 //================================ SVD part ===============================
 
 
-pub struct SvdApprox<'a, F: Float + Scalar+ ndarray::RawData> {
+pub struct SvdApprox<'a, F: Scalar+ ndarray::RawData> {
     /// matrix we want to approximate range of. We s
     data : &'a Array2<F>,
     u : Option<Array2<F>>,
@@ -258,7 +258,7 @@ pub struct SvdApprox<'a, F: Float + Scalar+ ndarray::RawData> {
 
 
 impl <'a, F> SvdApprox<'a, F>  
-     where  F : Float + Scalar + ndarray::RawData + num_traits::real::Real + ndarray::ScalarOperand  {
+     where  F : Float + Scalar + ndarray::RawData  + ndarray::ScalarOperand  {
 
     fn new(data : &'a Array2<F>) -> Self {
         SvdApprox{data, u : None, s : None, vt :None}
@@ -269,11 +269,11 @@ impl <'a, F> SvdApprox<'a, F>
         let ra = RangeApprox::new(self.data);
         // CAVEAT parameters to adjusted
         let q = ra.adaptative_randomized_range_finder(0.2, order + 10);
-        let b = q.t().dot(self.data);
+        let mut b = q.t().dot(self.data);
         // we need to convert b from Array2<F> = ArrayBase<OwnedRepr<F>,Ix2>  
         // to ArrayBase<S,Ix2> with A: Scalar + Lapack and S: DataMut<Elem = A>
         // and b is ArrayBase<OwnedRepr<F>,Ix2>
-        let (u, sigma, vt) = b.svddc(UVTFlag::Some).unwrap();
+//        let (u, sigma, vt) = b.svddc(UVTFlag::Some).unwrap();
     } // end of do_svd
 
 } // end of block impl for SvdApprox
