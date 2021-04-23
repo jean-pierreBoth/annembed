@@ -24,14 +24,12 @@ use rand_distr::{Distribution, StandardNormal};
 use rand_xoshiro::Xoshiro256PlusPlus;
 use rand_xoshiro::rand_core::SeedableRng;
 
-//use ndarray::prelude::*;
 
-use ndarray::{Dim, Array1, Array2, ArrayBase, Dimension, ArrayView, ArrayViewMut1, ArrayView2 , Ix1, Ix2};
+use ndarray::{Dim, Array, Array1, Array2, ArrayBase, Dimension, ArrayView, ArrayViewMut1, ArrayView2 , Ix1, Ix2};
 
 use ndarray_linalg::{Scalar, Lapack};
-// use ndarray_linalg::{UVTFlag,svddc};
 
-use lax::{layout::MatrixLayout, UVTFlag};
+use lax::{layout::MatrixLayout, UVTFlag, QR_};
 
 use std::marker::PhantomData;
 
@@ -100,35 +98,10 @@ pub struct RangeApprox<'a, F: Scalar> {
 } // end of struct RangeApprox 
 
 
-/// compute L2-norm of an array
-#[inline]
-pub fn norm_l2<D:Dimension, F:Scalar>(v : &ArrayView<F, D>) -> F {
-    let s : F = v.into_iter().map(|x| (*x)*(*x)).sum::<F>();
-    s.sqrt()
-}
 
-
-/// return  y - projection of y on space spanned by q's vectors.
-fn orthogonalize_with_q<F:Scalar + ndarray::ScalarOperand >(q: &[Array1<F>], y: &mut ArrayViewMut1<F>) {
-    let nb_q = q.len();
-    if nb_q == 0 {
-        return;
-    }
-    let size_d = y.len();
-    // check dimension coherence between Q and y
-    assert_eq!(q[nb_q - 1].len(),size_d);
-    //
-    let mut proj_qy = Array1::<F>::zeros(size_d);
-    for i in 0..nb_q {
-        proj_qy  += &(&q[i] * q[i].dot(y));
-    }
-    *y -= &proj_qy;
-}  // end of orthogonalize_with_Q
-
-
-
+// Lapack is necessary here beccause of QR_ traits coming from Lapack
 impl <'a, F > RangeApprox<'a, F> 
-     where  F : Float + Scalar  + ndarray::ScalarOperand {
+     where  F : Float + Scalar  + Lapack + ndarray::ScalarOperand {
 
     pub fn new(data : &'a Array2<F>) -> Self {
         RangeApprox{data} 
@@ -231,13 +204,18 @@ impl <'a, F > RangeApprox<'a, F>
 
     /// Algorithm 4.4 from Tropp
     /// This algorith returns a (m,l) matrix approximation the range of input, q is a number of iterations
-    fn randomized_subspace_iteration(&self, l:usize, q : usize)  {
+    fn randomized_subspace_iteration(&self, l : usize, nbiter : usize)  {
         let mut rng = RandomGaussianGenerator::<F>::new();
         let data_shape = self.data.shape();
         let m = data_shape[0];
+        assert!(m >= l);
         let omega = rng.generate_matrix(Dim([data_shape[1], l]));
-        let q = self.data.dot(&omega.mat);
+        let mut y = self.data.dot(&omega.mat);   // y is a (m,l) matrix
+        let layout = MatrixLayout::C { row: m as i32, lda: l as i32 };
+        let mut tau = Vec::<F>::with_capacity(l);
         // do first QR decomposition of q and overwrite it
+        F::q(layout, y.as_slice_mut().unwrap(), &tau);
+        // loop Y = t(A)*Q , Y = Q*R, Y = A*Q and Y = Q*R -> Q
     }
 
 }  // end of impl RangeApprox
@@ -256,8 +234,8 @@ fn check_range_finder<F:Float+ Scalar> (a_mat : &ArrayView2<F>, q_mat: &ArrayVie
 pub struct SvdApprox<'a, F: Scalar> {
     /// matrix we want to approximate range of. We s
     data : &'a Array2<F>,
-    u : Option<Array2<F>>,
     s : Option<Array1<F>>,
+    u : Option<Array2<F>>,
     vt : Option<Array2<F>>
 } // end of struct SvdApprox
 
@@ -282,8 +260,8 @@ impl <'a, F> SvdApprox<'a, F>
             println!("direct_svd Matrix cannot be transformed into a slice : not contiguous or not in standard order");
             return Err(String::from("not contiguous or not in standard order"));
         }
-        let res_svd = F::svddc(layout, UVTFlag::Some, slice_for_svd_opt.unwrap());
-        if res_svd.is_err()  {
+        let res_svd_b = F::svddc(layout,  UVTFlag::Some, slice_for_svd_opt.unwrap());
+        if res_svd_b.is_err()  {
             println!("direct_svd, svddc failed");
         };
         // we have to decode res and fill in SvdApprox fields.
@@ -291,12 +269,116 @@ impl <'a, F> SvdApprox<'a, F>
         // We must reconstruct Array2 from slices.
         // now we must match results
         // u is (m,r) , vt must be (r, n) with m = self.data.shape()[0]  and n = self.data.shape()[1]
-
+        let res_svd_b = res_svd_b.unwrap();
+        let r = res_svd_b.s.len();
+        let m = b.shape()[0];
+        let n = b.shape()[1];
+        if let Some(u_vec) = res_svd_b.u {
+            let u_1 = Array::from_shape_vec((m, r), u_vec).unwrap();
+            self.u = Some(q.dot(&u_1));
+        }
+        if let Some(vt_vec) = res_svd_b.vt {
+            self.vt = Some(Array::from_shape_vec((r, n), vt_vec).unwrap());
+        }
         //
         Ok(1)
     } // end of do_svd
 
 } // end of block impl for SvdApprox
+
+
+
+//================ utilities ===========================//
+
+
+
+/// compute L2-norm of an array
+#[inline]
+pub fn norm_l2<D:Dimension, F:Scalar>(v : &ArrayView<F, D>) -> F {
+    let s : F = v.into_iter().map(|x| (*x)*(*x)).sum::<F>();
+    s.sqrt()
+}
+
+
+/// return  y - projection of y on space spanned by q's vectors.
+fn orthogonalize_with_q<F:Scalar + ndarray::ScalarOperand >(q: &[Array1<F>], y: &mut ArrayViewMut1<F>) {
+    let nb_q = q.len();
+    if nb_q == 0 {
+        return;
+    }
+    let size_d = y.len();
+    // check dimension coherence between Q and y
+    assert_eq!(q[nb_q - 1].len(),size_d);
+    //
+    let mut proj_qy = Array1::<F>::zeros(size_d);
+    for i in 0..nb_q {
+        proj_qy  += &(&q[i] * q[i].dot(y));
+    }
+    *y -= &proj_qy;
+}  // end of orthogonalize_with_Q
+
+
+// do qr decomposition (calling Lax q function) of mat (m, n) which must be in C order
+// tau is preallocated  to size n, rank found is returned in rank.
+//
+fn do_qr<F> (layout : MatrixLayout, mat : &mut Array2<F>, rank : &usize)  -> Array2::<F>
+    where F : Float + Lapack + Scalar + QR_ + ndarray::ScalarOperand 
+{
+    
+    let (m, n) = match layout {
+        MatrixLayout::C { row, lda } => (row as usize , lda as usize),
+        _ => panic!()
+    };
+    //
+    let k = m.min(n) as usize;
+    let mut tau = Vec::<F>::with_capacity(k as usize);
+    // do first QR decomposition of q and overwrite it
+    F::q(layout, mat.as_slice_mut().unwrap(), &tau);
+    let mut q = Array2::<F>::zeros((m as usize,m as usize));
+    let mut v = Array1::<F>::zeros(m as usize);
+    // reconstruct H1
+    let mut t_k = F::one();
+    v[0] = F::one();
+    let mut q = Array2::<F>::from_shape_fn((m as usize,m as usize), 
+                    |(i,j)| if i== j { F::one() - t_k * v[i] * v[j]}  else { t_k * v[i] * v[j] }
+                 );
+    
+    //
+    let mut s_k = Array1::<F>::zeros(m);
+    let mut q_tmp = Array2::<F>::zeros([m,m]);
+    //
+    for j in 1..k {
+        if tau[j] != F::zero() {
+//            let mut q_tmp = Array2::<F>::zeros([m,m]);
+            // reinitialize t_k
+            t_k = tau[k];
+            // reinitialize v
+            for i in 0..m {
+                if i < k {
+                    v[k] =  F::zero();
+                }
+                else if  i > k {
+                    v[k] =  mat[[i,k]];
+                }
+                else {
+                    v[k] = F::one();
+                }
+            }
+ //           (0..m).into_iter().map(|i| v[k] =  if i < k { F::zero() } else if i > k { mat[[i,k]]} else { F::one() });
+            // reinitialize q_tmp
+            let mut q_tmp = Array2::<F>::zeros([m,m]);
+            for i in 0..m {
+                for j in 0..m {
+                    (q_tmp[[i,j]]) = if i== j { F::one() - t_k * v[i] * v[j]}  else { t_k * v[i] * v[j] }
+                }
+            }
+            q = &q_tmp - t_k * v.dot(&(q_tmp.t()).dot(&v).t());
+        }
+    }
+    q
+} // end of do_qr
+
+
 
 //=========================================================================
 
