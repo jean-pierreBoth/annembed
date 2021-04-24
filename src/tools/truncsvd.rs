@@ -204,24 +204,37 @@ impl <'a, F > RangeApprox<'a, F>
 
     /// Algorithm 4.4 from Tropp
     /// This algorith returns a (m,l) matrix approximation the range of input, q is a number of iterations
-    fn randomized_subspace_iteration(&self, l : usize, nbiter : usize)  {
+    fn randomized_subspace_iteration(&self, l : usize, nbiter : usize) -> Array2<F> {
         let mut rng = RandomGaussianGenerator::<F>::new();
         let data_shape = self.data.shape();
         let m = data_shape[0];
+        let n = data_shape[1];
         assert!(m >= l);
         let omega = rng.generate_matrix(Dim([data_shape[1], l]));
-        let mut y = self.data.dot(&omega.mat);   // y is a (m,l) matrix
+        let mut y_m_l = self.data.dot(&omega.mat);   // y is a (m,l) matrix
+        let mut y_n_l = Array2::<F>::zeros((n,l));
         let layout = MatrixLayout::C { row: m as i32, lda: l as i32 };
-        let mut tau = Vec::<F>::with_capacity(l);
-        // do first QR decomposition of q and overwrite it
-        F::q(layout, y.as_slice_mut().unwrap(), &tau);
-        // loop Y = t(A)*Q , Y = Q*R, Y = A*Q and Y = Q*R -> Q
-    }
+        // do first QR decomposition of y and overwrite it
+        do_qr(layout, &mut y_m_l);
+        for _j in 1..nbiter {
+            // data.t() * y
+            ndarray::linalg::general_mat_mul(F::one() , &self.data.t(), &y_m_l, F::zero(), &mut y_n_l);
+            // qr returns a (n,n)
+            do_qr(MatrixLayout::C {row : y_n_l.shape()[0] as i32 ,  lda : y_n_l.shape()[1] as i32}, &mut y_n_l);
+            // data * y_n_l  -> (m,l)
+            ndarray::linalg::general_mat_mul(F::one() , &self.data, &y_n_l, F::zero(), &mut y_m_l);
+            y_m_l = self.data.dot(&mut y_n_l);        //  (m,n)*(n,l) = (m,l)
+            // qr of y * data
+            do_qr(MatrixLayout::C {row : y_m_l.shape()[0] as i32 ,  lda : y_m_l.shape()[1] as i32}, &mut y_m_l);
+        }
+        // 
+        y_m_l
+    }  // end of randomized_subspace_iteration
 
 }  // end of impl RangeApprox
 
 
-fn check_range_finder<F:Float+ Scalar> (a_mat : &ArrayView2<F>, q_mat: &ArrayView2<F>) -> F {
+fn check_range_approx<F:Float+ Scalar> (a_mat : &ArrayView2<F>, q_mat: &ArrayView2<F>) -> F {
     let residue = a_mat - q_mat.dot(&q_mat.t()).dot(a_mat);
     let norm_residue = norm_l2(&residue.view());
     norm_residue
@@ -319,51 +332,17 @@ fn orthogonalize_with_q<F:Scalar + ndarray::ScalarOperand >(q: &[Array1<F>], y: 
 
 
 // do qr decomposition (calling Lax q function) of mat (m, n) which must be in C order
-// tau is preallocated  to size n, rank found is returned in rank.
+// The purpose of this function is just to avoid the R allocation in Lax qr 
 //
-fn do_qr<F> (layout : MatrixLayout, mat : &mut Array2<F>, rank : &usize)  -> Array2::<F>
+fn do_qr<F> (layout : MatrixLayout, mat : &mut Array2<F>)
     where F : Float + Lapack + Scalar + QR_ + ndarray::ScalarOperand 
 {
-    
-    let (m, n) = match layout {
+    let (_, _) = match layout {
         MatrixLayout::C { row, lda } => (row as usize , lda as usize),
         _ => panic!()
     };
-    //
-    let k = m.min(n) as usize;
-    let mut tau = Vec::<F>::with_capacity(k as usize);
-    // do first QR decomposition of q and overwrite it
+    let tau = F::householder(layout, mat.as_slice_mut().unwrap()).unwrap();
     F::q(layout, mat.as_slice_mut().unwrap(), &tau).unwrap();
-    let mut v = Array1::<F>::zeros(m as usize);
-    // reconstruct H1
-    let mut t_k = F::one();
-    v[0] = F::one();
-    let mut q = Array2::<F>::from_shape_fn((m as usize,m as usize), 
-                    |(i,j)| if i== j { F::one() - t_k * v[i] * v[j]}  else { t_k * v[i] * v[j] }
-                 );
-    
-    //
-    let mut q_tmp = Array2::<F>::zeros([m,m]);
-    //
-    for j in 1..k {
-        if tau[j] != F::zero() {
-            // reinitialize t_k
-            t_k = tau[j];
-            // reinitialize v
-            for i in 0..m {
-                if i < k {  v[k] =  F::zero(); } else if i > k {  v[k] =  mat[[i,k]]; }  else { v[k] = F::one(); }
-            }
-//            (0..m).into_iter().zip(v.iter_mut()).for_each(|(i,x)| *x =  if i < k { F::zero() } else if i > k { mat[[i,k]]} else { F::one() });
-            // reinitialize q_tmp
-            for i in 0..m {
-                for j in 0..m {
-                    (q_tmp[[i,j]]) = if i== j { F::one() - t_k * v[i] * v[j]}  else { t_k * v[i] * v[j] }
-                }
-            }
-            q = &q + &q_tmp - t_k * v.dot(&(q_tmp.t()).dot(&v).t());
-        }
-    }
-    q
 } // end of do_qr
 
 
@@ -399,7 +378,7 @@ fn log_init_test() {
         let data = RandomGaussianGenerator::<f64>::new().generate_matrix(Dim([6,50]));
         let range_approx = RangeApprox::new(&data.mat);
         let q = range_approx.adaptative_randomized_range_finder(0.05, 5);
-        let residue = check_range_finder(&data.mat.view(), &q.view());
+        let residue = check_range_approx(&data.mat.view(), &q.view());
         log::debug!(" residue {:3.e} ", residue);
     } // end of test_range_approx_1
 
@@ -410,7 +389,7 @@ fn log_init_test() {
         let data = RandomGaussianGenerator::<f32>::new().generate_matrix(Dim([50,500]));
         let range_approx = RangeApprox::new(&data.mat);
         let q = range_approx.adaptative_randomized_range_finder(0.05, 5);
-        let residue = check_range_finder(&data.mat.view(), &q.view());
+        let residue = check_range_approx(&data.mat.view(), &q.view());
         log::debug!(" residue {:3.e} ", residue);
     } // end of test_range_approx_1
 
