@@ -333,8 +333,7 @@ fn do_qr<F> (layout : MatrixLayout, mat : &mut Array2<F>, rank : &usize)  -> Arr
     let k = m.min(n) as usize;
     let mut tau = Vec::<F>::with_capacity(k as usize);
     // do first QR decomposition of q and overwrite it
-    F::q(layout, mat.as_slice_mut().unwrap(), &tau);
-    let mut q = Array2::<F>::zeros((m as usize,m as usize));
+    F::q(layout, mat.as_slice_mut().unwrap(), &tau).unwrap();
     let mut v = Array1::<F>::zeros(m as usize);
     // reconstruct H1
     let mut t_k = F::one();
@@ -344,35 +343,24 @@ fn do_qr<F> (layout : MatrixLayout, mat : &mut Array2<F>, rank : &usize)  -> Arr
                  );
     
     //
-    let mut s_k = Array1::<F>::zeros(m);
     let mut q_tmp = Array2::<F>::zeros([m,m]);
     //
     for j in 1..k {
         if tau[j] != F::zero() {
-//            let mut q_tmp = Array2::<F>::zeros([m,m]);
             // reinitialize t_k
-            t_k = tau[k];
+            t_k = tau[j];
             // reinitialize v
             for i in 0..m {
-                if i < k {
-                    v[k] =  F::zero();
-                }
-                else if  i > k {
-                    v[k] =  mat[[i,k]];
-                }
-                else {
-                    v[k] = F::one();
-                }
+                if i < k {  v[k] =  F::zero(); } else if i > k {  v[k] =  mat[[i,k]]; }  else { v[k] = F::one(); }
             }
- //           (0..m).into_iter().map(|i| v[k] =  if i < k { F::zero() } else if i > k { mat[[i,k]]} else { F::one() });
+//            (0..m).into_iter().zip(v.iter_mut()).for_each(|(i,x)| *x =  if i < k { F::zero() } else if i > k { mat[[i,k]]} else { F::one() });
             // reinitialize q_tmp
-            let mut q_tmp = Array2::<F>::zeros([m,m]);
             for i in 0..m {
                 for j in 0..m {
                     (q_tmp[[i,j]]) = if i== j { F::one() - t_k * v[i] * v[j]}  else { t_k * v[i] * v[j] }
                 }
             }
-            q = &q_tmp - t_k * v.dot(&(q_tmp.t()).dot(&v).t());
+            q = &q + &q_tmp - t_k * v.dot(&(q_tmp.t()).dot(&v).t());
         }
     }
     q
