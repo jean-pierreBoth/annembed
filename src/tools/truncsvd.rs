@@ -1,14 +1,22 @@
-//! This module implements a randomized truncated svd
-//! by multiplication by random orthogonal matrix and Q.R decomposition
+//! This module implements a randomized truncated svd of a (m,n) matrix.
 //! 
-//! We are given a matrix A of dimension (m,n) and we want a matrix Q of size(m, rank)
-//! We compute a gaussian matrix such that || (I - Q * Qt) * A || < epsil
-
-//! Halko-Tropp Probabilistic Algorithms For Approximate Matrix Decomposition 2011 P 242-245
+//! It builds upon the search an orthogonal matrix Q of reduced rank such that 
+//!  || (I - Q * Qt) * A || < epsil.
+//!
+//! The reduced rank Q can be found using 2 algorithms described in 
+//! Halko-Tropp Probabilistic Algorithms For Approximate Matrix Decomposition 2011
+//! 
+//!
+//! - The Adaptive Randomized Range Finder (Algo 4.2 of f Tropp-Halko, P 242-244)
+//!     This methods stops iterations when a precision criteria has been reached.
+//! 
+//! - The Randomized Subspace Iteration (Algo 4.4  of Tropp-Halko P244)
+//!     This methods asks for a specific output and is more adapted for slow decaying spectrum.
+//!
 //! See also Mahoney Lectures notes on randomized linearAlgebra 2016. P 149-150
 //! We use gaussian matrix (instead SRTF as in the Ann context we have a small rank)
 //! 
-//! the type F must verify F : Float + FromPrimitive + Scalar + ndarray::ScalarOperand
+//! the type F must verify F : Float + FromPrimitive + Scalar + ndarray::ScalarOperand + Lapack
 //! so it is f32 or f64
 
 // Float provides PartialOrd which is not in Scalar.
@@ -204,12 +212,14 @@ impl <'a, F > RangeApprox<'a, F>
 
     /// Algorithm 4.4 from Tropp
     /// This algorith returns a (m,l) matrix approximation the range of input, q is a number of iterations
-    fn randomized_subspace_iteration(&self, l : usize, nbiter : usize) -> Array2<F> {
+    fn randomized_subspace_iteration(&self, rank : usize, nbiter : usize) -> Array2<F> {
         let mut rng = RandomGaussianGenerator::<F>::new();
         let data_shape = self.data.shape();
         let m = data_shape[0];
         let n = data_shape[1];
-        assert!(m >= l);
+        let l = m.min(n).min(rank);
+        log::info!("reducing asked rank in randomized_subspace_iteration to {}", l);
+        //
         let omega = rng.generate_matrix(Dim([data_shape[1], l]));
         let mut y_m_l = self.data.dot(&omega.mat);   // y is a (m,l) matrix
         let mut y_n_l = Array2::<F>::zeros((n,l));
@@ -259,7 +269,24 @@ impl <'a, F> SvdApprox<'a, F>
     fn new(data : &'a Array2<F>) -> Self {
         SvdApprox{data, u : None, s : None, vt :None}
     }
- 
+
+    /// returns Sigma
+    #[inline]
+    fn get_sigma(&self) -> &Option<Array1<F>> {
+        &self.s
+    }
+
+    /// returns U
+    #[inline]
+    fn get_u(&self) -> &Option<Array2<F>> {
+        &self.u
+    }
+
+    /// returns Vt
+    #[inline]
+    fn get_vt(&self) -> &Option<Array2<F>> {
+        &self.vt
+    }
     // direct svd from Algo 5.1 of Halko-Tropp
     fn direct_svd(&mut self, order : usize) -> Result<usize, String> {
         let ra = RangeApprox::new(self.data);
@@ -372,26 +399,81 @@ fn log_init_test() {
     } // end of test_arrayview_mut
 
     #[test]
-    fn test_range_approx_1() {
+    fn test_range_approx_randomized_1() {
         log_init_test();
         //
         let data = RandomGaussianGenerator::<f64>::new().generate_matrix(Dim([6,50]));
         let range_approx = RangeApprox::new(&data.mat);
         let q = range_approx.adaptative_randomized_range_finder(0.05, 5);
+        log::debug!(" q(m,n) {} {} ", q.shape()[0], q.shape()[1]);
         let residue = check_range_approx(&data.mat.view(), &q.view());
-        log::debug!(" residue {:3.e} ", residue);
+        log::debug!(" residue {:3.e} \n", residue);
     } // end of test_range_approx_1
 
     #[test]
-    fn test_range_approx_2() {
+    fn test_range_approx_randomized_2() {
         log_init_test();
         //
         let data = RandomGaussianGenerator::<f32>::new().generate_matrix(Dim([50,500]));
         let range_approx = RangeApprox::new(&data.mat);
         let q = range_approx.adaptative_randomized_range_finder(0.05, 5);
+        //
+        log::debug!(" q(m,n) {} {} ", q.shape()[0], q.shape()[1]);
         let residue = check_range_approx(&data.mat.view(), &q.view());
-        log::debug!(" residue {:3.e} ", residue);
+        log::debug!(" residue {:3.e} \n", residue);
     } // end of test_range_approx_1
+
+
+    #[test]
+    fn test_range_approx_subspace_iteration_1() {
+        log_init_test();
+        //
+        let data = RandomGaussianGenerator::<f64>::new().generate_matrix(Dim([6,50]));
+        let range_approx = RangeApprox::new(&data.mat);
+        let q = range_approx.randomized_subspace_iteration(6, 5); // args are rank , nbiter
+        let residue = check_range_approx(&data.mat.view(), &q.view());
+        log::debug!(" randomized_subspace_iteration residue {:3.e} \n ", residue);
+    } // end of test_range_approx_subspace_iteration_1
+
+    #[test]
+    fn test_range_approx_subspace_iteration_2() {
+        log_init_test();
+        //
+        let data = RandomGaussianGenerator::<f64>::new().generate_matrix(Dim([50,500]));
+        let range_approx = RangeApprox::new(&data.mat);
+        let q = range_approx.randomized_subspace_iteration(6, 5);
+        let residue = check_range_approx(&data.mat.view(), &q.view());
+        log::debug!(" randomized_subspace_iteration residue {:3.e} \n", residue);
+    } // end of test_range_approx_subspace_iteration_2
+
+    // TODO test with m >> n 
+    
+    //      teest for svd
+
+
+#[test]
+fn test_svd_wiki () {
+    //
+    log::info!("\n\n test_svd_wiki");
+    // matrix taken from wikipedia (4,5)
+    let mat =  ndarray::arr2( & 
+      [[ 1. , 0. , 0. , 0., 2. ],  // row 0
+      [ 0. , 0. , 3. , 0. , 0. ],  // row 1
+      [ 0. , 0. , 0. , 0. , 0. ],  // row 2
+      [ 0. , 2. , 0. , 0. , 0. ]]  // row 3
+    );
+    //
+    let mut svdapprox = SvdApprox::new(&mat);
+    let res = svdapprox.direct_svd(4);
+    assert!(res.is_ok());
+    assert!(svdapprox.get_sigma().is_some());
+    //
+    let sigma = ndarray::arr1(&[ 3., (5f64).sqrt() , 2. , 0. ]);
+    if svdapprox.get_sigma().is_some() {
+        assert_eq!(svdapprox.get_sigma().as_ref().unwrap(), sigma);
+    }
+} // end of test_svd_wiki
+
 
 
 }  // end of module test
