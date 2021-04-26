@@ -19,7 +19,12 @@
 //! the type F must verify F : Float + FromPrimitive + Scalar + ndarray::ScalarOperand + Lapack
 //! so it is f32 or f64
 
-// Float provides PartialOrd which is not in Scalar.
+// num_traits::float::Float : Num + Copy + NumCast + PartialOrd + Neg<Output = Self>,  PartialOrd which is not in Scalar.
+//     and nan() etc
+
+// num_traits::Real : Num + Copy + NumCast + PartialOrd + Neg<Output = Self>
+// as float but without nan() infinite() 
+
 // ndarray::ScalarOperand provides array * F
 // ndarray_linalg::Scalar provides Exp notation + Display + Debug + Serialize and sum on iterators
 
@@ -42,6 +47,7 @@ use lax::{layout::MatrixLayout, UVTFlag, QR_};
 use std::marker::PhantomData;
 
 use num_traits::float::*;    // tp get FRAC_1_PI from FloatConst
+use num_traits::real::Real;
 use num_traits::cast::FromPrimitive;
 
 
@@ -313,6 +319,10 @@ impl <'a, F> SvdApprox<'a, F>
         let r = res_svd_b.s.len();
         let m = b.shape()[0];
         let n = b.shape()[1];
+        // must convert from Real to Float ...
+        let s : Array1<F> = res_svd_b.s.iter().map(|x| F::from(*x).unwrap()).collect::<Array1<F>>();
+        self.s = Some(s);
+        //
         if let Some(u_vec) = res_svd_b.u {
             let u_1 = Array::from_shape_vec((m, r), u_vec).unwrap();
             self.u = Some(q.dot(&u_1));
@@ -390,6 +400,7 @@ fn log_init_test() {
 
 #[test]
     fn test_arrayview_mut() {
+        log_init_test();
         let mut array = ndarray::array![[1, 2], [3, 4]];
         let to_add =  ndarray::array![1, 1];
         let mut row_mut = array.row_mut(0);
@@ -454,6 +465,8 @@ fn log_init_test() {
 #[test]
 fn test_svd_wiki () {
     //
+    log_init_test();
+    //
     log::info!("\n\n test_svd_wiki");
     // matrix taken from wikipedia (4,5)
     let mat =  ndarray::arr2( & 
@@ -468,9 +481,15 @@ fn test_svd_wiki () {
     assert!(res.is_ok());
     assert!(svdapprox.get_sigma().is_some());
     //
-    let sigma = ndarray::arr1(&[ 3., (5f64).sqrt() , 2. , 0. ]);
-    if svdapprox.get_sigma().is_some() {
-        assert_eq!(svdapprox.get_sigma().as_ref().unwrap(), sigma);
+    let sigma = ndarray::arr1(&[ 3., (5f64).sqrt() , 2.]);
+    if let Some(computed_s) = svdapprox.get_sigma() {
+        assert_eq!(sigma.len(), computed_s.len());
+        for i in 0..sigma.len() {
+            assert!( ((1. - computed_s[i]/sigma[i]).abs() as f32) < f32::EPSILON);
+        }
+    }
+    else {
+        std::panic!("test_svd_wiki");
     }
 } // end of test_svd_wiki
 
