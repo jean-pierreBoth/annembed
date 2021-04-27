@@ -104,8 +104,6 @@ impl <F:Float+FromPrimitive> RandomGaussianGenerator<F> {
 
 /// We can ask for a range approximation of matrix on two modes:
 /// - asking for precision 
-/// - asking for a rank 
-
 pub struct RangePrecision {
     /// precision asked for. Froebonius norm of the residual
     epsil :f64,
@@ -114,6 +112,8 @@ pub struct RangePrecision {
 }
 
 
+/// We can ask for a range approximation of matrix on two modes:
+/// - asking for a rank 
 pub struct RangeRank {
     /// asked rank
     rank : usize,
