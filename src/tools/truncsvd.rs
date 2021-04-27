@@ -47,7 +47,6 @@ use lax::{layout::MatrixLayout, UVTFlag, QR_};
 use std::marker::PhantomData;
 
 use num_traits::float::*;    // tp get FRAC_1_PI from FloatConst
-use num_traits::real::Real;
 use num_traits::cast::FromPrimitive;
 
 
@@ -103,6 +102,33 @@ impl <F:Float+FromPrimitive> RandomGaussianGenerator<F> {
 }  // end of impl RandomGaussianGenerator
 
 
+/// We can ask for a range approximation of matrix on two modes:
+/// - asking for precision 
+/// - asking for a rank 
+
+pub struct RangePrecision {
+    /// precision asked for. Froebonius norm of the residual
+    epsil :f64,
+    /// increment step for the number of base vector of the range matrix  5 to 10  is a good range 
+    step : usize,
+}
+
+
+pub struct RangeRank {
+    /// asked rank
+    rank : usize,
+    /// number of QR decomposition
+    nbiter : usize
+}
+
+
+
+pub enum RangeApproxMode {
+    EPSIL(RangePrecision),
+    RANK(RangeRank),
+} /// end of RangeApproxMode
+
+
 // Recall that ndArray is C-order row order.
 /// compute an approximate truncated svf
 /// The data matrix is supposed given as a (m,n) matrix. m is the number of data and n their dimension.
@@ -136,7 +162,7 @@ impl <'a, F > RangeApprox<'a, F>
     //
     /// Returns a matrix Q such that || data - Q*t(Q)*data || < epsil
     /// Adaptive Randomized Range Finder algo 4.2. from Halko-Tropp
-    fn adaptative_randomized_range_finder(&self, epsil:f64, r : usize) -> Array2<F> {
+    fn adaptative_range_finder(&self, epsil:f64, r : usize) -> Array2<F> {
         let mut rng = RandomGaussianGenerator::new();
         let data_shape = self.data.shape();
         let m = data_shape[0];
@@ -218,13 +244,13 @@ impl <'a, F > RangeApprox<'a, F>
 
     /// Algorithm 4.4 from Tropp
     /// This algorith returns a (m,l) matrix approximation the range of input, q is a number of iterations
-    fn randomized_subspace_iteration(&self, rank : usize, nbiter : usize) -> Array2<F> {
+    fn subspace_iteration(&self, rank : usize, nbiter : usize) -> Array2<F> {
         let mut rng = RandomGaussianGenerator::<F>::new();
         let data_shape = self.data.shape();
         let m = data_shape[0];
         let n = data_shape[1];
         let l = m.min(n).min(rank);
-        log::info!("reducing asked rank in randomized_subspace_iteration to {}", l);
+        log::info!("reducing asked rank in subspace_iteration to {}", l);
         //
         let omega = rng.generate_matrix(Dim([data_shape[1], l]));
         let mut y_m_l = self.data.dot(&omega.mat);   // y is a (m,l) matrix
@@ -245,7 +271,7 @@ impl <'a, F > RangeApprox<'a, F>
         }
         // 
         y_m_l
-    }  // end of randomized_subspace_iteration
+    }  // end of subspace_iteration
 
 }  // end of impl RangeApprox
 
@@ -259,7 +285,9 @@ fn check_range_approx<F:Float+ Scalar> (a_mat : &ArrayView2<F>, q_mat: &ArrayVie
 
 //================================ SVD part ===============================
 
-
+/// Approximated svd.
+/// The first step is to find a range approximation of the matrix.
+/// This step can be done by asking for a required precision or a minimum rank. 
 pub struct SvdApprox<'a, F: Scalar> {
     /// matrix we want to approximate range of. We s
     data : &'a Array2<F>,
@@ -294,10 +322,18 @@ impl <'a, F> SvdApprox<'a, F>
         &self.vt
     }
     // direct svd from Algo 5.1 of Halko-Tropp
-    fn direct_svd(&mut self, order : usize) -> Result<usize, String> {
+    fn direct_svd(&mut self, parameters : RangeApproxMode) -> Result<usize, String> {
         let ra = RangeApprox::new(self.data);
-        // CAVEAT parameters to adjusted
-        let q = ra.adaptative_randomized_range_finder(0.2, order + 10);
+        let q;
+        match  parameters {
+            RangeApproxMode::EPSIL(precision) => {
+                q = ra.adaptative_range_finder(precision.epsil, precision.step);
+            }
+            RangeApproxMode::RANK(rankmode) => {
+                q = ra.subspace_iteration(rankmode.rank, rankmode.nbiter);
+            }
+        }
+        //
         let mut b = q.t().dot(self.data);
         //
         let layout = MatrixLayout::C { row: b.shape()[0] as i32, lda: b.shape()[1] as i32 };
@@ -415,7 +451,7 @@ fn log_init_test() {
         //
         let data = RandomGaussianGenerator::<f64>::new().generate_matrix(Dim([6,50]));
         let range_approx = RangeApprox::new(&data.mat);
-        let q = range_approx.adaptative_randomized_range_finder(0.05, 5);
+        let q = range_approx.adaptative_range_finder(0.05, 5);
         log::debug!(" q(m,n) {} {} ", q.shape()[0], q.shape()[1]);
         let residue = check_range_approx(&data.mat.view(), &q.view());
         log::debug!(" residue {:3.e} \n", residue);
@@ -427,7 +463,7 @@ fn log_init_test() {
         //
         let data = RandomGaussianGenerator::<f32>::new().generate_matrix(Dim([50,500]));
         let range_approx = RangeApprox::new(&data.mat);
-        let q = range_approx.adaptative_randomized_range_finder(0.05, 5);
+        let q = range_approx.adaptative_range_finder(0.05, 5);
         //
         log::debug!(" q(m,n) {} {} ", q.shape()[0], q.shape()[1]);
         let residue = check_range_approx(&data.mat.view(), &q.view());
@@ -441,9 +477,9 @@ fn log_init_test() {
         //
         let data = RandomGaussianGenerator::<f64>::new().generate_matrix(Dim([6,50]));
         let range_approx = RangeApprox::new(&data.mat);
-        let q = range_approx.randomized_subspace_iteration(6, 5); // args are rank , nbiter
+        let q = range_approx.subspace_iteration(6, 5); // args are rank , nbiter
         let residue = check_range_approx(&data.mat.view(), &q.view());
-        log::debug!(" randomized_subspace_iteration residue {:3.e} \n ", residue);
+        log::debug!(" subspace_iteration residue {:3.e} \n ", residue);
     } // end of test_range_approx_subspace_iteration_1
 
     #[test]
@@ -452,9 +488,9 @@ fn log_init_test() {
         //
         let data = RandomGaussianGenerator::<f64>::new().generate_matrix(Dim([50,500]));
         let range_approx = RangeApprox::new(&data.mat);
-        let q = range_approx.randomized_subspace_iteration(6, 5);
+        let q = range_approx.subspace_iteration(6, 5);
         let residue = check_range_approx(&data.mat.view(), &q.view());
-        log::debug!(" randomized_subspace_iteration residue {:3.e} \n", residue);
+        log::debug!(" subspace_iteration residue {:3.e} \n", residue);
     } // end of test_range_approx_subspace_iteration_2
 
     // TODO test with m >> n 
@@ -463,7 +499,7 @@ fn log_init_test() {
 
 
 #[test]
-fn test_svd_wiki () {
+fn test_svd_wiki_rank () {
     //
     log_init_test();
     //
@@ -477,7 +513,8 @@ fn test_svd_wiki () {
     );
     //
     let mut svdapprox = SvdApprox::new(&mat);
-    let res = svdapprox.direct_svd(4);
+    let svdmode = RangeApproxMode::RANK(RangeRank{rank:4, nbiter:5});
+    let res = svdapprox.direct_svd(svdmode);
     assert!(res.is_ok());
     assert!(svdapprox.get_sigma().is_some());
     //
@@ -485,6 +522,41 @@ fn test_svd_wiki () {
     if let Some(computed_s) = svdapprox.get_sigma() {
         assert_eq!(sigma.len(), computed_s.len());
         for i in 0..sigma.len() {
+            assert!( ((1. - computed_s[i]/sigma[i]).abs() as f32) < f32::EPSILON);
+        }
+    }
+    else {
+        std::panic!("test_svd_wiki");
+    }
+} // end of test_svd_wiki
+
+
+
+#[test]
+fn test_svd_wiki_epsil () {
+    //
+    log_init_test();
+    //
+    log::info!("\n\n test_svd_wiki");
+    // matrix taken from wikipedia (4,5)
+    let mat =  ndarray::arr2( & 
+      [[ 1. , 0. , 0. , 0., 2. ],  // row 0
+      [ 0. , 0. , 3. , 0. , 0. ],  // row 1
+      [ 0. , 0. , 0. , 0. , 0. ],  // row 2
+      [ 0. , 2. , 0. , 0. , 0. ]]  // row 3
+    );
+    //
+    let mut svdapprox = SvdApprox::new(&mat);
+    let svdmode = RangeApproxMode::EPSIL(RangePrecision{epsil:0.1 , step:5});
+    let res = svdapprox.direct_svd(svdmode);
+    assert!(res.is_ok());
+    assert!(svdapprox.get_sigma().is_some());
+    //
+    let sigma = ndarray::arr1(&[ 3., (5f64).sqrt() , 2.]);
+    if let Some(computed_s) = svdapprox.get_sigma() {
+        assert_eq!(sigma.len(), computed_s.len());
+        for i in 0..sigma.len() {
+            log::trace!{"sp  i  exact : {}, computed {}", sigma[i], computed_s[i]};
             assert!( ((1. - computed_s[i]/sigma[i]).abs() as f32) < f32::EPSILON);
         }
     }
