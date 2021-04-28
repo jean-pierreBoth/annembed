@@ -32,7 +32,7 @@ impl <Ix> UnionFind<Ix>
     where Ix : PrimInt  {
 
     fn new(parent : Vec<Ix>) -> Self {
-        let rank = vec![0; parent.len()];
+        let rank = vec![1; parent.len()];
         //
         UnionFind{parent, rank}
     } // end of new
