@@ -526,7 +526,7 @@ fn test_svd_wiki_rank () {
         }
     }
     else {
-        std::panic!("test_svd_wiki");
+        std::panic!("test_svd_wiki_rank");
     }
 } // end of test_svd_wiki
 
@@ -561,7 +561,7 @@ fn test_svd_wiki_epsil () {
         }
     }
     else {
-        std::panic!("test_svd_wiki");
+        std::panic!("test_svd_wiki_epsil");
     }
 } // end of test_svd_wiki
 
