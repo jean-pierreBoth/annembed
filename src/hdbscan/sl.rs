@@ -6,6 +6,11 @@
 //! 
 //! 
 
+use num_traits::int::{PrimInt};
+
+use num_traits::float::*;    // tp get FRAC_1_PI from FloatConst
+
+
 // 1.  We get from the hnsw a list of edges for kruskal algorithm
 // 2.  Run kruskal algorithm ,  we get nodes of edge, weigth of edge and parent of nodes 
 //        - so we get at each step the id of cluster representative that unionized.

@@ -30,6 +30,11 @@ impl <F> Emmbedder<'_, F>
 
     } // end of graph_symmetrization
 
+    /// computes a generalized laplacian with weights taking into account density of points.
+    /// Veerman A Primer on Laplacian Dynamics in Directed Graphs 2020 arxiv https://arxiv.org/abs/2002.02605
+    fn graph_laplacian() {
+
+    }
     // minimize divergence between embedded and initial distribution probability
     fn entropy_optimize() {
 
