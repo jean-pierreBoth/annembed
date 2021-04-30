@@ -11,11 +11,6 @@ keywords = ["algorithms", "ann", "hdbscan single linkage", "dimension reduction"
 documentation = "https://docs.rs/annembed"
 edition= "2018"
 
-[features]
-
-# declare a feature with no dependancy to get some modulated debug print
-# to be run with cargo build --features verbose_1
-#verbose_1 = [ ]
 
 [profile.release]
 lto = true
@@ -49,11 +44,16 @@ crossbeam-channel = {version = "0.5"}
 cpu-time = {version = "1.0"}
 time = {version = "0.2"}
 
-ndarray = {version = "0.14", features=["rayon"]}
+ndarray = {version = "0.15", features=["rayon"]}
+ndarray-linalg = {version = "0.13.1"}
+lax = {version = "0.1"}
+lapacke = {version = "0.5"}
+sprs = {version = "0.10.0"}
+
 clap = {version = "2.29"}
 #  for hashing . hashbrown still needed beccause of get_key_value(&key)
 hashbrown = {version = "0.9"}
-
+indexmap = {version = "1.6"}
 # hnsw_rs =  {git = "https://gitlab.com/jpboth/hnswlib-rs.git"}
 hnsw_rs = {path = "../hnswlib-rs"}
 
@@ -62,15 +62,19 @@ rand_xoshiro = {version = "0.6"}
 rand = {version = "0.8"}
 rand_distr = {version = "0.4"}
 
-pathfinding = {version= "2.1"}
-ordered-float = {version = "2.1"}
 num-traits = {version = "0.2"}
 lazy_static = { version = "1.4"}
 # decreasing order of log for debug build : (max_level_)trace debug info warn error off
 # decreasing order of log for release build (release_max_level_)  .. idem
-#log = { version = "0.4", features = ["max_level_debug", "release_max_level_info"] }
-log = { version = "0.4"}
-env_logger = { version = "0.7"}
+log = { version = "0.4", features = ["max_level_trace", "release_max_level_info"] }
+#log = { version = "0.4"}
+env_logger = { version = "0.8"}
+
+[features]
+default = ["intel-mkl"]
+intel-mkl = ["ndarray-linalg/intel-mkl"]
+netlib = ["ndarray-linalg/netlib"]
+openblas = ["ndarray-linalg/openblas"]
 
 # from katex-doc
 [package.metadata.docs.rs]

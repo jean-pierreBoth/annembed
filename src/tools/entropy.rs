@@ -139,13 +139,7 @@ impl  <F> DiscreteProba<F>
 #[inline]
 fn near_to_1<F:Float>(f:F) -> bool {
     let one = num_traits::identities::one::<F>();
-    let val = if (f - one).abs() < Float::epsilon() {
-        true
-    }
-    else {
-        false
-    };
-    val
+    if (f - one).abs() < Float::epsilon() { true } else { false }
 }
 
 

@@ -26,7 +26,7 @@
 //! 
 
 
-mod kruksal;
+mod kruskal;
 mod sl;
 
 // 1.  We get from the hnsw a list of edges for kruskal algorithm

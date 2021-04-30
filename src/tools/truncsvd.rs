@@ -424,10 +424,9 @@ fn do_qr<F> (layout : MatrixLayout, mat : &mut Array2<F>)
 
 mod tests {
 
+
+#[allow(unused)]
 use super::*;
-
-
-
 
 #[allow(dead_code)]
 fn log_init_test() {

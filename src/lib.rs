@@ -16,6 +16,10 @@ pub mod tools;
 
 pub mod fromhnsw;
 
+pub mod hdbscan;
+
+pub mod embedder;
+
 
 lazy_static! {
     #[allow(dead_code)]
@@ -27,7 +31,7 @@ lazy_static! {
 
 // install a logger facility
 fn init_log() -> u64 {
-    env_logger::try_init().unwrap();
+    let _res = env_logger::try_init();
     println!("\n ************** initializing logger *****************\n");    
     return 1;
 }
@@ -38,6 +42,6 @@ mod tests {
     #[test]
     // initialize once log system for tests.
     fn init_log() {
-        env_logger::try_init().unwrap();
+        let _res = env_logger::try_init().unwrap();
     }
 }  // end of tests

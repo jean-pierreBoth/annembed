@@ -14,9 +14,8 @@ use std::hash::Hash;
 use std::mem;
 
 use num_traits::int::{PrimInt};
-use num_traits::{cast::*};
 
-
+//use num_traits::cast::NumCast;
 
 
 // Our UnionFind is amix between those in petgraph and in pathfinding crates
@@ -39,9 +38,9 @@ impl <Ix> UnionFind<Ix>
 
 
     fn find(&mut self, mut node : Ix) -> Ix {
-        while self.parent[cast::<Ix,usize>(node).unwrap()] != node {
-            self.parent[cast::<Ix, usize>(node).unwrap()] = self.parent[cast::<Ix,usize>(self.parent[cast::<Ix, usize>(node).unwrap()]).unwrap()];
-            node = self.parent[cast::<Ix, usize>(node).unwrap()];
+        while self.parent[Ix::to_usize(&node).unwrap()] != node {
+            self.parent[Ix::to_usize(&node).unwrap()] = self.parent[Ix::to_usize(&self.parent[Ix::to_usize(&node).unwrap()]).unwrap()];
+            node = self.parent[Ix::to_usize(&node).unwrap()];
         }
         node        
     }
@@ -159,7 +158,8 @@ where
 
 mod tests {
 
-    use super::*;
+#[allow(unused)]
+use super::*;
     
     
     

@@ -2,13 +2,20 @@
 
 It implements:
 
-1. Approximated randomized svd as described in Halko-Tropp
+1. Some variations about the **Umap** embedding tool (L. Mac Innes) using Renyi entropy and hierarchical representation of neighbourhood data as provided by the Hnsw algorithm.
 
-2. Hierachical clustering with Single Linkage.
+2. An implementation of the Mapper algorithm using the **Ripser** module from U. Bauer
 
-3. A Mapper implementation based in hierarchical clustering and the Topological Data Analysis tool **Ripser** from U. Bauer
+3. As a by product the crate provides an implementation of some appriximated SVD as decribed in Halko-Tropp. 
 
-4. Some variations about the **Umap** embedding tool (L. Mac Innes) using Renyi entropy and hierarchical representation of neighbourhood data as provided by the Hnsw algorithm.
+## Results
+
+### Humap
+
+### Mapper
+
+### Randomized SVD
+
 
 ## License
 
