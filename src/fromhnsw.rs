@@ -264,8 +264,28 @@ impl <F> KGraph<F>
     }   // end init_from_hnsw_all
 
 
+    // convert into a matrix representation for spectral embedding
+    // either a CsMat or a dense Array2 depending on maximal incoming degree 
+    fn into_matrepr(&self) {
+
+    }
 
 }  // end of impl KGraph<F>
+
+use ndarray::{Array2};
+use sprs::{CsMat};
+
+/// We can represent the graph as dense Array2 or a CompressedRow Storage matrice 
+enum GraphMatRepr<'a, F> {
+    FULL(&'a Array2<F>),
+    CSR( &'a CsMat<F>),
+}
+
+
+
+
+// =============================================================================
+
 
 
 mod tests {
