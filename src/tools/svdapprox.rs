@@ -149,24 +149,25 @@ pub struct MatRepr<'a,F> {
 impl <'a,F> MatRepr<'a,F> where
     F: Float + Scalar  + Lapack + ndarray::ScalarOperand + sprs::MulAcc {
 
-    /// a common interface to get matrix dimension
-    pub fn shape(&self) -> (usize, usize) {
+    /// a common interface to get matrix dimension. returns [nbrow, nbcolumn]
+    pub fn shape(&self) -> [usize; 2] {
        match self.data {
-            MatMode::FULL(mat) =>  { return (mat.shape()[0], mat.shape()[1]); },
-            MatMode::CSR(csmat) =>  { return csmat.shape(); },
+            MatMode::FULL(mat) =>  { return [mat.shape()[0], mat.shape()[1]]; },
+            MatMode::CSR(csmat) =>  { return [csmat.shape().0, csmat.shape().0]; },
         };
     } // end of shape 
 
     /// Matrix Vector multiplication. We use raw interface to get Blas.
-    pub fn matDotVector(&self, vec : &Array1<F>) -> Array1<F>  {
+    pub fn matDotVector(&self, vec : &ArrayView<F, Ix1>) -> Array1<F>  {
         // TODO we could use the uninit allocation 
         match self.data {
             MatMode::FULL(mat) => { return mat.dot(vec);},
             MatMode::CSR(csmat) =>  {
-                    // allocate result
-                    let mut vres = Array1::<F>::zeros(self.shape().0);
-                    prod::mul_acc_mat_vec_csr(csmat.view(), vec.as_slice().unwrap(), vres.as_slice_mut().unwrap());
-                    return vres;
+                // allocate result
+                //  TODO we could use the uninit allocation 
+                let mut vres = Array1::<F>::zeros(self.shape()[0]);
+                prod::mul_acc_mat_vec_csr(csmat.view(), vec.as_slice().unwrap(), vres.as_slice_mut().unwrap());
+                return vres;
             },
         };
     } // end of matDotVector
@@ -325,24 +326,25 @@ impl <'a, F > RangeApprox<'a, F>
 
 
 
-fn adaptative_range_finder_csmat<F>(csmat : &CsMat<F>, epsil:f64, r : usize) -> Array2<F> 
+fn adaptative_range_finder_matrep<F>(mat : MatRepr<F> , epsil:f64, r : usize) -> Array2<F> 
         where F : Float + Scalar  + Lapack + ndarray::ScalarOperand + sprs::MulAcc {
     let mut rng = RandomGaussianGenerator::new();
-    let data_shape = csmat.shape();
-    let m = data_shape.0;  // nb rows
+    let data_shape = mat.shape();
+    let m = data_shape[0];  // nb rows
     // q_mat and y_mat store vector of interest as rows to take care of Rust order.
     let mut q_mat = Vec::<Array1<F>>::new();         // q_mat stores vectors of size m
     let stop_val  = epsil/(10. * (2. * f64::FRAC_1_PI()).sqrt());
     // 
     // we store omaga_i vector as row vector as Rust has C order it is easier to extract rows !!
-    let omega = rng.generate_matrix(Dim([data_shape.1, r]));    //  omega is (n, r)
+    let omega = rng.generate_matrix(Dim([data_shape[1], r]));    //  omega is (n, r)
     // We could store Y = data * omega as matrix (m,r), but as we use Y column,
     // we store Y (as Q) as a Vec of Array1<f64>
     let mut y_vec =  Vec::<Array1<F>>::with_capacity(r);
     for j in 0..r {
         let c = omega.mat.column(j);
-        let mut y_tmp = Array1::<F>::zeros(m);
-        prod::mul_acc_mat_vec_csr(csmat.view(), c.as_slice().unwrap(), y_tmp.as_slice_mut().unwrap());
+//        let mut y_tmp = Array1::<F>::zeros(m);
+//        prod::mul_acc_mat_vec_csr(csmat.view(), c.as_slice().unwrap(), y_tmp.as_slice_mut().unwrap());
+        let y_tmp = mat.matDotVector(&c);
         y_vec.push(y_tmp);
     }
     // This vectors stores L2-norm of each Y  vector of which there are r
@@ -354,7 +356,7 @@ fn adaptative_range_finder_csmat<F>(csmat : &CsMat<F>, epsil:f64, r : usize) -> 
     log::debug!(" norm_sup {} ",norm_sup_y);
     let mut j = 0;
     let mut nb_iter = 0;
-    let max_iter = data_shape.0.min(data_shape.1);
+    let max_iter = data_shape[0].min(data_shape[1]);
     //
     while norm_sup_y > &F::from_f64(stop_val).unwrap() && nb_iter <= max_iter {
         // numerical stabilization
@@ -373,9 +375,10 @@ fn adaptative_range_finder_csmat<F>(csmat : &CsMat<F>, epsil:f64, r : usize) -> 
         // we add q_j to q_mat so we consumed on y vector
         q_mat.push(q_j.clone());
         // we make another y, first we sample a new omega_j vector of size n
-        let omega_j_p1 = rng.generate_stdn_vect(Ix1(data_shape.1));
-        let mut y_j_p1 = Array1::<F>::zeros(m);
-        prod::mul_acc_mat_vec_csr(csmat.view(), omega_j_p1.as_slice().unwrap() , y_j_p1.as_slice_mut().unwrap());
+        let omega_j_p1 = rng.generate_stdn_vect(Ix1(data_shape[1]));
+//        let mut y_j_p1 = Array1::<F>::zeros(m);
+//        prod::mul_acc_mat_vec_csr(csmat.view(), omega_j_p1.as_slice().unwrap() , y_j_p1.as_slice_mut().unwrap());
+        let mut y_j_p1 = mat.matDotVector(&omega_j_p1.view());
         // we orthogonalize new y with all q's i.e q_mat
         orthogonalize_with_q(&q_mat, &mut y_j_p1.view_mut());
         // the new y will takes the place of old y at rank j%r so we always have the last r y that have been sampled
