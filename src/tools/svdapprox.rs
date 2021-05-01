@@ -128,6 +128,54 @@ pub enum RangeApproxMode {
     RANK(RangeRank),
 } /// end of RangeApproxMode
 
+//==================================================================================================
+
+
+use sprs::{CsMat};
+
+#[derive(Copy,Clone)]
+enum MatMode<'a, F> {
+    FULL(&'a Array2<F>),
+    CSR( &'a CsMat<F>),
+}
+
+/// We need a minimal Matrix structure to factor the 2 operations we need to do an approximated svd
+#[derive(Copy,Clone)]
+pub struct MatRepr<'a,F> {
+    data : MatMode<'a,F>,
+}  // end of struct MatRepr
+
+
+impl <'a,F> MatRepr<'a,F> where
+    F: Float + Scalar  + Lapack + ndarray::ScalarOperand + sprs::MulAcc {
+
+    /// a common interface to get matrix dimension
+    pub fn shape(&self) -> (usize, usize) {
+       match self.data {
+            MatMode::FULL(mat) =>  { return (mat.shape()[0], mat.shape()[1]); },
+            MatMode::CSR(csmat) =>  { return csmat.shape(); },
+        };
+    } // end of shape 
+
+    /// Matrix Vector multiplication. We use raw interface to get Blas.
+    pub fn matDotVector(&self, vec : &Array1<F>) -> Array1<F>  {
+        // TODO we could use the uninit allocation 
+        match self.data {
+            MatMode::FULL(mat) => { return mat.dot(vec);},
+            MatMode::CSR(csmat) =>  {
+                    // allocate result
+                    let mut vres = Array1::<F>::zeros(self.shape().0);
+                    prod::mul_acc_mat_vec_csr(csmat.view(), vec.as_slice().unwrap(), vres.as_slice_mut().unwrap());
+                    return vres;
+            },
+        };
+    } // end of matDotVector
+} // end of impl block for MatRepr
+
+
+//==================================================================================================
+
+
 
 // Recall that ndArray is C-order row order.
 /// compute an approximate truncated svf
@@ -276,7 +324,6 @@ impl <'a, F > RangeApprox<'a, F>
 }  // end of impl RangeApprox
 
 
-use sprs::{CsMat};
 
 fn adaptative_range_finder_csmat<F>(csmat : &CsMat<F>, epsil:f64, r : usize) -> Array2<F> 
         where F : Float + Scalar  + Lapack + ndarray::ScalarOperand + sprs::MulAcc {
@@ -296,8 +343,7 @@ fn adaptative_range_finder_csmat<F>(csmat : &CsMat<F>, epsil:f64, r : usize) -> 
         let c = omega.mat.column(j);
         let mut y_tmp = Array1::<F>::zeros(m);
         prod::mul_acc_mat_vec_csr(csmat.view(), c.as_slice().unwrap(), y_tmp.as_slice_mut().unwrap());
-//    prod::mul_acc_mat_vec_csr(csmat.view(), c.view(), y_tmp.as_slice_mut().unwrap());
-    y_vec.push(y_tmp);
+        y_vec.push(y_tmp);
     }
     // This vectors stores L2-norm of each Y  vector of which there are r
     let mut norms_y : Array1<F> = (0..r).into_iter().map( |i| norm_l2(&y_vec[i].view())).collect();
@@ -330,8 +376,6 @@ fn adaptative_range_finder_csmat<F>(csmat : &CsMat<F>, epsil:f64, r : usize) -> 
         let omega_j_p1 = rng.generate_stdn_vect(Ix1(data_shape.1));
         let mut y_j_p1 = Array1::<F>::zeros(m);
         prod::mul_acc_mat_vec_csr(csmat.view(), omega_j_p1.as_slice().unwrap() , y_j_p1.as_slice_mut().unwrap());
-
-//        let mut y_j_p1 = self.data.dot(&omega_j_p1);    // y_j_p1 is of size m 
         // we orthogonalize new y with all q's i.e q_mat
         orthogonalize_with_q(&q_mat, &mut y_j_p1.view_mut());
         // the new y will takes the place of old y at rank j%r so we always have the last r y that have been sampled
@@ -363,7 +407,7 @@ fn adaptative_range_finder_csmat<F>(csmat : &CsMat<F>, epsil:f64, r : usize) -> 
     }
     // we return an array2 where each row is a data of reduced dimension
     unsafe{ q_as_array2.assume_init()}
-} // end of adaptative_range_finder
+} // end of adaptative_range_finder_csmat
 
 
 fn check_range_approx<F:Float+ Scalar> (a_mat : &ArrayView2<F>, q_mat: &ArrayView2<F>) -> F {
