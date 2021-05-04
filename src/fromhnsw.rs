@@ -12,6 +12,8 @@ use std::fmt::*;   // for Display + Debug + LowerExp + UpperExp
 use std::cmp::Ordering;
 use num_traits::cast::FromPrimitive;
 
+use quantiles::{ckms::CKMS};     // we could use also greenwald_khanna
+
 use hnsw_rs::prelude::*;
 use hnsw_rs::hnsw::Neighbour;
 
@@ -65,7 +67,6 @@ impl <F> From<Neighbour> for OutEdge<F>
 
 //====================================================================================================
 
-use num_traits::real::Real;
 
 /// A structure to keep track of min and max distance to neighbour.
 /// We keep assume that Nan are excluded once we have reached the point we need this.
@@ -76,15 +77,19 @@ struct RangeNgbh<F:Float>(F, F);
 ///  - range of neighbourhood
 ///  - how many edges arrives in a node (in_degree)
 pub struct KGraphStat<F:Float> {
-    /// min and max negihbours for each node
+    /// min and max neighbours for each node
     ranges : Vec<RangeNgbh<F>>,
     /// incoming degrees
     in_degrees : Vec<u32>,
+    /// max incoming degree. Useful to choose between Compressed Storage Mat or dense Array
+    max_in_degree : usize,
+    /// range statistics. We assume at this step we can use f32 
+    min_radius_q : CKMS<f32>,
 }  // end of KGraphStat
 
 
 impl <F:Float> KGraphStat<F> {
-    // extract a density index on point based on max distance of k-th Neighbour
+    /// extract a density index on point defined by inverse of max distance of k-th Neighbour
     pub fn get_density_index(&self) -> Vec<F> {
         let density = self.ranges.iter().map(|x| x.1.recip()).collect();
         //
@@ -158,6 +163,7 @@ impl <F> KGraph<F>
     }  // end of insert_edge_list
 
 
+    /// 
     pub fn get_kraph_stats(&self) -> KGraphStat<F> {
         let mut in_degrees = Vec::<u32>::with_capacity(self.nbnodes);
         let mut ranges = Vec::<RangeNgbh<F>>::with_capacity(self.nbnodes);
@@ -165,31 +171,36 @@ impl <F> KGraph<F>
         let mut max_max_r = F::zero();
         let mut min_min_r = F::max_value();
         //
+        let mut quant = CKMS::<f32>::new(0.001);
+        //
         for i in 0..self.neighbours.len() {
             let min_r = self.neighbours[i][0].weight;
             let max_r = self.neighbours[i][self.neighbours[i].len()-1].weight;
+            quant.insert(F::to_f32(&min_r).unwrap());
             //
             max_max_r = max_max_r.max(max_r);
             min_min_r = min_min_r.min(min_r);
-            //
+            // compute in_degrees
             ranges.push(RangeNgbh(min_r, max_r));
             for j in 0..self.neighbours[i].len() {
                     in_degrees[self.neighbours[i][j].node] += 1;
             }
         }
         // dump some info
-        let mut max_nb = 0;
+        let mut max_in_degree = 0;
         for i in 0..in_degrees.len() {
-            max_nb = max_nb.max(in_degrees[i]);
+            max_in_degree = max_in_degree.max(in_degrees[i]);
         }
         //
         println!("\n ==========================");
         println!("\n minimal graph statistics \n");
-        println!("max in degree : {}", max_nb);
+        println!("max in degree : {}", max_in_degree);
         println!("max max range : {} ", max_max_r);
         println!("min min range : {} ", min_min_r);
+        println!("min radius quantile at 0.05 {} , 0.5 {}, 0.95 {}", 
+                    quant.query(0.05).unwrap().1, quant.query(0.5).unwrap().1, quant.query(0.95).unwrap().1);
         //
-        KGraphStat{ranges, in_degrees }
+        KGraphStat{ranges, in_degrees, max_in_degree : max_in_degree as usize, min_radius_q : quant}
     }  // end of get_kraph_stats
 
 
@@ -264,24 +275,111 @@ impl <F> KGraph<F>
     }   // end init_from_hnsw_all
 
 
-    // convert into a matrix representation for spectral embedding
-    // either a CsMat or a dense Array2 depending on maximal incoming degree 
+    // convert into neighbourhood probabilities
+    //      - We must define rescaling/thesholding/renormalization strategy around each point
+    // Store in a matrix representation with for spectral embedding
+    //      - Get maximal incoming degree and choose either a CsMat or a dense Array2. 
+    //
+    // Let x a point y_i its neighbours
+    //     after simplification weight assigned can be assumed to be of the form exp(-alfa * (d(x, y_i) - d(x, y_1)))
+    //     the problem is : how to choose alfa
     fn into_matrepr(&self) {
+        // get stats
+        let graphstats = self.get_kraph_stats();
+        // we loop on all nodes, for each we want nearest neighbours, and get scale of distances around it
+        for x in &self.neighbours {
+            // TODO . the y loop must be made into a closure with par_iter in self.neighbours, must then add x index to args..
+            let (rho, scale) = self.get_scale_from_neighbourhood(x);
 
-    }
+        }  // end for x
+
+
+    }  // end of into_matrepr
+
+    // this function choose (beta) scale so that at mid range among neighbours we have a proba of 1/k
+    // so that  k/2 neighbours have proba > 1/K and the other half have proba less than k/2 
+    // so the proba of neighbours do not sum up to 1 but split above median range.
+    fn get_scale_from_neighbourhood(&self, neighbours : &Vec<OutEdge<F>>) -> (f32, f32) {
+        // p_i = exp[- beta * (d(x,y_i) - d(x,y_1).min(local_scale))] 
+        let nbgh = neighbours.len();
+        let rho_x = neighbours[0].weight.to_f32().unwrap();
+        let mut rho_y_s = Vec::<f32>::with_capacity(neighbours.len());
+        for i in 0..nbgh {
+            let y_i = neighbours[i].node;      // y_i is a NodeIx = usize
+            rho_y_s.push(self.neighbours[y_i][0].weight.to_f32().unwrap());
+            // we rho_x, scales
+        }  // end of for i
+        let nbgh_2 = nbgh/2;
+        let rho_median = neighbours[nbgh_2].weight.to_f32().unwrap();
+        // compute average of nearest neighbour distance around our point.
+        let mean_rho = rho_y_s.iter().sum::<f32>()/ (rho_y_s.len() as f32);
+        // now we have our rho for the current point, it takes into account local scale.
+        // if rho_x > mean_rho distance from x to its neighbour will be penalized and first term will not be 1
+        // as is the case if rho_x < mean_rho
+        let rho = mean_rho.min(rho_x);
+        // now we set scale so that k/2 neighbour is at proba 1/2 ?
+        let scale = (2 as f32).ln() / (rho_median - rho);
+        // in this state neither sum of proba adds up to 1 neither is any entropy (Shannon or Renyi) normalized.
+        (rho,scale)
+    }  // end of get_scale_from_neighbourhood
+
+
+    // choose scale to satisfy a normalization constraint. 
+    // as function is monotonic with respect to scale, we use dichotomy.
+    fn get_scale_from_normalisation(&self, norm : f64 , neighbours : &Vec<OutEdge<F>>)  -> (f32, f32) {
+      // p_i = exp[- beta * (d(x,y_i) - d(x,y_1).min(local_scale)) ] 
+      let nbgh = neighbours.len();
+      let rho_x = neighbours[0].weight.to_f32().unwrap();
+      let mut rho_y_s = Vec::<f32>::with_capacity(neighbours.len());
+      for i in 0..nbgh {
+          let y_i = neighbours[i].node;      // y_i is a NodeIx = usize
+          rho_y_s.push(self.neighbours[y_i][0].weight.to_f32().unwrap());
+          // we rho_x, scales
+      }  // end of for i
+      let nbgh_2 = nbgh/2;
+      let rho_median = neighbours[nbgh_2].weight.to_f32().unwrap();
+      // compute average of nearest neighbour distance around our point.
+      let mean_rho = rho_y_s.iter().sum::<f32>()/ (rho_y_s.len() as f32);
+      // now we have our rho for the current point, it takes into account local scale.
+      // if rho_x > mean_rho distance from x to its neighbour will be penalized and first term will not be 1
+      // as is the case if rho_x < mean_rho
+      let rho = mean_rho.min(rho_x);
+      // now we set scale so that ∑ p_{i} = norm
+      // for beta = 0 sum is nbgh and for β = infinity sum is 0. If norm is not between nbgh and 0 we have an error, else
+      // as ∑ p_{i} is decreasing with respect to beta we dichotomize
+      let mut low = 0f32;
+      let mut high = f32::MAX;
+      //
+      let dist = neighbours.iter().map( |n| n.weight.to_f32().unwrap() - rho).collect::<Vec<f32>>();
+      let f  = |beta : f32|  { dist.iter().map(|d| (-d * beta).exp()).sum::<f32>() };
+      // f is decreasing
+
+      
+      let scale = (2 as f32).ln() / (rho_median - rho);
+      // in this state neither sum of proba adds up to 1 neither is any entropy (Shannon or Renyi) normailed.
+      (rho,scale)
+
+    } // end of get_scale_from_normalisation
+
+
+
 
 }  // end of impl KGraph<F>
 
-use ndarray::{Array2};
-use sprs::{CsMat};
 
-/// We can represent the graph as dense Array2 or a CompressedRow Storage matrice 
-enum GraphMatRepr<'a, F> {
-    FULL(&'a Array2<F>),
-    CSR( &'a CsMat<F>),
+fn dichotomy_solver<F>(increasing : bool, f : F, lower : f32 , upper : f32, target : f32) -> f32 
+            where F : Fn(f32) -> f32 {
+    let mut sol = 0f32;
+    //
+    if lower >= upper {
+        panic!("dichotomy_solver failure low {} greater than upper {} ", low, upper);
+    }
+    while upper - lower > 1.0E-4 {
+
+
+    }
+    return sol;
 }
-
-
 
 
 // =============================================================================

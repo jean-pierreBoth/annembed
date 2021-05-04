@@ -151,7 +151,6 @@ impl <'a,F> MatRepr<'a,F> where
             MatMode::FULL(mat) => { return mat.dot(vec);},
             MatMode::CSR(csmat) =>  {
                 // allocate result
-                //  TODO we could use the uninit allocation 
                 let mut vres = Array1::<F>::zeros(self.shape()[0]);
                 prod::mul_acc_mat_vec_csr(csmat.view(), vec.as_slice().unwrap(), vres.as_slice_mut().unwrap());
                 return vres;
@@ -255,7 +254,9 @@ pub fn subspace_iteration<F> (mat : &Array2<F>, rank : usize, nbiter : usize) ->
     let m = data_shape[0];
     let n = data_shape[1];
     let l = m.min(n).min(rank);
-    log::info!("reducing asked rank in subspace_iteration to {}", l);
+    if rank > l {
+        log::info!("reducing asked rank in subspace_iteration to {}", l);
+    }
     //
     let omega = rng.generate_matrix(Dim([data_shape[1], l]));
     let mut y_m_l = mat.dot(&omega.mat);   // y is a (m,l) matrix
@@ -628,14 +629,19 @@ fn test_svd_wiki_rank () {
     assert!(res.is_ok());
     assert!(svdapprox.get_sigma().is_some());
     //
-    let sigma = ndarray::arr1(&[ 3., (5f64).sqrt() , 2.]);
+    let sigma = ndarray::arr1(&[ 3., (5f64).sqrt() , 2., 0.]);
     if let Some(computed_s) = svdapprox.get_sigma() {
-        assert!(computed_s.len() >= sigma.len());
+        assert!(computed_s.len() == sigma.len());
         for i in 0..sigma.len() {
-            assert!( ((1. - computed_s[i]/sigma[i]).abs() as f32) < f32::EPSILON);
-        }
-        for i in sigma.len()..computed_s.len() {
-            assert_eq!(computed_s[i], 0.);
+            log::trace!{"sp  i  exact : {}, computed {}", sigma[i], computed_s[i]};
+            let test;
+            if  sigma[i] > 0. {
+               test =  ((1. - computed_s[i]/sigma[i]).abs() as f32) < f32::EPSILON;
+            }
+            else {
+               test =  ((sigma[i]-computed_s[i]).abs()  as f32) < f32::EPSILON;
+            };
+            assert!(test);
         }
     }
     else {
@@ -665,12 +671,21 @@ fn test_svd_wiki_epsil () {
     assert!(res.is_ok());
     assert!(svdapprox.get_sigma().is_some());
     //
-    let sigma = ndarray::arr1(&[ 3., (5f64).sqrt() , 2.]);
+    let sigma = ndarray::arr1(&[ 3., (5f64).sqrt() , 2., 0.]);
     if let Some(computed_s) = svdapprox.get_sigma() {
-        assert_eq!(sigma.len(), computed_s.len());
-        for i in 0..sigma.len() {
+        assert!(sigma.len() >= computed_s.len());
+        for i in 0..computed_s.len() {
             log::trace!{"sp  i  exact : {}, computed {}", sigma[i], computed_s[i]};
-            assert!( ((1. - computed_s[i]/sigma[i]).abs() as f32) < f32::EPSILON);
+            //
+            let test;
+            if  sigma[i] > 0. {
+                test = ((1. - computed_s[i]/sigma[i]).abs() as f32) < f32::EPSILON;
+            }
+            else {
+                test = ((sigma[i]-computed_s[i]).abs()  as f32) < f32::EPSILON ;
+            };
+            //
+            assert!(test);
         }
     }
     else {
