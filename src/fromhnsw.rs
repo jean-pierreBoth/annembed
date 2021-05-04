@@ -347,13 +347,13 @@ impl <F> KGraph<F>
       // now we set scale so that ∑ p_{i} = norm
       // for beta = 0 sum is nbgh and for β = infinity sum is 0. If norm is not between nbgh and 0 we have an error, else
       // as ∑ p_{i} is decreasing with respect to beta we dichotomize
-      let mut low = 0f32;
-      let mut high = f32::MAX;
+      let low = 0f32;
+      let high = f32::MAX;
       //
       let dist = neighbours.iter().map( |n| n.weight.to_f32().unwrap() - rho).collect::<Vec<f32>>();
       let f  = |beta : f32|  { dist.iter().map(|d| (-d * beta).exp()).sum::<f32>() };
       // f is decreasing
-
+      let beta = dichotomy_solver(false, f, low, high, 1.);
       
       let scale = (2 as f32).ln() / (rho_median - rho);
       // in this state neither sum of proba adds up to 1 neither is any entropy (Shannon or Renyi) normailed.
@@ -367,18 +367,56 @@ impl <F> KGraph<F>
 }  // end of impl KGraph<F>
 
 
-fn dichotomy_solver<F>(increasing : bool, f : F, lower : f32 , upper : f32, target : f32) -> f32 
+fn dichotomy_solver<F>(increasing : bool, f : F, lower_r : f32 , upper_r : f32, target : f32) -> f32 
             where F : Fn(f32) -> f32 {
-    let mut sol = 0f32;
     //
-    if lower >= upper {
-        panic!("dichotomy_solver failure low {} greater than upper {} ", low, upper);
+    if lower_r >= upper_r {
+        panic!("dichotomy_solver failure low {} greater than upper {} ", lower_r, upper_r);
     }
-    while upper - lower > 1.0E-4 {
-
-
+    let range_low = f(lower_r).max(f(upper_r));
+    let range_upper = f(upper_r).min(f(lower_r));
+    if f(lower_r).max(f(upper_r)) < target || f(upper_r).min(f(lower_r)) > target {
+            panic!("dichotomy_solver target not in range of function range {}  {} ", range_low, range_upper);     
     }
-    return sol;
+    // 
+    if f(upper_r) < f(lower_r) && increasing {
+        panic!("f not increasing")
+    }
+    else if f(upper_r) > f(lower_r) && !increasing {
+        panic!("f not decreasing")
+    }
+    // target in range, proceed
+    let mut middle = 1.;
+    let mut upper = upper_r;
+    let mut lower = lower_r;
+    //
+    //
+    let mut nbiter = 0;
+    while (target-f(middle)).abs() > 1.0E-5 {
+        if increasing {
+            if f(middle) > target {
+                upper = middle;
+            } 
+            else {
+                lower = middle;
+            }
+            middle = (lower+upper)*0.5;
+        } // increasing type
+        else { // decreasing case
+            if f(middle) > target {
+                lower = middle;
+            }
+            else {
+                upper = middle;
+            }
+            middle = (lower+upper)*0.5;
+        } // end decreasing type
+        nbiter += 1;
+        if nbiter > 100 {
+            panic!("dichotomy_solver do not converge, err :  {} ", (target-f(middle)).abs() );
+        }
+    }  // end of while
+    return middle;
 }
 
 
@@ -388,7 +426,35 @@ fn dichotomy_solver<F>(increasing : bool, f : F, lower : f32 , upper : f32, targ
 
 mod tests {
 
+use super::*;
 
+
+#[allow(dead_code)]
+fn log_init_test() {
+    let _ = env_logger::builder().is_test(true).try_init();
+}  
+
+#[test]
+fn test_dichotomy_inc() {
+
+    let f = |x : f32 | {x*x};
+    //
+    let beta = dichotomy_solver(true, f, 0. , 5. , 2.);
+    println!("beta : {}", beta);
+    assert!( (beta - 2.0f32.sqrt()).abs() < 1.0E-4);
+}  // test_dichotomy_inc
+
+
+
+#[test]
+fn test_dichotomy_dec() {
+
+    let f = |x : f32 | {1.0f32/ (x*x)};
+    //
+    let beta = dichotomy_solver(false, f, 0.2 , 5. , 1./2.);
+    println!("beta : {}", beta);
+    assert!( (beta - 2.0f32.sqrt()).abs() < 1.0E-4);
+}  // test_dichotomy_dec
 
 
 } // end of tests
