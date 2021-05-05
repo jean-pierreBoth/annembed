@@ -11,7 +11,7 @@ use core::ops::*;  // for  AddAssign + SubAssign + MulAssign + DivAssign + RemAs
 use std::fmt::*;   // for Display + Debug + LowerExp + UpperExp 
 use std::cmp::Ordering;
 use num_traits::cast::FromPrimitive;
-
+use ndarray::{Array2};
 use quantiles::{ckms::CKMS};     // we could use also greenwald_khanna
 
 use hnsw_rs::prelude::*;
@@ -96,6 +96,10 @@ impl <F:Float> KGraphStat<F> {
         return density;
     } // get_density_index
 
+    /// return maximum in_degree. Useful to choose between CsMat or dense Array2 representation of graph
+    pub fn get_max_in_degree(&self) -> usize {
+        self.max_in_degree
+    }
 }  // end of impl block for KGraphStat
 
 
@@ -134,7 +138,6 @@ impl <F> KGraph<F>
     where F : FromPrimitive + Float + AddAssign + SubAssign + MulAssign + DivAssign + RemAssign +
         Display + Debug + LowerExp + UpperExp + std::iter::Sum + Send + Sync 
 {
-
     /// allocates a graph with expected size nbnodes and nbng neighbours 
     pub fn new(nbng : usize) -> Self {
         let neighbours_init = Vec::<Vec<OutEdge<F>>>::new();
@@ -163,7 +166,7 @@ impl <F> KGraph<F>
     }  // end of insert_edge_list
 
 
-    /// 
+    /// Fills in KGraphStat from KGraphStat
     pub fn get_kraph_stats(&self) -> KGraphStat<F> {
         let mut in_degrees = Vec::<u32>::with_capacity(self.nbnodes);
         let mut ranges = Vec::<RangeNgbh<F>>::with_capacity(self.nbnodes);
@@ -286,15 +289,42 @@ impl <F> KGraph<F>
     fn into_matrepr(&self) {
         // get stats
         let graphstats = self.get_kraph_stats();
-        // we loop on all nodes, for each we want nearest neighbours, and get scale of distances around it
-        for x in &self.neighbours {
-            // TODO . the y loop must be made into a closure with par_iter in self.neighbours, must then add x index to args..
-            let (rho, scale) = self.get_scale_from_neighbourhood(x);
 
+
+
+        let mut scale_params = Vec::<(f32, f32)>::with_capacity(self.nbnodes);
+        // we loop on all nodes, for each we want nearest neighbours, and get scale of distances around it
+        // TODO can be // with rayon
+        for x in &self.neighbours {
+            // remind to index each request
+            let (rho, scale) = self.get_scale_from_neighbourhood(x);
+            scale_params.push((rho, scale));
         }  // end for x
 
+        let max_in_degree = graphstats.get_max_in_degree();
+        // TODO define a threshold for dense/sparse representation
+        if max_in_degree > self.nbnodes / 10 {
+            // 
+            let mut transition_proba = Array2::<f32>::zeros((self.nbnodes,self.nbnodes));
+            // TODO can be // with rayon. use a view on row i of transition_proba
+            for i in 0..self.neighbours.len() {
+                let (rho,scale) = scale_params[i];
+                for j in 0..self.neighbours[i].len() {
+                    let edge = self.neighbours[i][j];
+                    let p = ( - scale * (edge.weight.to_f32().unwrap() - rho)).exp();
+                    transition_proba[[i,edge.node ]] = p;
+                } // end of for j
+            }  // end of for i
+            // 
+
+        } else {
+            panic!("csmat representation not yet done");
+        }
 
     }  // end of into_matrepr
+
+
+
 
     // this function choose (beta) scale so that at mid range among neighbours we have a proba of 1/k
     // so that  k/2 neighbours have proba > 1/K and the other half have proba less than k/2 
@@ -328,37 +358,31 @@ impl <F> KGraph<F>
     // as function is monotonic with respect to scale, we use dichotomy.
     fn get_scale_from_normalisation(&self, norm : f64 , neighbours : &Vec<OutEdge<F>>)  -> (f32, f32) {
       // p_i = exp[- beta * (d(x,y_i) - d(x,y_1).min(local_scale)) ] 
-      let nbgh = neighbours.len();
-      let rho_x = neighbours[0].weight.to_f32().unwrap();
-      let mut rho_y_s = Vec::<f32>::with_capacity(neighbours.len());
-      for i in 0..nbgh {
-          let y_i = neighbours[i].node;      // y_i is a NodeIx = usize
-          rho_y_s.push(self.neighbours[y_i][0].weight.to_f32().unwrap());
-          // we rho_x, scales
-      }  // end of for i
-      let nbgh_2 = nbgh/2;
-      let rho_median = neighbours[nbgh_2].weight.to_f32().unwrap();
-      // compute average of nearest neighbour distance around our point.
-      let mean_rho = rho_y_s.iter().sum::<f32>()/ (rho_y_s.len() as f32);
-      // now we have our rho for the current point, it takes into account local scale.
-      // if rho_x > mean_rho distance from x to its neighbour will be penalized and first term will not be 1
-      // as is the case if rho_x < mean_rho
-      let rho = mean_rho.min(rho_x);
-      // now we set scale so that ∑ p_{i} = norm
-      // for beta = 0 sum is nbgh and for β = infinity sum is 0. If norm is not between nbgh and 0 we have an error, else
-      // as ∑ p_{i} is decreasing with respect to beta we dichotomize
-      let low = 0f32;
-      let high = f32::MAX;
-      //
-      let dist = neighbours.iter().map( |n| n.weight.to_f32().unwrap() - rho).collect::<Vec<f32>>();
-      let f  = |beta : f32|  { dist.iter().map(|d| (-d * beta).exp()).sum::<f32>() };
-      // f is decreasing
-      let beta = dichotomy_solver(false, f, low, high, 1.);
-      
-      let scale = (2 as f32).ln() / (rho_median - rho);
-      // in this state neither sum of proba adds up to 1 neither is any entropy (Shannon or Renyi) normailed.
-      (rho,scale)
-
+        let nbgh = neighbours.len();
+        let rho_x = neighbours[0].weight.to_f32().unwrap();
+        let mut rho_y_s = Vec::<f32>::with_capacity(neighbours.len());
+        for i in 0..nbgh {
+            let y_i = neighbours[i].node;      // y_i is a NodeIx = usize
+            rho_y_s.push(self.neighbours[y_i][0].weight.to_f32().unwrap());
+            // we rho_x, scales
+        }  // end of for i
+        // compute average of nearest neighbour distance around our point.
+        let mean_rho = rho_y_s.iter().sum::<f32>()/ (rho_y_s.len() as f32);
+        // now we have our rho for the current point, it takes into account local scale.
+        // if rho_x > mean_rho distance from x to its neighbour will be penalized and first term will not be 1
+        // as is the case if rho_x < mean_rho
+        let rho = mean_rho.min(rho_x);
+        // now we set scale so that ∑ p_{i} = norm
+        // for beta = 0 sum is nbgh and for β = infinity sum is 0. If norm is not between nbgh and 0 we have an error, else
+        // as ∑ p_{i} is decreasing with respect to beta we dichotomize
+        //
+        let dist = neighbours.iter().map( |n| n.weight.to_f32().unwrap() - rho).collect::<Vec<f32>>();
+        let f  = |beta : f32|  { dist.iter().map(|d| (-d * beta).exp()).sum::<f32>() };
+        // f is decreasing
+        let beta = dichotomy_solver(false, f, 0f32,f32::MAX, norm as f32);
+        // TODO get quantile info on beta or corresponding entropy ?
+        // in this state neither sum of proba adds up to 1 neither is any entropy (Shannon or Renyi) normailed.
+        (rho,beta)
     } // end of get_scale_from_normalisation
 
 
@@ -376,7 +400,7 @@ fn dichotomy_solver<F>(increasing : bool, f : F, lower_r : f32 , upper_r : f32, 
     let range_low = f(lower_r).max(f(upper_r));
     let range_upper = f(upper_r).min(f(lower_r));
     if f(lower_r).max(f(upper_r)) < target || f(upper_r).min(f(lower_r)) > target {
-            panic!("dichotomy_solver target not in range of function range {}  {} ", range_low, range_upper);     
+        panic!("dichotomy_solver target not in range of function range {}  {} ", range_low, range_upper);     
     }
     // 
     if f(upper_r) < f(lower_r) && increasing {
@@ -390,27 +414,15 @@ fn dichotomy_solver<F>(increasing : bool, f : F, lower_r : f32 , upper_r : f32, 
     let mut upper = upper_r;
     let mut lower = lower_r;
     //
-    //
     let mut nbiter = 0;
     while (target-f(middle)).abs() > 1.0E-5 {
         if increasing {
-            if f(middle) > target {
-                upper = middle;
-            } 
-            else {
-                lower = middle;
-            }
-            middle = (lower+upper)*0.5;
+            if f(middle) > target { upper = middle; }  else { lower = middle; }
         } // increasing type
         else { // decreasing case
-            if f(middle) > target {
-                lower = middle;
-            }
-            else {
-                upper = middle;
-            }
-            middle = (lower+upper)*0.5;
+            if f(middle) > target { lower = middle; }  else { upper = middle; }
         } // end decreasing type
+        middle = (lower+upper)*0.5;
         nbiter += 1;
         if nbiter > 100 {
             panic!("dichotomy_solver do not converge, err :  {} ", (target-f(middle)).abs() );

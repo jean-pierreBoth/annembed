@@ -4,10 +4,9 @@
 
 use num_traits::{Float};
 
-use ndarray::{Dim, Array, Array1, Array2, Dimension};
+use ndarray::{Array2};
 use ndarray_linalg::{Scalar, Lapack};
 
-use crate::tools::*;
 
 use crate::fromhnsw::*;
 
@@ -21,7 +20,7 @@ impl <F> Emmbedder<'_, F>
 
     // this function compute a (generalised laplacian), do an approximated svd of it and project data on associated eigenvectors
     fn get_initial_embedding(&mut self) -> Array2<F> {
-        let embedded : Array2<F>;
+        let embedded = Array2::<F>::zeros((3,2));
         //
         embedded
     }
