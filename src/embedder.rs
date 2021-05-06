@@ -51,38 +51,33 @@ impl <F> Emmbedder<'_, F>
         let nbnodes = self.kgraph.get_nb_nodes();
         // get stats
         let graphstats = self.kgraph.get_kraph_stats();
-
-
-
-        let mut scale_params = Vec::<(f32, f32)>::with_capacity(nbnodes);
-        // we loop on all nodes, for each we want nearest neighbours, and get scale of distances around it
-        // TODO can be // with rayon
-        for x in &self.kgraph.neighbours {
-            // remind to index each request
-            let (rho, scale) = self.get_scale_from_neighbourhood(x);
-            scale_params.push((rho, scale));
-        }  // end for x
-
         let max_in_degree = graphstats.get_max_in_degree();
-        // TODO define a threshold for dense/sparse representation
-        if max_in_degree > nbnodes / 10 {
-            // 
-            let mut transition_proba = Array2::<f32>::zeros((nbnodes,nbnodes));
-            // TODO can be // with rayon. use a view on row i of transition_proba
-            for i in 0..self.kgraph.neighbours.len() {
-                let (rho,scale) = scale_params[i];
-                for j in 0..self.kgraph.neighbours[i].len() {
-                    let edge = self.kgraph.neighbours[i][j];
-                    let p = ( - scale * (edge.weight.to_f32().unwrap() - rho)).exp();
-                    transition_proba[[i,edge.node ]] = p;
-                } // end of for j
-            }  // end of for i
-            // 
+        let mut scale_params = Vec::<f32>::with_capacity(nbnodes);
 
-        } else {
+
+       // TODO define a threshold for dense/sparse representation
+        if max_in_degree > nbnodes / 10 {
+            let mut transition_proba = Array2::<f32>::zeros((nbnodes,nbnodes));
+    
+            // we loop on all nodes, for each we want nearest neighbours, and get scale of distances around it
+            // TODO can be // with rayon taking care of indexation
+            let neighbour_hood = self.kgraph.get_neighbours();
+            for i in 0..neighbour_hood.len() {
+                // remind to index each request
+                let (scale, probas) = self.get_scale_from_normalisation(1., &neighbour_hood[i]);
+                scale_params.push(scale);
+                assert_eq!(probas.len(), neighbour_hood[i].len());
+                for j in 0..neighbour_hood[i].len() {
+                    let edge = neighbour_hood[i][j];
+                    transition_proba[[i,edge.node ]] = probas[j];
+                } // end of for j
+
+            }  // end for i
+        }   
+        else {
             panic!("csmat representation not yet done");
         }
-
+        //
     }  // end of into_matrepr
 
 
@@ -90,15 +85,22 @@ impl <F> Emmbedder<'_, F>
 
     // this function choose (beta) scale so that at mid range among neighbours we have a proba of 1/k
     // so that  k/2 neighbours have proba > 1/K and the other half have proba less than k/2 
-    // so the proba of neighbours do not sum up to 1 but split above median range.
-    fn get_scale_from_neighbourhood(&self, neighbours : &Vec<OutEdge<F>>) -> (f32, f32) {
+    // so the proba of neighbours do not sum up to 1 (is between nbgnh/2, nbgh]but split above median range.
+    // in this state neither sum of proba adds up to 1 neither is any entropy (Shannon or Renyi) normalized.
+    //
+    // Returns mean distance to first neighbour around current point and probabilities to current neighbours.
+    fn get_scale_from_neighbourhood(&self, neighbours : &Vec<OutEdge<F>>) -> (f32, Vec::<f32>) {
         // p_i = exp[- beta * (d(x,y_i) - d(x,y_1).min(local_scale))] 
         let nbgh = neighbours.len();
         let rho_x = neighbours[0].weight.to_f32().unwrap();
+        let mut rho_min = f32::MAX;
         let mut rho_y_s = Vec::<f32>::with_capacity(neighbours.len());
+        rho_y_s.push(rho_x);
         for i in 0..nbgh {
             let y_i = neighbours[i].node;      // y_i is a NodeIx = usize
-            rho_y_s.push(self.kgraph.neighbours[y_i][0].weight.to_f32().unwrap());
+            let rho_i = self.kgraph.neighbours[y_i][0].weight.to_f32().unwrap();
+            rho_min = rho_min.min(rho_i);
+            rho_y_s.push(rho_i);
             // we rho_x, scales
         }  // end of for i
         let nbgh_2 = nbgh/2;
@@ -109,42 +111,73 @@ impl <F> Emmbedder<'_, F>
         // if rho_x > mean_rho distance from x to its neighbour will be penalized and first term will not be 1
         // as is the case if rho_x < mean_rho
         let rho = mean_rho.min(rho_x);
+        let scale : f32;
+        if rho_median > rho {
+            // now we set scale so that k/2 neighbour is at proba 1/2 ?
+            scale = (2. * nbgh as f32).ln() / (rho_median - rho);
+        }
+        else { // must find first index such that neighbours[i].weight > rho
+            log::info!("get_scale_from_neighbourhood : point with rho_median  {} <= mean local scale {} , point far apart others", rho_median, mean_rho);
+            let mut rank =  nbgh_2;
+            for j in nbgh_2..nbgh {
+                if neighbours[j].weight.to_f32().unwrap() > rho {
+                    rank = j;
+                    break;
+                }
+            }
+            assert!(rank < nbgh);
+            scale = neighbours[rank].weight.to_f32().unwrap();
+        }
         // now we set scale so that k/2 neighbour is at proba 1/2 ?
-        let scale = (2 as f32).ln() / (rho_median - rho);
-        // in this state neither sum of proba adds up to 1 neither is any entropy (Shannon or Renyi) normalized.
-        (rho,scale)
+        // reuse rho_y_s to return proba of edge
+        for i in 0..nbgh {
+            let rho_xi = neighbours[i].weight.to_f32().unwrap();
+            rho_y_s[i] = (- (rho_xi- rho) * scale).exp(); 
+        }
+        rho_y_s.truncate(nbgh);        
+        (mean_rho, rho_y_s)
     }  // end of get_scale_from_neighbourhood
 
 
+
+
+
     // choose scale to satisfy a normalization constraint. 
+    // p_i = exp[- beta * (d(x,y_i)/ local_scale) ] 
+    // We return beta/local_scale
     // as function is monotonic with respect to scale, we use dichotomy.
-    fn get_scale_from_normalisation(&self, norm : f64 , neighbours : &Vec<OutEdge<F>>)  -> (f32, f32) {
-      // p_i = exp[- beta * (d(x,y_i) - d(x,y_1).min(local_scale)) ] 
+    fn get_scale_from_normalisation(&self, norm : f64 , neighbours : &Vec<OutEdge<F>>)  -> (f32, Vec::<f32>) {
+      // p_i = exp[- beta * (d(x,y_i)/ local_scale) ] 
         let nbgh = neighbours.len();
         let rho_x = neighbours[0].weight.to_f32().unwrap();
-        let mut rho_y_s = Vec::<f32>::with_capacity(neighbours.len());
+        let mut rho_y_s = Vec::<f32>::with_capacity(neighbours.len() + 1);
+        rho_y_s.push(rho_x);
         for i in 0..nbgh {
             let y_i = neighbours[i].node;      // y_i is a NodeIx = usize
             rho_y_s.push(self.kgraph.neighbours[y_i][0].weight.to_f32().unwrap());
             // we rho_x, scales
         }  // end of for i
-        // compute average of nearest neighbour distance around our point.
-        let mean_rho = rho_y_s.iter().sum::<f32>()/ (rho_y_s.len() as f32);
-        // now we have our rho for the current point, it takes into account local scale.
         // if rho_x > mean_rho distance from x to its neighbour will be penalized and first term will not be 1
         // as is the case if rho_x < mean_rho
-        let rho = mean_rho.min(rho_x);
-        // now we set scale so that ∑ p_{i} = norm
-        // for beta = 0 sum is nbgh and for β = infinity sum is 0. If norm is not between nbgh and 0 we have an error, else
+        // we must have a rho that is dependant on neighbourhood and less than rho_x, that implies much.
+        let mean_rho = rho_y_s.iter().sum::<f32>() / (rho_y_s.len() as f32);
+        // question cold be:  far is mean-rho from rho_min
+        // now we set scale so that  ∑ p_{i} = norm 
+        // for beta = 0 sum is nbgh and for β = infinity,  sum is 0. If norm is not between nbgh and 0 we have an error, else
         // as ∑ p_{i} is decreasing with respect to beta we dichotomize
-        //
-        let dist = neighbours.iter().map( |n| n.weight.to_f32().unwrap() - rho).collect::<Vec<f32>>();
+        // normalize dists before dichotomy solver to make it more stable
+        let dist = neighbours.iter().map( |n| n.weight.to_f32().unwrap()/mean_rho).collect::<Vec<f32>>();
         let f  = |beta : f32|  { dist.iter().map(|d| (-d * beta).exp()).sum::<f32>() };
         // f is decreasing
-        let beta = dichotomy_solver(false, f, 0f32,f32::MAX, norm as f32);
+        let beta = dichotomy_solver(false, f, 0f32, f32::MAX, norm as f32);
         // TODO get quantile info on beta or corresponding entropy ?
+        // reuse rho_y_s to return proba of edge
+        for i in 0..nbgh {
+            rho_y_s[i] = (- dist[i] * beta).exp(); 
+        }
+        rho_y_s.truncate(nbgh);
         // in this state neither sum of proba adds up to 1 neither is any entropy (Shannon or Renyi) normailed.
-        (rho,beta)
+        (mean_rho, rho_y_s)
     } // end of get_scale_from_normalisation
 
 
