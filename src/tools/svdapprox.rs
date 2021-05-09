@@ -109,37 +109,37 @@ use sprs::{CsMat};
 
 
 /// We can do range approximation on both dense Array2 and CsMat representation of matrices.
-#[derive(Copy,Clone)]
-enum MatMode<'a, F> {
-    FULL(&'a Array2<F>),
-    CSR( &'a CsMat<F>),
+#[derive(Clone)]
+enum MatMode<F> {
+    FULL(Array2<F>),
+    CSR(CsMat<F>),
 }
 
 /// We need a minimal Matrix structure to factor the 2 linear algebra operations we need to do an approximated svd
-#[derive(Copy,Clone)]
-pub struct MatRepr<'a,F> {
-    data : MatMode<'a,F>,
+#[derive(Clone)]
+pub struct MatRepr<F> {
+    data : MatMode<F>,
 }  // end of struct MatRepr
 
 
-impl <'a,F> MatRepr<'a,F> where
+impl <F> MatRepr<F> where
     F: Float + Scalar  + Lapack + ndarray::ScalarOperand + sprs::MulAcc {
 
     /// initialize a MatRepr from an Array2
     #[inline]
-    pub fn from_array2(mat: &'a Array2<F>) -> MatRepr<'a,F> {
+    pub fn from_array2(mat: Array2<F>) -> MatRepr<F> {
         MatRepr { data : MatMode::FULL(mat) }
     }
 
     /// initialize a MatRepr from a CsMat
     #[inline]
-    pub fn from_csmat(mat: &'a CsMat<F>) -> MatRepr<'a,F> {
+    pub fn from_csmat(mat: CsMat<F>) -> MatRepr<F> {
         MatRepr { data : MatMode::CSR(mat) }
     }
 
     /// a common interface to get matrix dimension. returns [nbrow, nbcolumn]
     pub fn shape(&self) -> [usize; 2] {
-       match self.data {
+       match &self.data {
             MatMode::FULL(mat) =>  { return [mat.shape()[0], mat.shape()[1]]; },
             MatMode::CSR(csmat) =>  { return [csmat.shape().0, csmat.shape().0]; },
         };
@@ -147,7 +147,7 @@ impl <'a,F> MatRepr<'a,F> where
 
     /// Matrix Vector multiplication. We use raw interface to get Blas.
     pub fn mat_dot_vector(&self, vec : &ArrayView<F, Ix1>) -> Array1<F>  {
-        match self.data {
+        match &self.data {
             MatMode::FULL(mat) => { return mat.dot(vec);},
             MatMode::CSR(csmat) =>  {
                 // allocate result
@@ -157,7 +157,16 @@ impl <'a,F> MatRepr<'a,F> where
             },
         };
     } // end of matDotVector
+
 } // end of impl block for MatRepr
+
+// I need a function to compute (once and only once in svd) a product tQ*CSR for Q = (m,r) with r small (<=5) and CSR(m,n)
+// The matrix Q comes from range_approx so r will really be small
+
+fn small_dense_mult_csr<F>(_qmat : &Array2<F>, _csrmat : &CsMat<F>) -> Array2<F> {
+        panic!("not yet implement")
+} // end of small_dense_mult_csr
+
 
 
 //==================================================================================================
@@ -201,7 +210,7 @@ pub enum RangeApproxMode {
 /// The data matrix is supposed given as a (m,n) matrix. m is the number of data and n their dimension.
 pub struct RangeApprox<'a, F: Scalar> {
     /// matrix we want to approximate range of. We s
-    mat : MatRepr<'a,F>,
+    mat : &'a MatRepr<F>,
     /// mode of approximation asked for.
     mode : RangeApproxMode
 } // end of struct RangeApprox 
@@ -212,14 +221,14 @@ pub struct RangeApprox<'a, F: Scalar> {
 impl <'a, F > RangeApprox<'a, F> 
      where  F : Float + Scalar  + Lapack + ndarray::ScalarOperand  + sprs::MulAcc{
 
-    pub fn new(mat : MatRepr<'a,F>, mode : RangeApproxMode) -> Self {
+    pub fn new(mat : &'a MatRepr<F>, mode : RangeApproxMode) -> Self {
         RangeApprox{mat, mode} 
     }
 
     #[inline]
-    pub fn from_array2(array: &'a Array2<F>, mode : RangeApproxMode) -> RangeApprox<'a, F> {
-        RangeApprox{ mat : MatRepr::<'a,F>::from_array2(array) , mode}
-    }
+//    pub fn from_array2(array: &'a Array2<F>, mode : RangeApproxMode) -> RangeApprox<'a, F> {
+//        RangeApprox{ mat : MatRepr::<'a,F>::from_array2(array) , mode}
+//    }
 
     /// depending on mode, an adaptative algorithm or the fixed rang QR iterations will be called
     /// For CsMat matrice only the RangeApproxMode::EPSIL is possible, in other case the function will return None..
@@ -230,8 +239,8 @@ impl <'a, F > RangeApprox<'a, F>
             }, 
             RangeApproxMode::RANK(rank) => {
                 // at present time this approximation is only allowed for Array2 matrix representation
-                match self.mat.data {
-                    MatMode::FULL(array) => { return Some(subspace_iteration(array,  rank.rank, rank.nbiter));},
+                match &self.mat.data {
+                    MatMode::FULL(array) => { return Some(subspace_iteration(&array,  rank.rank, rank.nbiter));},
                             _            => { println!("approximate : the mode RANK is only possible with dense matrices");
                                               return None;
                                             }
@@ -296,7 +305,7 @@ pub fn subspace_iteration<F> (mat : &Array2<F>, rank : usize, nbiter : usize) ->
 /// Returns a matrix Q such that || data - Q*t(Q)*data || < epsil
 /// Adaptive Randomized Range Finder algo 4.2. from Halko-Tropp
 /// 
-pub fn adaptative_range_finder_matrep<F>(mat : MatRepr<F> , epsil:f64, r : usize) -> Array2<F> 
+pub fn adaptative_range_finder_matrep<F>(mat : &MatRepr<F> , epsil:f64, r : usize) -> Array2<F> 
         where F : Float + Scalar  + Lapack + ndarray::ScalarOperand + sprs::MulAcc {
     let mut rng = RandomGaussianGenerator::new();
     let data_shape = mat.shape();
@@ -385,6 +394,18 @@ fn check_range_approx<F:Float+ Scalar> (a_mat : &ArrayView2<F>, q_mat: &ArrayVie
     norm_residue
 }
 
+fn check_range_approx_repr<F:Float+ Scalar> (a_mat : &MatRepr<F>, q_mat: &ArrayView2<F>) -> F {
+    let norm_residue = match &a_mat.data {
+        MatMode::FULL(mat)  =>  {   let residue = mat - q_mat.dot(&q_mat.t()).dot(mat);
+                                    let norm_residue = norm_l2(&residue.view());
+                                    norm_residue
+                                },
+        _                   => { panic!("check_range_approx_repr for csr not yet implemented")},
+   };
+   norm_residue
+}  // end of check_range_approx_repr
+
+
 
 //================================ SVD part ===============================
 
@@ -394,7 +415,7 @@ fn check_range_approx<F:Float+ Scalar> (a_mat : &ArrayView2<F>, q_mat: &ArrayVie
 /// For compressed matrices only the precision criterion is possible.
 pub struct SvdApprox<'a, F: Scalar> {
     /// matrix we want to approximate range of. We s
-    data : &'a Array2<F>,
+    data : &'a MatRepr<F>,
     s : Option<Array1<F>>,
     u : Option<Array2<F>>,
     vt : Option<Array2<F>>
@@ -404,7 +425,7 @@ pub struct SvdApprox<'a, F: Scalar> {
 impl <'a, F> SvdApprox<'a, F>  
      where  F : Float + Lapack + Scalar  + ndarray::ScalarOperand + sprs::MulAcc {
 
-    fn new(data : &'a Array2<F>) -> Self {
+    fn new(data : &'a MatRepr<F>) -> Self {
         SvdApprox{data, u : None, s : None, vt :None}
     }
 
@@ -427,7 +448,7 @@ impl <'a, F> SvdApprox<'a, F>
     }
     // direct svd from Algo 5.1 of Halko-Tropp
     fn direct_svd(&mut self, parameters : RangeApproxMode) -> Result<usize, String> {
-        let ra = RangeApprox::from_array2(self.data, parameters);
+        let ra = RangeApprox::new(self.data, parameters);
         let q;
         // match self.data {
         //     MatMode::FULL(mat) => { return mat.dot(vec);},
@@ -435,13 +456,17 @@ impl <'a, F> SvdApprox<'a, F>
         // }
         let q_opt = ra.approximate();
         if q_opt.is_some() {
-            q= q_opt.unwrap();
+            q = q_opt.unwrap();
         }
         else {
             return Err(String::from("range approximation failed"));
         }
         //
-        let mut b = q.t().dot(self.data);
+        let mut b = match &self.data.data {
+            MatMode::FULL(mat) => { q.t().dot(mat)},
+            MatMode::CSR(mat)  => { small_dense_mult_csr(&q, mat)},
+        };
+//        let mut b = q.t().dot(self.data);
         //
         let layout = MatrixLayout::C { row: b.shape()[0] as i32, lda: b.shape()[1] as i32 };
         let slice_for_svd_opt = b.as_slice_mut();
@@ -558,10 +583,11 @@ fn log_init_test() {
         //
         let data = RandomGaussianGenerator::<f64>::new().generate_matrix(Dim([6,50]));
         let rp = RangePrecision { epsil : 0.05 , step : 5};
-        let range_approx = RangeApprox::new(MatRepr::from_array2(&data.mat),  RangeApproxMode::EPSIL(rp));
+        let matrepr = MatRepr::from_array2(data.mat);
+        let range_approx = RangeApprox::new(&matrepr,  RangeApproxMode::EPSIL(rp));
         let q = range_approx.approximate().unwrap();
         log::debug!(" q(m,n) {} {} ", q.shape()[0], q.shape()[1]);
-        let residue = check_range_approx(&data.mat.view(), &q.view());
+        let residue = check_range_approx_repr(&matrepr, &q.view());
         log::debug!(" residue {:3.e} \n", residue);
     } // end of test_range_approx_1
 
@@ -571,11 +597,12 @@ fn log_init_test() {
         //
         let data = RandomGaussianGenerator::<f32>::new().generate_matrix(Dim([50,500]));
         let rp = RangePrecision { epsil : 0.05 , step : 5};
-        let range_approx = RangeApprox::new(MatRepr::from_array2(&data.mat),  RangeApproxMode::EPSIL(rp));
+        let matrepr = MatRepr::from_array2(data.mat);
+        let range_approx = RangeApprox::new(&matrepr,  RangeApproxMode::EPSIL(rp));
         let q = range_approx.approximate().unwrap();
         //
         log::debug!(" q(m,n) {} {} ", q.shape()[0], q.shape()[1]);
-        let residue = check_range_approx(&data.mat.view(), &q.view());
+        let residue = check_range_approx_repr(&matrepr, &q.view());
         log::debug!(" residue {:3.e} \n", residue);
     } // end of test_range_approx_1
 
@@ -586,9 +613,10 @@ fn log_init_test() {
         //
         let data = RandomGaussianGenerator::<f64>::new().generate_matrix(Dim([6,50]));
         let rp = RangeRank { rank : 6 , nbiter : 5};
-        let range_approx = RangeApprox::new(MatRepr::from_array2(&data.mat), RangeApproxMode::RANK(rp));
+        let matrepr = MatRepr::from_array2(data.mat);
+        let range_approx = RangeApprox::new(&matrepr, RangeApproxMode::RANK(rp));
         let q = range_approx.approximate().unwrap(); // args are rank , nbiter
-        let residue = check_range_approx(&data.mat.view(), &q.view());
+        let residue = check_range_approx_repr(&matrepr, &q.view());
         log::debug!(" subspace_iteration residue {:3.e} \n ", residue);
     } // end of test_range_approx_subspace_iteration_1
 
@@ -598,9 +626,10 @@ fn log_init_test() {
         //
         let data = RandomGaussianGenerator::<f64>::new().generate_matrix(Dim([50,500]));
         let rp = RangeRank { rank : 6 , nbiter : 5};
-        let range_approx = RangeApprox::new(MatRepr::from_array2(&data.mat), RangeApproxMode::RANK(rp));
+        let matrepr = MatRepr::from_array2(data.mat);
+        let range_approx = RangeApprox::new(&matrepr, RangeApproxMode::RANK(rp));
         let q = range_approx.approximate().unwrap();
-        let residue = check_range_approx(&data.mat.view(), &q.view());
+        let residue = check_range_approx_repr(&matrepr, &q.view());
         log::debug!(" subspace_iteration residue {:3.e} \n", residue);
     } // end of test_range_approx_subspace_iteration_2
 
@@ -623,7 +652,8 @@ fn test_svd_wiki_rank () {
       [ 0. , 2. , 0. , 0. , 0. ]]  // row 3
     );
     //
-    let mut svdapprox = SvdApprox::new(&mat);
+    let matrepr = MatRepr::from_array2(mat);
+    let mut svdapprox = SvdApprox::new(&matrepr);
     let svdmode = RangeApproxMode::RANK(RangeRank{rank:4, nbiter:5});
     let res = svdapprox.direct_svd(svdmode);
     assert!(res.is_ok());
@@ -665,7 +695,8 @@ fn test_svd_wiki_epsil () {
       [ 0. , 2. , 0. , 0. , 0. ]]  // row 3
     );
     //
-    let mut svdapprox = SvdApprox::new(&mat);
+    let matrepr = MatRepr::from_array2(mat);
+    let mut svdapprox = SvdApprox::new(&matrepr);
     let svdmode = RangeApproxMode::EPSIL(RangePrecision{epsil:0.1 , step:5});
     let res = svdapprox.direct_svd(svdmode);
     assert!(res.is_ok());
