@@ -3,12 +3,15 @@
 #![allow(dead_code)]
 
 use num_traits::{Float};
+use std::collections::HashMap;
 
 use ndarray::{Array2};
 use ndarray_linalg::{Scalar, Lapack};
+use sprs::{CsMat, TriMatBase};
 
 
 use crate::fromhnsw::*;
+use crate::tools::svdapprox::*;
 
 pub struct Emmbedder <'a, F> {
     kgraph : &'a KGraph<F>, 
@@ -25,7 +28,7 @@ impl <F> Emmbedder<'_, F>
         embedded
     }
 
-    fn graph_symmetrization() {
+    fn graph_symmetrization_csr(csr_mat : &CsMat<F> ) {
 
     } // end of graph_symmetrization
 
@@ -39,26 +42,25 @@ impl <F> Emmbedder<'_, F>
 
     }
 
-    // convert into neighbourhood probabilities
-    //      - We must define rescaling/thesholding/renormalization strategy around each point
-    // Store in a matrix representation with for spectral embedding
+    // the function get_scale_from_proba_normalisation convert into neighbourhood probabilities
+    // 
+    // Store in a symetric matrix representation dense of CsMat with for spectral embedding
+    // Do the Svd to initialize embedding. After that we do noeed any more a full matrix.
     //      - Get maximal incoming degree and choose either a CsMat or a dense Array2. 
     //
     // Let x a point y_i its neighbours
     //     after simplification weight assigned can be assumed to be of the form exp(-alfa * (d(x, y_i) - d(x, y_1)))
     //     the problem is : how to choose alfa
-    fn into_matrepr(&self) {
+    fn into_matrepr(&self) -> MatRepr<f32> {
         let nbnodes = self.kgraph.get_nb_nodes();
         // get stats
         let graphstats = self.kgraph.get_kraph_stats();
         let max_in_degree = graphstats.get_max_in_degree();
         let mut scale_params = Vec::<f32>::with_capacity(nbnodes);
 
-
        // TODO define a threshold for dense/sparse representation
-        if max_in_degree > nbnodes / 10 {
+        if max_in_degree > nbnodes * 100 {
             let mut transition_proba = Array2::<f32>::zeros((nbnodes,nbnodes));
-    
             // we loop on all nodes, for each we want nearest neighbours, and get scale of distances around it
             // TODO can be // with rayon taking care of indexation
             let neighbour_hood = self.kgraph.get_neighbours();
@@ -71,12 +73,43 @@ impl <F> Emmbedder<'_, F>
                     let edge = neighbour_hood[i][j];
                     transition_proba[[i,edge.node ]] = probas[j];
                 } // end of for j
-
             }  // end for i
+            // now we symetrize the graph
+            // The UMAP formula implies taking the non null proba when one proba is null, so initialization is more packed.
+            let symgraph = (&transition_proba + &transition_proba.view().t()) * 0.5;
+            //
+            MatRepr::from_array2(transition_proba)
         }   
         else {
-            panic!("csmat representation not yet done");
-        }
+            // now we must construct a CsrMat to store the symetrized graph transition probablity to go svd. 
+            let neighbour_hood = self.kgraph.get_neighbours();
+            let mut edge_list = HashMap::<(usize, usize),f32>::with_capacity(nbnodes* self.kgraph.get_nbng());
+            for i in 0..neighbour_hood.len() {
+                let (scale, probas) = self.get_scale_from_proba_normalisation(&neighbour_hood[i]);
+                scale_params.push(scale);
+                assert_eq!(probas.len(), neighbour_hood[i].len());
+                for j in 0..neighbour_hood[i].len() {
+                    let edge = neighbour_hood[i][j];
+                    edge_list.insert((i,edge.node), probas[j]);
+                } // end of for j
+            }
+            // now we iter on the hasmap symetrize the graph, and insert in triplets transition_proba
+            let mut transition_proba = TriMatBase::<Vec<usize>, Vec<f32>>::with_capacity((nbnodes,nbnodes),nbnodes*100);
+            for ((i,j), val) in edge_list.iter() {
+                let sym_val;
+                if let Some(t_val) = edge_list.get(&(*j,*i)) {
+                    sym_val = (val+t_val) * 0.5;
+                }
+                else { 
+                    sym_val = *val;
+                }
+                transition_proba.add_triplet(*i,*j, sym_val);
+                transition_proba.add_triplet(*j,*i, sym_val);
+            }
+            let csr_mat : CsMat<f32> = transition_proba.to_csr();
+            MatRepr::from_csrmat(csr_mat)
+//            panic!("csmat representation not yet done");
+        }  // end case CsMat
         //
     }  // end of into_matrepr
 

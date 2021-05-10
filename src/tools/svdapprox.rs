@@ -133,7 +133,8 @@ impl <F> MatRepr<F> where
 
     /// initialize a MatRepr from a CsMat
     #[inline]
-    pub fn from_csmat(mat: CsMat<F>) -> MatRepr<F> {
+    pub fn from_csrmat(mat: CsMat<F>) -> MatRepr<F> {
+        assert!(mat.is_csr());
         MatRepr { data : MatMode::CSR(mat) }
     }
 
@@ -234,11 +235,6 @@ impl <'a, F > RangeApprox<'a, F>
     pub fn new(mat : &'a MatRepr<F>, mode : RangeApproxMode) -> Self {
         RangeApprox{mat, mode} 
     }
-
-    #[inline]
-//    pub fn from_array2(array: &'a Array2<F>, mode : RangeApproxMode) -> RangeApprox<'a, F> {
-//        RangeApprox{ mat : MatRepr::<'a,F>::from_array2(array) , mode}
-//    }
 
     /// depending on mode, an adaptative algorithm or the fixed rang QR iterations will be called
     /// For CsMat matrice only the RangeApproxMode::EPSIL is possible, in other case the function will return None..
