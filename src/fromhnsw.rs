@@ -85,6 +85,8 @@ pub struct KGraphStat<F:Float> {
     ranges : Vec<RangeNgbh<F>>,
     /// incoming degrees
     in_degrees : Vec<u32>,
+    /// mean incoming degree
+    mean_in_degree : usize,
     /// max incoming degree. Useful to choose between Compressed Storage Mat or dense Array
     max_in_degree : usize,
     /// range statistics. We assume at this step we can use f32 
@@ -104,6 +106,13 @@ impl <F:Float> KGraphStat<F> {
     pub fn get_max_in_degree(&self) -> usize {
         self.max_in_degree
     }
+
+    pub fn get_mean_in_degree(&self) -> usize {
+        self.mean_in_degree
+    }
+  
+    
+    
 }  // end of impl block for KGraphStat
 
 
@@ -207,19 +216,24 @@ impl <F> KGraph<F>
         }
         // dump some info
         let mut max_in_degree = 0;
+        let mut mean_in_degree : f32 = 0.;
         for i in 0..in_degrees.len() {
             max_in_degree = max_in_degree.max(in_degrees[i]);
+            mean_in_degree += in_degrees[i] as f32;
         }
+        mean_in_degree /= in_degrees.len() as f32;
         //
         println!("\n ==========================");
         println!("\n minimal graph statistics \n");
         println!("max in degree : {}", max_in_degree);
+        println!("min in degree : {}", mean_in_degree);
         println!("max max range : {} ", max_max_r);
         println!("min min range : {} ", min_min_r);
         println!("min radius quantile at 0.05 {} , 0.5 {}, 0.95 {}", 
                     quant.query(0.05).unwrap().1, quant.query(0.5).unwrap().1, quant.query(0.95).unwrap().1);
         //
-        KGraphStat{ranges, in_degrees, max_in_degree : max_in_degree as usize, min_radius_q : quant}
+        KGraphStat{ranges, in_degrees, mean_in_degree : mean_in_degree.round() as usize, max_in_degree : max_in_degree as usize, 
+                    min_radius_q : quant}
     }  // end of get_kraph_stats
 
 
