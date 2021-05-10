@@ -163,16 +163,18 @@ impl <F> MatRepr<F> where
 // I need a function to compute (once and only once in svd) a product B  = tQ*CSR for Q = (m,r) with r small (<=5) and CSR(m,n)
 // The matrix Q comes from range_approx so r will really be small. B = (r,n)
 // We b = tQ*CSR with bt = transpose((transpose(CSR)*Q))
-fn small_dense_mult_csr<F>(qmat : &Array2<F>, csrmat : &CsMat<F>) -> Array2<F> 
+fn small_transpose_dense_mult_csr<F>(qmat : &Array2<F>, csrmat : &CsMat<F>) -> Array2<F> 
     where F: Float + Scalar  + Lapack + ndarray::ScalarOperand + sprs::MulAcc {
     // transpose csrmat (it becomes a cscmat! )
     let cscmat = csrmat.transpose_view();
-    let (qm,qr) = qmat.dim();
-    let (csm, csn) = cscmat.shape();
+    let (qm, _) = qmat.dim();
+    let ( _ , csn) = cscmat.shape();
     assert_eq!(csn, qm);
+    // CAVEAT this requires 2 allocs with the to_owned. 
+    // Note n should be (here) the original dimension of data (we can expect n < 1000 and r should be <= 10)
     let mut bt = Array2::<F>::zeros((qm,csn));
-    prod::csc_mulacc_dense_colmaj(cscmat, *qmat, bt.view_mut());
-        panic!("not yet implement")
+    prod::csc_mulacc_dense_colmaj(cscmat, qmat.view(), bt.view_mut());
+    bt.t().to_owned()
 } // end of small_dense_mult_csr
 
 
@@ -365,7 +367,7 @@ pub fn adaptative_range_finder_matrep<F>(mat : &MatRepr<F> , epsil:f64, r : usiz
         // we orthogonalize new y with all q's i.e q_mat
         orthogonalize_with_q(&q_mat, &mut y_j_p1.view_mut());
         // the new y will takes the place of old y at rank j%r so we always have the last r y that have been sampled
-        y_j_p1.assign_to(y_vec[j].view_mut());
+        y_vec[j].assign(&y_j_p1);
         // we orthogonalize old y's with new q_j.  CAVEAT Can be made // if necessary 
         for k in 0..r {
             if k != j {
@@ -385,7 +387,8 @@ pub fn adaptative_range_finder_matrep<F>(mat : &MatRepr<F> , epsil:f64, r : usiz
     //
     // to avoid the cost to zeros
     log::debug!("range finder returning a a matrix ({}, {})", m, q_mat.len());
-    let mut q_as_array2  = Array2::uninit((m, q_mat.len()));
+//    let mut q_as_array2  = Array2::uninit((m, q_mat.len()));      from version 0.15.0 and later
+    let mut q_as_array2  = Array2::maybe_uninit((m, q_mat.len()));     // as sprs wants ndarray 0.14.0
     for i in 0..q_mat.len() {
         for j in 0..m {
             q_as_array2[[j,i]] = std::mem::MaybeUninit::new(q_mat[i][j]);
@@ -397,18 +400,26 @@ pub fn adaptative_range_finder_matrep<F>(mat : &MatRepr<F> , epsil:f64, r : usiz
 
 
 fn check_range_approx<F:Float+ Scalar> (a_mat : &ArrayView2<F>, q_mat: &ArrayView2<F>) -> F {
-    let residue = a_mat - q_mat.dot(&q_mat.t()).dot(a_mat);
+    let residue = a_mat - & q_mat.dot(&q_mat.t()).dot(a_mat);
     let norm_residue = norm_l2(&residue.view());
     norm_residue
 }
 
-fn check_range_approx_repr<F:Float+ Scalar> (a_mat : &MatRepr<F>, q_mat: &ArrayView2<F>) -> F {
+
+/// checks the quality of range  approximation.
+/// The check for CSR mat is somewhat inefficient, as it involves reallocations but this functions is just for testing
+pub fn check_range_approx_repr<F> (a_mat : &MatRepr<F>, q_mat: &Array2<F>) -> F 
+            where F:Float+ Scalar + Lapack + ndarray::ScalarOperand + num_traits::MulAdd + sprs::MulAcc {
     let norm_residue = match &a_mat.data {
-        MatMode::FULL(mat)  =>  {   let residue = mat - q_mat.dot(&q_mat.t()).dot(mat);
-                                    let norm_residue = norm_l2(&residue.view());
-                                    norm_residue
-                                },
-        _                   => { panic!("check_range_approx_repr for csr not yet implemented")},
+        MatMode::FULL(mat)      =>  {   let residue = mat - &(q_mat.dot(&q_mat.t()).dot(mat));
+                                        let norm_residue = norm_l2(&residue.view());
+                                        norm_residue
+                                    },
+        MatMode::CSR(csr_mat)   =>  {   let b = small_transpose_dense_mult_csr(q_mat, csr_mat);
+                                        let residue = csr_mat.to_dense() - &(q_mat.dot(&b));
+                                        let norm_residue = norm_l2(&residue.view());
+                                        norm_residue
+                                    },
    };
    norm_residue
 }  // end of check_range_approx_repr
@@ -472,9 +483,8 @@ impl <'a, F> SvdApprox<'a, F>
         //
         let mut b = match &self.data.data {
             MatMode::FULL(mat) => { q.t().dot(mat)},
-            MatMode::CSR(mat)  => { small_dense_mult_csr(&q, mat)},
+            MatMode::CSR(mat)  => { small_transpose_dense_mult_csr(&q, mat)},
         };
-//        let mut b = q.t().dot(self.data);
         //
         let layout = MatrixLayout::C { row: b.shape()[0] as i32, lda: b.shape()[1] as i32 };
         let slice_for_svd_opt = b.as_slice_mut();
@@ -595,7 +605,7 @@ fn log_init_test() {
         let range_approx = RangeApprox::new(&matrepr,  RangeApproxMode::EPSIL(rp));
         let q = range_approx.approximate().unwrap();
         log::debug!(" q(m,n) {} {} ", q.shape()[0], q.shape()[1]);
-        let residue = check_range_approx_repr(&matrepr, &q.view());
+        let residue = check_range_approx_repr(&matrepr, &q);
         log::debug!(" residue {:3.e} \n", residue);
     } // end of test_range_approx_1
 
@@ -610,7 +620,7 @@ fn log_init_test() {
         let q = range_approx.approximate().unwrap();
         //
         log::debug!(" q(m,n) {} {} ", q.shape()[0], q.shape()[1]);
-        let residue = check_range_approx_repr(&matrepr, &q.view());
+        let residue = check_range_approx_repr(&matrepr, &q);
         log::debug!(" residue {:3.e} \n", residue);
     } // end of test_range_approx_1
 
@@ -624,7 +634,7 @@ fn log_init_test() {
         let matrepr = MatRepr::from_array2(data.mat);
         let range_approx = RangeApprox::new(&matrepr, RangeApproxMode::RANK(rp));
         let q = range_approx.approximate().unwrap(); // args are rank , nbiter
-        let residue = check_range_approx_repr(&matrepr, &q.view());
+        let residue = check_range_approx_repr(&matrepr, &q);
         log::debug!(" subspace_iteration residue {:3.e} \n ", residue);
     } // end of test_range_approx_subspace_iteration_1
 
@@ -637,7 +647,7 @@ fn log_init_test() {
         let matrepr = MatRepr::from_array2(data.mat);
         let range_approx = RangeApprox::new(&matrepr, RangeApproxMode::RANK(rp));
         let q = range_approx.approximate().unwrap();
-        let residue = check_range_approx_repr(&matrepr, &q.view());
+        let residue = check_range_approx_repr(&matrepr, &q);
         log::debug!(" subspace_iteration residue {:3.e} \n", residue);
     } // end of test_range_approx_subspace_iteration_2
 
