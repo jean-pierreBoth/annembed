@@ -160,10 +160,18 @@ impl <F> MatRepr<F> where
 
 } // end of impl block for MatRepr
 
-// I need a function to compute (once and only once in svd) a product tQ*CSR for Q = (m,r) with r small (<=5) and CSR(m,n)
-// The matrix Q comes from range_approx so r will really be small
-
-fn small_dense_mult_csr<F>(_qmat : &Array2<F>, _csrmat : &CsMat<F>) -> Array2<F> {
+// I need a function to compute (once and only once in svd) a product B  = tQ*CSR for Q = (m,r) with r small (<=5) and CSR(m,n)
+// The matrix Q comes from range_approx so r will really be small. B = (r,n)
+// We b = tQ*CSR with bt = transpose((transpose(CSR)*Q))
+fn small_dense_mult_csr<F>(qmat : &Array2<F>, csrmat : &CsMat<F>) -> Array2<F> 
+    where F: Float + Scalar  + Lapack + ndarray::ScalarOperand + sprs::MulAcc {
+    // transpose csrmat (it becomes a cscmat! )
+    let cscmat = csrmat.transpose_view();
+    let (qm,qr) = qmat.dim();
+    let (csm, csn) = cscmat.shape();
+    assert_eq!(csn, qm);
+    let mut bt = Array2::<F>::zeros((qm,csn));
+    prod::csc_mulacc_dense_colmaj(cscmat, *qmat, bt.view_mut());
         panic!("not yet implement")
 } // end of small_dense_mult_csr
 
