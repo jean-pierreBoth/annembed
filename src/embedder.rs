@@ -5,7 +5,7 @@
 use num_traits::{Float};
 use std::collections::HashMap;
 
-use ndarray::{Array2};
+use ndarray::{Array1, Array2, Axis};
 use ndarray_linalg::{Scalar, Lapack};
 use sprs::{CsMat, TriMatBase};
 
@@ -51,15 +51,14 @@ impl <F> Emmbedder<'_, F>
     // Let x a point y_i its neighbours
     //     after simplification weight assigned can be assumed to be of the form exp(-alfa * (d(x, y_i) - d(x, y_1)))
     //     the problem is : how to choose alfa
-    fn into_matrepr(&self) -> MatRepr<f32> {
+    fn into_matrepr_for_svd(&self) -> MatRepr<f32> {
         let nbnodes = self.kgraph.get_nb_nodes();
         // get stats
         let graphstats = self.kgraph.get_kraph_stats();
-        let max_in_degree = graphstats.get_max_in_degree();
+        let nbng = self.kgraph.get_nbng();
         let mut scale_params = Vec::<f32>::with_capacity(nbnodes);
-
        // TODO define a threshold for dense/sparse representation
-        if max_in_degree > nbnodes * 100 {
+        if nbnodes <= 30000 {
             let mut transition_proba = Array2::<f32>::zeros((nbnodes,nbnodes));
             // we loop on all nodes, for each we want nearest neighbours, and get scale of distances around it
             // TODO can be // with rayon taking care of indexation
@@ -75,15 +74,25 @@ impl <F> Emmbedder<'_, F>
                 } // end of for j
             }  // end for i
             // now we symetrize the graph
-            // The UMAP formula implies taking the non null proba when one proba is null, so initialization is more packed.
-            let symgraph = (&transition_proba + &transition_proba.view().t()) * 0.5;
+            // The UMAP formula implies taking the non null proba when one proba is null, so UMAP initialization is more packed.
+            let mut symgraph = (&transition_proba + &transition_proba.view().t()) * 0.5;
+            let diag = symgraph.sum_axis(Axis(1));
+            for i in 0..nbnodes {
+                let mut row = symgraph.row_mut(i);
+                let val : f32 = diag[[i]];
+    //            row = -&row/diag[[i]];
+
+            }
+            //
+            // now we go to the laplacian. compute sum of row and renormalize
             //
             MatRepr::from_array2(transition_proba)
         }   
         else {
             // now we must construct a CsrMat to store the symetrized graph transition probablity to go svd. 
             let neighbour_hood = self.kgraph.get_neighbours();
-            let mut edge_list = HashMap::<(usize, usize),f32>::with_capacity(nbnodes* self.kgraph.get_nbng());
+            // TODO This can be made // with a chashmap
+            let mut edge_list = HashMap::<(usize, usize),f32>::with_capacity(nbnodes* nbng);
             for i in 0..neighbour_hood.len() {
                 let (scale, probas) = self.get_scale_from_proba_normalisation(&neighbour_hood[i]);
                 scale_params.push(scale);
@@ -94,8 +103,13 @@ impl <F> Emmbedder<'_, F>
                 } // end of for j
             }
             // now we iter on the hasmap symetrize the graph, and insert in triplets transition_proba
-            let mut transition_proba = TriMatBase::<Vec<usize>, Vec<f32>>::with_capacity((nbnodes,nbnodes),nbnodes*100);
+            let mut diagonal = Array1::<f32>::zeros(nbnodes);
+            let mut rows = Vec::<usize>::with_capacity(nbnodes*2*nbng);
+            let mut cols = Vec::<usize>::with_capacity(nbnodes*2*nbng);
+            let mut values = Vec::<f32>::with_capacity(nbnodes*2*nbng);
+
             for ((i,j), val) in edge_list.iter() {
+                assert!(*i != *j);
                 let sym_val;
                 if let Some(t_val) = edge_list.get(&(*j,*i)) {
                     sym_val = (val+t_val) * 0.5;
@@ -103,15 +117,33 @@ impl <F> Emmbedder<'_, F>
                 else { 
                     sym_val = *val;
                 }
-                transition_proba.add_triplet(*i,*j, sym_val);
-                transition_proba.add_triplet(*j,*i, sym_val);
+                diagonal[*i] += sym_val;
+                rows.push(*i);
+                cols.push(*j);
+                values.push(sym_val);
+                diagonal[*i] += sym_val;
+                //              
+                rows.push(*j);
+                cols.push(*i);
+                values.push(sym_val);
+                diagonal[*j] += sym_val;
             }
-            let csr_mat : CsMat<f32> = transition_proba.to_csr();
+            // Now we reset non diagonal terms to 1 - val[i,j]/D[i] add diagonal term to 1.
+            for i in 0..rows.len() {
+                let row = rows[i];
+                values[i] = 1. - values[i] / diagonal[row];
+            }
+            for i in 0..nbnodes {
+                rows.push(i);
+                cols.push(i);
+                values.push(1.);                
+            }
+            let laplacian = TriMatBase::<Vec<usize>, Vec<f32>>::from_triplets((nbnodes,nbnodes),rows, cols, values);
+            let csr_mat : CsMat<f32> = laplacian.to_csr();
             MatRepr::from_csrmat(csr_mat)
-//            panic!("csmat representation not yet done");
         }  // end case CsMat
         //
-    }  // end of into_matrepr
+    }  // end of into_matrepr_for_svd
 
 
 
