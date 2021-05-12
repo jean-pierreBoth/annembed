@@ -1,4 +1,4 @@
 //! Some tools for hdbscan, mapper and others...
 
-mod svdapprox;
-mod entropy;
+pub mod svdapprox;
+pub mod entropy;

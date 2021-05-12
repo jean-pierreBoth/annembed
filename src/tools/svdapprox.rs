@@ -153,7 +153,8 @@ impl <F> MatRepr<F> where
             MatMode::CSR(csmat) =>  {
                 // allocate result
                 let mut vres = Array1::<F>::zeros(self.shape()[0]);
-                prod::mul_acc_mat_vec_csr(csmat.view(), vec.as_slice().unwrap(), vres.as_slice_mut().unwrap());
+                let vec_slice = vec.as_slice().unwrap();
+                prod::mul_acc_mat_vec_csr(csmat.view(), vec_slice, vres.as_slice_mut().unwrap());
                 return vres;
             },
         };
@@ -575,6 +576,8 @@ mod tests {
 #[allow(unused)]
 use super::*;
 
+use sprs::{CsMat, TriMatBase};
+
 #[allow(dead_code)]
 fn log_init_test() {
     let _ = env_logger::builder().is_test(true).try_init();
@@ -693,6 +696,67 @@ fn test_svd_wiki_rank () {
     }
 } // end of test_svd_wiki
 
+
+#[test]
+
+fn test_svd_wiki_csr_epsil () {
+    //
+    log_init_test();
+    //
+    log::info!("\n\n test_svd_wiki_csr_epsil");
+    // matrix taken from wikipedia (4,5)
+    // let mat =  ndarray::arr2( & 
+    //   [[ 1. , 0. , 0. , 0., 2. ],  // row 0
+    //   [ 0. , 0. , 3. , 0. , 0. ],  // row 1
+    //   [ 0. , 0. , 0. , 0. , 0. ],  // row 2
+    //   [ 0. , 2. , 0. , 0. , 0. ]]  // row 3
+    // );
+    let mut rows = Vec::<usize>::with_capacity(5);
+    let mut cols = Vec::<usize>::with_capacity(5);
+    let mut values = Vec::<f32>::with_capacity(5);
+    rows.push(0);
+    cols.push(0);
+    values.push(1.);
+    rows.push(0);
+    cols.push(4);
+    values.push(2.);
+    // row 1    
+    rows.push(1);
+    cols.push(2);
+    values.push(3.); 
+    // row 3
+    rows.push(3);
+    cols.push(1);
+    values.push(2.);     
+    //
+    let trimat = TriMatBase::<Vec<usize>, Vec<f32>>::from_triplets((4,5),rows, cols, values);
+    let csr_mat : CsMat<f32> = trimat.to_csr();
+    let matrepr = MatRepr::from_csrmat(csr_mat);
+    let mut svdapprox = SvdApprox::new(&matrepr);
+    let svdmode = RangeApproxMode::EPSIL(RangePrecision{epsil:0.1 , step:5});
+    let res = svdapprox.direct_svd(svdmode);
+    assert!(res.is_ok());
+    assert!(svdapprox.get_sigma().is_some());
+    //
+    let sigma = ndarray::arr1(&[ 3., (5f32).sqrt() , 2., 0.]);
+    if let Some(computed_s) = svdapprox.get_sigma() {
+        assert!(computed_s.len() == sigma.len());
+        for i in 0..sigma.len() {
+            log::trace!{"sp  i  exact : {}, computed {}", sigma[i], computed_s[i]};
+            let test;
+            if  sigma[i] > 0. {
+               test =  ((1. - computed_s[i]/sigma[i]).abs() as f32) < f32::EPSILON;
+            }
+            else {
+               test =  ((sigma[i]-computed_s[i]).abs()  as f32) < f32::EPSILON;
+            };
+            assert!(test);
+        }
+    }
+    else {
+        std::panic!("test_svd_wiki_csr_epsil");
+    }
+} // end of test_svd_wiki
 
 
 #[test]
