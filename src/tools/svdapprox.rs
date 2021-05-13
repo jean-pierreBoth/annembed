@@ -142,17 +142,17 @@ impl <F> MatRepr<F> where
     pub fn shape(&self) -> [usize; 2] {
        match &self.data {
             MatMode::FULL(mat) =>  { return [mat.shape()[0], mat.shape()[1]]; },
-            MatMode::CSR(csmat) =>  { return [csmat.shape().0, csmat.shape().0]; },
+            MatMode::CSR(csmat) =>  { return [csmat.shape().0, csmat.shape().1]; },
         };
     } // end of shape 
 
     /// Matrix Vector multiplication. We use raw interface to get Blas.
-    pub fn mat_dot_vector(&self, vec : &ArrayView<F, Ix1>) -> Array1<F>  {
+    pub fn mat_dot_vector(&self, vec : &Array1<F>) -> Array1<F>  {
         match &self.data {
             MatMode::FULL(mat) => { return mat.dot(vec);},
             MatMode::CSR(csmat) =>  {
                 // allocate result
-                let mut vres = Array1::<F>::zeros(self.shape()[0]);
+                let mut vres = Array1::<F>::zeros(csmat.rows());
                 let vec_slice = vec.as_slice().unwrap();
                 prod::mul_acc_mat_vec_csr(csmat.view(), vec_slice, vres.as_slice_mut().unwrap());
                 return vres;
@@ -165,18 +165,21 @@ impl <F> MatRepr<F> where
 // I need a function to compute (once and only once in svd) a product B  = tQ*CSR for Q = (m,r) with r small (<=5) and CSR(m,n)
 // The matrix Q comes from range_approx so r will really be small. B = (r,n)
 // We b = tQ*CSR with bt = transpose((transpose(CSR)*Q))
+// We need to clone the result to enforce standard layout
 fn small_transpose_dense_mult_csr<F>(qmat : &Array2<F>, csrmat : &CsMat<F>) -> Array2<F> 
     where F: Float + Scalar  + Lapack + ndarray::ScalarOperand + sprs::MulAcc {
     // transpose csrmat (it becomes a cscmat! )
     let cscmat = csrmat.transpose_view();
-    let (qm, _) = qmat.dim();
-    let ( _ , csn) = cscmat.shape();
-    assert_eq!(csn, qm);
+    let (qm_r, qm_c) = qmat.dim();
+    let (csc_r , csc_c) = cscmat.shape();
+    assert_eq!(csc_c, qm_r);
     // CAVEAT this requires 2 allocs with the to_owned. 
     // Note n should be (here) the original dimension of data (we can expect n < 1000 and r should be <= 10)
-    let mut bt = Array2::<F>::zeros((qm,csn));
+    let mut bt = Array2::<F>::zeros((csc_r, qm_c));
     prod::csc_mulacc_dense_colmaj(cscmat, qmat.view(), bt.view_mut());
-    bt.t().to_owned()
+    log::trace!("small_transpose_dense_mult_csr returning  ({},{}) matrix", csc_r, qm_c);
+    // We want a Owned matrix in the STANDARD LAYOUT!! 
+    Array::from_shape_vec(bt.t().raw_dim(), bt.t().iter().cloned().collect()).unwrap()
 } // end of small_dense_mult_csr
 
 
@@ -327,7 +330,7 @@ pub fn adaptative_range_finder_matrep<F>(mat : &MatRepr<F> , epsil:f64, r : usiz
     // we store Y (as Q) as a Vec of Array1<f64>
     let mut y_vec =  Vec::<Array1<F>>::with_capacity(r);
     for j in 0..r {
-        let c = omega.mat.column(j);
+        let c = omega.mat.column(j).to_owned();
         let y_tmp = mat.mat_dot_vector(&c);
         y_vec.push(y_tmp);
     }
@@ -360,7 +363,7 @@ pub fn adaptative_range_finder_matrep<F>(mat : &MatRepr<F> , epsil:f64, r : usiz
         q_mat.push(q_j.clone());
         // we make another y, first we sample a new omega_j vector of size n
         let omega_j_p1 = rng.generate_stdn_vect(Ix1(data_shape[1]));
-        let mut y_j_p1 = mat.mat_dot_vector(&omega_j_p1.view());
+        let mut y_j_p1 = mat.mat_dot_vector(&omega_j_p1);
         // we orthogonalize new y with all q's i.e q_mat
         orthogonalize_with_q(&q_mat, &mut y_j_p1.view_mut());
         // the new y will takes the place of old y at rank j%r so we always have the last r y that have been sampled
@@ -480,8 +483,11 @@ impl <'a, F> SvdApprox<'a, F>
         //
         let mut b = match &self.data.data {
             MatMode::FULL(mat) => { q.t().dot(mat)},
-            MatMode::CSR(mat)  => { small_transpose_dense_mult_csr(&q, mat)},
+            MatMode::CSR(mat)  => { 
+                                    small_transpose_dense_mult_csr(&q, mat)
+                                },
         };
+
         //
         let layout = MatrixLayout::C { row: b.shape()[0] as i32, lda: b.shape()[1] as i32 };
         let slice_for_svd_opt = b.as_slice_mut();
@@ -678,8 +684,9 @@ fn test_svd_wiki_rank () {
     //
     let sigma = ndarray::arr1(&[ 3., (5f64).sqrt() , 2., 0.]);
     if let Some(computed_s) = svdapprox.get_sigma() {
-        assert!(computed_s.len() == sigma.len());
-        for i in 0..sigma.len() {
+        assert!(computed_s.len() <= sigma.len());
+        assert!(computed_s.len() >= 3);
+        for i in 0..computed_s.len() {
             log::trace!{"sp  i  exact : {}, computed {}", sigma[i], computed_s[i]};
             let test;
             if  sigma[i] > 0. {
@@ -740,15 +747,17 @@ fn test_svd_wiki_csr_epsil () {
     //
     let sigma = ndarray::arr1(&[ 3., (5f32).sqrt() , 2., 0.]);
     if let Some(computed_s) = svdapprox.get_sigma() {
-        assert!(computed_s.len() == sigma.len());
-        for i in 0..sigma.len() {
+        log::trace!{ "computed spectrum size {}", computed_s.len()};
+        assert!(computed_s.len() <= sigma.len());
+        assert!(computed_s.len() >= 3);
+        for i in 0..computed_s.len() {
             log::trace!{"sp  i  exact : {}, computed {}", sigma[i], computed_s[i]};
             let test;
             if  sigma[i] > 0. {
-               test =  ((1. - computed_s[i]/sigma[i]).abs() as f32) < f32::EPSILON;
+               test =  ((1. - computed_s[i]/sigma[i]).abs() as f32) < 1.0E-5;
             }
             else {
-               test =  ((sigma[i]-computed_s[i]).abs()  as f32) < f32::EPSILON;
+               test =  ((sigma[i]-computed_s[i]).abs()  as f32) < 1.0E-5;
             };
             assert!(test);
         }
@@ -782,6 +791,7 @@ fn test_svd_wiki_epsil () {
     //
     let sigma = ndarray::arr1(&[ 3., (5f64).sqrt() , 2., 0.]);
     if let Some(computed_s) = svdapprox.get_sigma() {
+        assert!(computed_s.len() >= 3);
         assert!(sigma.len() >= computed_s.len());
         for i in 0..computed_s.len() {
             log::trace!{"sp  i  exact : {}, computed {}", sigma[i], computed_s[i]};

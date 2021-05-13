@@ -28,9 +28,7 @@ impl <F> Emmbedder<'_, F>
         embedded
     }
 
-    fn graph_symmetrization_csr(csr_mat : &CsMat<F> ) {
 
-    } // end of graph_symmetrization
 
     /// computes a generalized laplacian with weights taking into account density of points.
     /// Veerman A Primer on Laplacian Dynamics in Directed Graphs 2020 arxiv https://arxiv.org/abs/2002.02605
@@ -76,17 +74,15 @@ impl <F> Emmbedder<'_, F>
             // now we symetrize the graph
             // The UMAP formula implies taking the non null proba when one proba is null, so UMAP initialization is more packed.
             let mut symgraph = (&transition_proba + &transition_proba.view().t()) * 0.5;
+            // now we go to the laplacian. compute sum of row and renormalize
             let diag = symgraph.sum_axis(Axis(1));
             for i in 0..nbnodes {
                 let mut row = symgraph.row_mut(i);
-                let val : f32 = diag[[i]];
-    //            row = -&row/diag[[i]];
-
+                row /= -diag[[i]];
+                row[[i]] = 1.;
             }
             //
-            // now we go to the laplacian. compute sum of row and renormalize
-            //
-            MatRepr::from_array2(transition_proba)
+            MatRepr::from_array2(symgraph)
         }   
         else {
             // now we must construct a CsrMat to store the symetrized graph transition probablity to go svd. 
