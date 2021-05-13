@@ -163,23 +163,28 @@ impl <F> MatRepr<F> where
 } // end of impl block for MatRepr
 
 // I need a function to compute (once and only once in svd) a product B  = tQ*CSR for Q = (m,r) with r small (<=5) and CSR(m,n)
-// The matrix Q comes from range_approx so r will really be small. B = (r,n)
+// The matrix Q comes from range_approx so its rank (columns number) will really be small as recommended in csc_mulacc_dense_colmaj doc
+// B = (r,n) with n original data dimension (we can expect n < 1000  and r <= 10
 // We b = tQ*CSR with bt = transpose((transpose(CSR)*Q))
 // We need to clone the result to enforce standard layout
 fn small_transpose_dense_mult_csr<F>(qmat : &Array2<F>, csrmat : &CsMat<F>) -> Array2<F> 
     where F: Float + Scalar  + Lapack + ndarray::ScalarOperand + sprs::MulAcc {
     // transpose csrmat (it becomes a cscmat! )
     let cscmat = csrmat.transpose_view();
-    let (qm_r, qm_c) = qmat.dim();
+    let (qm_r, qm_c) = qmat.dim();             // we expect qm_c to be <= 10 as it corresponds to a rank approximated matrix
     let (csc_r , csc_c) = cscmat.shape();
     assert_eq!(csc_c, qm_r);
-    // CAVEAT this requires 2 allocs with the to_owned. 
-    // Note n should be (here) the original dimension of data (we can expect n < 1000 and r should be <= 10)
-    let mut bt = Array2::<F>::zeros((csc_r, qm_c));
-    prod::csc_mulacc_dense_colmaj(cscmat, qmat.view(), bt.view_mut());
+            //  let mut bt = Array2::<F>::zeros((csc_r, qm_c));
+    let mut b =  Array2::<F>::zeros((qm_c, csc_r));
+    // we transpose to get the right dimension in csc_mulacc_dense_colmaj (see the documentation for t() in ndarray)
+    b.swap_axes(0,1);
+    prod::csc_mulacc_dense_colmaj(cscmat, qmat.view(), b.view_mut());
     log::trace!("small_transpose_dense_mult_csr returning  ({},{}) matrix", csc_r, qm_c);
-    // We want a Owned matrix in the STANDARD LAYOUT!! 
-    Array::from_shape_vec(bt.t().raw_dim(), bt.t().iter().cloned().collect()).unwrap()
+            // We want a Owned matrix in the STANDARD LAYOUT!! 
+            // Array::from_shape_vec(bt.t().raw_dim(), bt.t().iter().cloned().collect()).unwrap()
+    // we retranspose ! 
+    b.swap_axes(0,1);
+    b
 } // end of small_dense_mult_csr
 
 
