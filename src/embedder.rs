@@ -40,22 +40,24 @@ impl <F> Emmbedder<'_, F>
 
     }
 
-    // the function get_scale_from_proba_normalisation convert into neighbourhood probabilities
-    // 
+    // the function computes a symetric laplacian graph for svd.
+    // We will then need the lower non zero eigenvalues and eigen vectors.
+    // The best justification for this is in Diffusion Maps.
+    //
     // Store in a symetric matrix representation dense of CsMat with for spectral embedding
-    // Do the Svd to initialize embedding. After that we do noeed any more a full matrix.
+    // Do the Svd to initialize embedding. After that we do not need any more a full matrix.
     //      - Get maximal incoming degree and choose either a CsMat or a dense Array2. 
     //
     // Let x a point y_i its neighbours
-    //     after simplification weight assigned can be assumed to be of the form exp(-alfa * (d(x, y_i) - d(x, y_1)))
-    //     the problem is : how to choose alfa
+    //     after simplification weight assigned can be assumed to be of the form exp(-alfa * (d(x, y_i))
+    //     the problem is : how to choose alfa, this is done in get_scale_from_proba_normalisation
     fn into_matrepr_for_svd(&self) -> MatRepr<f32> {
         let nbnodes = self.kgraph.get_nb_nodes();
         // get stats
         let graphstats = self.kgraph.get_kraph_stats();
         let nbng = self.kgraph.get_nbng();
         let mut scale_params = Vec::<f32>::with_capacity(nbnodes);
-       // TODO define a threshold for dense/sparse representation
+        // TODO define a threshold for dense/sparse representation
         if nbnodes <= 30000 {
             let mut transition_proba = Array2::<f32>::zeros((nbnodes,nbnodes));
             // we loop on all nodes, for each we want nearest neighbours, and get scale of distances around it
@@ -71,14 +73,19 @@ impl <F> Emmbedder<'_, F>
                     transition_proba[[i,edge.node ]] = probas[j];
                 } // end of for j
             }  // end for i
-            // now we symetrize the graph
-            // The UMAP formula implies taking the non null proba when one proba is null, so UMAP initialization is more packed.
+            // now we symetrize the graph by taking mean
+            // The UMAP formula (p_i+p_j - p_i *p_j) implies taking the non null proba when one proba is null, 
+            // so UMAP initialization is more packed.
             let mut symgraph = (&transition_proba + &transition_proba.view().t()) * 0.5;
-            // now we go to the laplacian. compute sum of row and renormalize
+            // now we go to the symetric laplacian. compute sum of row and renormalize. See Lafon-Keller-Coifman
+            // Disffusions Maps appendix B
+            // IEEE TRANSACTIONS ON PATTERN ANALYSIS AND MACHINE INTELLIGENCE,VOL. 28, NO. 11,NOVEMBER 2006
             let diag = symgraph.sum_axis(Axis(1));
             for i in 0..nbnodes {
                 let mut row = symgraph.row_mut(i);
-                row /= -diag[[i]];
+                for j in 0..nbnodes {
+                    row /= -(diag[[i]]*diag[[j]]).sqrt();
+                }
                 row[[i]] = 1.;
             }
             //
@@ -124,10 +131,11 @@ impl <F> Emmbedder<'_, F>
                 values.push(sym_val);
                 diagonal[*j] += sym_val;
             }
-            // Now we reset non diagonal terms to 1 - val[i,j]/D[i] add diagonal term to 1.
+            // Now we reset non diagonal terms to 1 - val[i,j]/(D[i]*D[j])^1/2 add diagonal term to 1.
             for i in 0..rows.len() {
                 let row = rows[i];
-                values[i] = 1. - values[i] / diagonal[row];
+                let col = cols[i];
+                values[i] = 1. - values[i] / (diagonal[row]*diagonal[col]).sqrt();
             }
             for i in 0..nbnodes {
                 rows.push(i);
