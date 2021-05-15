@@ -13,19 +13,73 @@ use sprs::{CsMat, TriMatBase};
 use crate::fromhnsw::*;
 use crate::tools::svdapprox::*;
 
+
+// We need this structure to compute entropy od neighbour distribution
+/// This structure stores for each node its local scale and proba to its nearest neighbours as referenced in 
+/// field neighbours of KGraph. Field neighbours gives us acces to neighbours id and original distances.
+/// So this field gives a local scale and transition proba.
+struct NodeParam {
+    scale: f32,
+    probas: Vec<f32>,
+}
+
+/// We maintain NodeParam for each node as it enables scaling in the embedded space.
+struct NodeParams {
+    node_params: Vec<NodeParam>
+}
+
+
+/// All we need to optimize entropy discrepancy
+/// For each node i , its knbg neighbours in neighbours[i] , its initial scale and transition proba in initial_space
+/// and in embedded_space
+struct EntropyOptim {
+    neighbours : Vec<Vec<NodeIdx>>,
+    initial_space : Option<NodeParams>,
+    embedded_space : Option<NodeParams>,
+}
+
+
+// We need to compute entropy in initial space and embedded space.
 pub struct Emmbedder <'a, F> {
-    kgraph : &'a KGraph<F>, 
+    kgraph : &'a KGraph<F>,
+    initial_space : Option< NodeParams>,
+    embedded_space : Option< NodeParams>,
 }
 
 impl <F> Emmbedder<'_, F> 
     where F :  Float + Lapack + Scalar  + ndarray::ScalarOperand + Send + Sync {
 
 
-    // this function compute a (generalised laplacian), do an approximated svd of it and project data on associated eigenvectors
-    fn get_initial_embedding(&mut self) -> Array2<F> {
-        let embedded = Array2::<F>::zeros((3,2));
+    // this function initialize embedding by a svd (or else?)
+    fn get_initial_embedding(&mut self, asked_dim : usize) -> Array2<F> {
+        let mat_for_svd = self.into_matrepr_for_svd();
+        let svdapprox = SvdApprox::new(&mat_for_svd);
+        // TODO adjust epsil ?
+        let svdmode = RangeApproxMode::EPSIL(RangePrecision{epsil:0.1 , step:5});
+        let svd_res = svdapprox.direct_svd(svdmode);
+        if !svd_res.is_ok() {
+            println!("svd approximation failed");
+            std::panic!();
+        }
+        // As we used a laplacian and probability transitions we eigenvectors corresponding to lower eigenvalues
+        let lambdas = svdapprox.get_sigma().unwrap();
+        // singular vectors are stored in decrasing order according to lapack for both gesdd and gesvd
+        if lambdas.len() > 2 && lambdas[1] > lambdas[0] {
+            panic!("svd spectrum not decreasing");
+        }
+        // get first non null lamba
+        let first_non_zero_opt = lambdas.iter().rev().position(|&x| x > 0.);
+        if !first_non_zero_opt.is_some() {
+            println!("cannot find positive eigenvalue");
+            std::panic!();            
+        }
+        else {
+            let first_non_zero = lambdas.len() - 1 - first_non_zero_opt.unwrap();   // is in [0..len()-1]
+            let max_dim = asked_dim.min(first_non_zero+1);                          // is in [1..len()]
+            // We get U at index in range first_non_zero-max_dim..first_non_zero
+            svdapprox.get_u(s![first_non_zero-max_dim..first_non_zero, ..]).to_owned().unwrap()
+        }
         //
-        embedded
     }
 
 
@@ -78,7 +132,7 @@ impl <F> Emmbedder<'_, F>
             // so UMAP initialization is more packed.
             let mut symgraph = (&transition_proba + &transition_proba.view().t()) * 0.5;
             // now we go to the symetric laplacian. compute sum of row and renormalize. See Lafon-Keller-Coifman
-            // Disffusions Maps appendix B
+            // Diffusions Maps appendix B
             // IEEE TRANSACTIONS ON PATTERN ANALYSIS AND MACHINE INTELLIGENCE,VOL. 28, NO. 11,NOVEMBER 2006
             let diag = symgraph.sum_axis(Axis(1));
             for i in 0..nbnodes {
@@ -154,7 +208,7 @@ impl <F> Emmbedder<'_, F>
 
 
     // choose scale to satisfy a normalization constraint. 
-    // p_i = exp[- beta * (d(x,y_i)/ local_scale) ] 
+    // p_i = exp[- beta * (d(x,y_i) - d(x, y_1)/ local_scale ] 
     // We return beta/local_scale
     // as function is monotonic with respect to scale, we use dichotomy.
     fn get_scale_from_umap(&self, norm : f64 , neighbours : &Vec<OutEdge<F>>)  -> (f32, Vec::<f32>) {
@@ -179,9 +233,11 @@ impl <F> Emmbedder<'_, F>
     // Simplest function where we know really what we do and why. Get a normalized proba with constraint.
     // p_i = exp[- beta * (d(x,y_i)/ local_scale)]  and then normalized to 1.
     // local_scale can be adjusted so that ratio of last praba to first proba >= epsil.
+    // This function returns the local scale (i.e mean distance of a point to its nearest neighbour) 
+    // and vector of proba weight to nearest neighbours. Min 
     fn get_scale_from_proba_normalisation(&self, neighbours : &Vec<OutEdge<F>>)  -> (f32, Vec::<f32>) {
         // p_i = exp[- beta * (d(x,y_i)/ local_scale) * lambda] 
-        let epsil : f32 = 1.0E-5;
+        const PROBA_MIN : f32 = 1.0E-5;
         let nbgh = neighbours.len();
         // determnine mean distance to nearest neighbour at local scale
         let rho_x = neighbours[0].weight.to_f32().unwrap();
@@ -197,13 +253,13 @@ impl <F> Emmbedder<'_, F>
         let first_dist = neighbours[0].weight.to_f32().unwrap();
         let last_dist = neighbours[nbgh-1].weight.to_f32().unwrap();
         if  last_dist > first_dist {
-            let lambda = (last_dist-first_dist)/(mean_rho * (-epsil.ln()));
+            let lambda = (last_dist-first_dist)/(mean_rho * (-PROBA_MIN.ln()));
             if lambda > 1. {
                 // we rescale mean_rho to avoid too large range of probabilities in neighbours.
                 mean_rho = mean_rho*lambda;
             }
             let mut probas = neighbours.iter().map( |n| (-n.weight.to_f32().unwrap()/mean_rho).exp()).collect::<Vec<f32>>();
-            assert!(probas[probas.len()-1]/probas[0] <= epsil);
+            assert!(probas[probas.len()-1]/probas[0] <= PROBA_MIN);
             let sum = probas.iter().sum::<f32>();
             for i in 0..nbgh {
                 probas[i] = probas[i]/sum; 
