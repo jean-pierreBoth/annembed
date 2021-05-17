@@ -121,9 +121,11 @@ impl  <F> DiscreteProba<F>
     }
 
     /// computes mean diversity of other with respect to self.
+    /// 
     /// ```math
     /// \sum_{i self.p_{i} != 0} self.p_{i} * \phi( other.p_{i}/ self.p_{i})
     /// ```
+    /// 
     pub fn relative_renyi_entropy(&self, other : &DiscreteProba<F>, q: F) -> F {
         if  near_to_1(q) {
             return self.relative_renyi_entropy_1(other);

@@ -203,6 +203,12 @@ pub struct RangePrecision {
     step : usize,
 }
 
+impl RangePrecision {
+    pub fn new(epsil : f64, step : usize) -> Self {
+        RangePrecision{epsil, step}
+    }
+
+}  // end of RangePrecision
 
 /// We can ask for a range approximation of matrix with a fixed target range
 /// - asking for a range
@@ -449,29 +455,29 @@ pub struct SvdApprox<'a, F: Scalar> {
 impl <'a, F> SvdApprox<'a, F>  
      where  F : Float + Lapack + Scalar  + ndarray::ScalarOperand + sprs::MulAcc {
 
-    fn new(data : &'a MatRepr<F>) -> Self {
+    pub fn new(data : &'a MatRepr<F>) -> Self {
         SvdApprox{data, u : None, s : None, vt :None}
     }
 
     /// returns Sigma
     #[inline]
-    fn get_sigma(&self) -> &Option<Array1<F>> {
+    pub fn get_sigma(&self) -> &Option<Array1<F>> {
         &self.s
     }
 
     /// returns U
     #[inline]
-    fn get_u(&self) -> &Option<Array2<F>> {
+    pub fn get_u(&self) -> &Option<Array2<F>> {
         &self.u
     }
 
     /// returns Vt
     #[inline]
-    fn get_vt(&self) -> &Option<Array2<F>> {
+    pub fn get_vt(&self) -> &Option<Array2<F>> {
         &self.vt
     }
     // direct svd from Algo 5.1 of Halko-Tropp
-    fn direct_svd(&mut self, parameters : RangeApproxMode) -> Result<usize, String> {
+    pub fn direct_svd(&mut self, parameters : RangeApproxMode) -> Result<usize, String> {
         let ra = RangeApprox::new(self.data, parameters);
         let q;
         // match self.data {
@@ -500,6 +506,7 @@ impl <'a, F> SvdApprox<'a, F>
             println!("direct_svd Matrix cannot be transformed into a slice : not contiguous or not in standard order");
             return Err(String::from("not contiguous or not in standard order"));
         }
+        // use divide conquer (calls lapack gesdd), faster but could use svd (lapack gesvd)
         let res_svd_b = F::svddc(layout,  UVTFlag::Some, slice_for_svd_opt.unwrap());
         if res_svd_b.is_err()  {
             println!("direct_svd, svddc failed");
@@ -583,7 +590,7 @@ fn do_qr<F> (layout : MatrixLayout, mat : &mut Array2<F>)
 mod tests {
 
 //    cargo test svdapprox  -- --nocapture
-
+//    RUST_LOG=annembed::tools::svdapprox=TRACE cargo test svdapprox  -- --nocapture
 #[allow(unused)]
 use super::*;
 

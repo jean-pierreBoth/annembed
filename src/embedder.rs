@@ -39,6 +39,15 @@ struct EntropyOptim {
 }
 
 
+/// We use a normalized symetric laplacian to go to the svd.
+/// But we want the left eigenvectors of the normalized R(andom)W(alk) laplacian so we must keep track
+/// of degrees (rown norms)
+pub struct LaplacianGraph{
+    sym_laplacian : MatRepr<f32>,
+    degrees : Array1<f32>
+}
+
+
 // We need to compute entropy in initial space and embedded space.
 pub struct Emmbedder <'a, F> {
     kgraph : &'a KGraph<F>,
@@ -51,18 +60,22 @@ impl <F> Emmbedder<'_, F>
 
 
     // this function initialize embedding by a svd (or else?)
-    fn get_initial_embedding(&mut self, asked_dim : usize) -> Array2<F> {
-        let mat_for_svd = self.into_matrepr_for_svd();
-        let svdapprox = SvdApprox::new(&mat_for_svd);
+    // We are intersested in first eigenvalues (excpeting 1.) of transition probability matrix
+    // i.e last non null eigenvalues of laplacian matrix!!
+    // It is in fact diffusion Maps at time 0
+    fn get_dmap_initial_embedding(&mut self, asked_dim : usize) -> Array2<F> {
+        // get eigen values of normalized symetric lapalcian
+        let laplacian = self.get_laplacian();
+        let mut svdapprox = SvdApprox::new(&laplacian.sym_laplacian);
         // TODO adjust epsil ?
-        let svdmode = RangeApproxMode::EPSIL(RangePrecision{epsil:0.1 , step:5});
+        let svdmode = RangeApproxMode::EPSIL(RangePrecision::new(0.1 , 5));
         let svd_res = svdapprox.direct_svd(svdmode);
         if !svd_res.is_ok() {
             println!("svd approximation failed");
             std::panic!();
         }
         // As we used a laplacian and probability transitions we eigenvectors corresponding to lower eigenvalues
-        let lambdas = svdapprox.get_sigma().unwrap();
+        let lambdas = svdapprox.get_sigma().as_ref().unwrap();
         // singular vectors are stored in decrasing order according to lapack for both gesdd and gesvd
         if lambdas.len() > 2 && lambdas[1] > lambdas[0] {
             panic!("svd spectrum not decreasing");
@@ -75,20 +88,32 @@ impl <F> Emmbedder<'_, F>
         }
         else {
             let first_non_zero = lambdas.len() - 1 - first_non_zero_opt.unwrap();   // is in [0..len()-1]
+            log::info!("last non null eigenvalue at rank : {}, value : {}", first_non_zero, lambdas[first_non_zero]);
+            assert!(first_non_zero >= asked_dim);
             let max_dim = asked_dim.min(first_non_zero+1);                          // is in [1..len()]
             // We get U at index in range first_non_zero-max_dim..first_non_zero
-            svdapprox.get_u(s![first_non_zero-max_dim..first_non_zero, ..]).to_owned().unwrap()
+            let u = svdapprox.get_u().as_ref().unwrap();
+            assert_eq!(u.nrows(), self.kgraph.get_nbng());
+            let mut embedded = Array2::<F>::zeros((u.nrows(), max_dim));
+            // according to theory (See Luxburg or Lafon-Keller diffusion maps) we must go back to eigen vectors of rw laplacian.
+            // moreover we must get back to type F
+            let sum_diag = laplacian.degrees.into_iter().sum::<f32>().sqrt();
+            let j_weights : Vec<f32>= laplacian.degrees.into_iter().map(|x|  x.sqrt()/sum_diag).collect();
+            for i in 0..u.nrows() {
+                let row_i = u.row(i);
+                for j in 0..asked_dim {
+                    // divide j value by diagonal and convert to F
+                    embedded[[i,j]] = F::from_f32(row_i[first_non_zero-j]/j_weights[j]).unwrap();
+                }
+            }
+            // according to theory (See Luxburg or Lafon-Keller diffusion maps) we must go back to eigen vectors of rw laplacian.
+            // moreover we must get back to type F
+            return embedded;
         }
         //
-    }
+    } // end of get_initial_embedding
 
 
-
-    /// computes a generalized laplacian with weights taking into account density of points.
-    /// Veerman A Primer on Laplacian Dynamics in Directed Graphs 2020 arxiv https://arxiv.org/abs/2002.02605
-    fn graph_laplacian() {
-
-    }
     // minimize divergence between embedded and initial distribution probability
     fn entropy_optimize() {
 
@@ -105,7 +130,10 @@ impl <F> Emmbedder<'_, F>
     // Let x a point y_i its neighbours
     //     after simplification weight assigned can be assumed to be of the form exp(-alfa * (d(x, y_i))
     //     the problem is : how to choose alfa, this is done in get_scale_from_proba_normalisation
-    fn into_matrepr_for_svd(&self) -> MatRepr<f32> {
+    // See also Veerman A Primer on Laplacian Dynamics in Directed Graphs 2020 arxiv https://arxiv.org/abs/2002.02605
+
+    
+    fn get_laplacian(&self) -> LaplacianGraph {
         let nbnodes = self.kgraph.get_nb_nodes();
         // get stats
         let graphstats = self.kgraph.get_kraph_stats();
@@ -143,7 +171,8 @@ impl <F> Emmbedder<'_, F>
                 row[[i]] = 1.;
             }
             //
-            MatRepr::from_array2(symgraph)
+            let laplacian = LaplacianGraph{ sym_laplacian:MatRepr::from_array2(symgraph), degrees:diag};
+            laplacian
         }   
         else {
             // now we must construct a CsrMat to store the symetrized graph transition probablity to go svd. 
@@ -198,7 +227,8 @@ impl <F> Emmbedder<'_, F>
             }
             let laplacian = TriMatBase::<Vec<usize>, Vec<f32>>::from_triplets((nbnodes,nbnodes),rows, cols, values);
             let csr_mat : CsMat<f32> = laplacian.to_csr();
-            MatRepr::from_csrmat(csr_mat)
+            let laplacian = LaplacianGraph{ sym_laplacian: MatRepr::from_csrmat(csr_mat), degrees:diagonal};
+            laplacian
         }  // end case CsMat
         //
     }  // end of into_matrepr_for_svd
