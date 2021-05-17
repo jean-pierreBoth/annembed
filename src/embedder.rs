@@ -1,6 +1,7 @@
 //! umap-like embedding from GrapK
 
 #![allow(dead_code)]
+// #![recursion_limit="256"]
 
 use num_traits::{Float};
 use std::collections::HashMap;
@@ -115,9 +116,16 @@ impl <F> Emmbedder<'_, F>
 
 
     // minimize divergence between embedded and initial distribution probability
-    fn entropy_optimize() {
+    // We use cross entropy as in Umap. The edge weight function must take into acccount an initial density estimate and a scale.
+    // The initial density makes the embedded graph asymetric as the initial graph. 
+    // The optimization function thus should try to restore asymetry and local scale as far as possible.
+    
+    fn entropy_optimize(initial : &Array2<F>) -> Result<usize, String> {
+        // compute initial value of objective function
+        Ok(1)
+    } // end of entropy_optimize
 
-    }
+
 
     // the function computes a symetric laplacian graph for svd.
     // We will then need the lower non zero eigenvalues and eigen vectors.
@@ -304,6 +312,28 @@ impl <F> Emmbedder<'_, F>
   
   
 } // end of impl Emmbedder
+
+
+/// computes the weight of an embedded edge.
+/// scale correspond at density observed at initial point in original graph (hence the asymetry)
+fn cauchy_edge_weight<F>(initial_point: &Array1<F>, scale : F, other : &Array1<F>) -> F 
+    where F : Float + std::iter::Sum {
+    let dist = initial_point.iter().zip(other.iter()).map(|(i,f)| (*i - *f)*(*i - *f) ).sum::<F>();
+    return dist/scale
+} // end of embedded_edge_weight
+
+
+// gradient of embedded_edge_weight
+
+fn grad_cauchy_edge_weight<F>(initial_point : & Array1<F>, scale : F, other : &Array1<F>, gradient : &mut Array1<F>) 
+    where F : Float + std::iter::Sum + num_traits::cast::FromPrimitive {
+    //
+    assert_eq!(gradient.len(), initial_point.len());
+    //
+    for i in 0..gradient.len() {
+        gradient[i] = - F::from_f32(2.).unwrap() * (other[i] - initial_point[i]) /  (scale * cauchy_edge_weight(initial_point, scale,initial_point));
+    }
+} // end of grad_embedded_weight
 
 
 
