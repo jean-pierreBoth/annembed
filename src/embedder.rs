@@ -19,12 +19,21 @@ use crate::tools::svdapprox::*;
 /// This structure stores for each node its local scale and proba to its nearest neighbours as referenced in 
 /// field neighbours of KGraph. Field neighbours gives us acces to neighbours id and original distances.
 /// So this field gives a local scale and transition proba.
+/// Identity of neighbour node must be fetched in KGraph structure to spare memory
 struct NodeParam {
     scale: f32,
     probas: Vec<f32>,
 }
 
-/// We maintain NodeParam for each node as it enables scaling in the embedded space.
+
+impl NodeParam {
+    pub fn new(scale:f32, probas : Vec<f32>) -> Self {
+        NodeParam { scale, probas}
+    }
+
+}  // end of NodeParam
+
+/// We maintain NodeParam for each node as it enables scaling in the embedded space and cross entropy minimization.
 struct NodeParams {
     node_params: Vec<NodeParam>
 }
@@ -104,7 +113,7 @@ impl <F> Emmbedder<'_, F>
                 let row_i = u.row(i);
                 for j in 0..asked_dim {
                     // divide j value by diagonal and convert to F
-                    embedded[[i,j]] = F::from_f32(row_i[first_non_zero-j]/j_weights[j]).unwrap();
+                    embedded[[i,j]] = F::from_f32(row_i[first_non_zero-j]/j_weights[i]).unwrap();
                 }
             }
             // according to theory (See Luxburg or Lafon-Keller diffusion maps) we must go back to eigen vectors of rw laplacian.
@@ -146,7 +155,7 @@ impl <F> Emmbedder<'_, F>
         // get stats
         let graphstats = self.kgraph.get_kraph_stats();
         let nbng = self.kgraph.get_nbng();
-        let mut scale_params = Vec::<f32>::with_capacity(nbnodes);
+        let mut node_params = Vec::<NodeParam>::with_capacity(nbnodes);
         // TODO define a threshold for dense/sparse representation
         if nbnodes <= 30000 {
             let mut transition_proba = Array2::<f32>::zeros((nbnodes,nbnodes));
@@ -155,13 +164,13 @@ impl <F> Emmbedder<'_, F>
             let neighbour_hood = self.kgraph.get_neighbours();
             for i in 0..neighbour_hood.len() {
                 // remind to index each request
-                let (scale, probas) = self.get_scale_from_proba_normalisation(&neighbour_hood[i]);
-                scale_params.push(scale);
-                assert_eq!(probas.len(), neighbour_hood[i].len());
+                let node_param = self.get_scale_from_proba_normalisation(&neighbour_hood[i]);
+                assert_eq!(node_param.probas.len(), neighbour_hood[i].len());
                 for j in 0..neighbour_hood[i].len() {
                     let edge = neighbour_hood[i][j];
-                    transition_proba[[i,edge.node ]] = probas[j];
+                    transition_proba[[i,edge.node ]] = node_param.probas[j];
                 } // end of for j
+                node_params.push(node_param);
             }  // end for i
             // now we symetrize the graph by taking mean
             // The UMAP formula (p_i+p_j - p_i *p_j) implies taking the non null proba when one proba is null, 
@@ -188,13 +197,13 @@ impl <F> Emmbedder<'_, F>
             // TODO This can be made // with a chashmap
             let mut edge_list = HashMap::<(usize, usize),f32>::with_capacity(nbnodes* nbng);
             for i in 0..neighbour_hood.len() {
-                let (scale, probas) = self.get_scale_from_proba_normalisation(&neighbour_hood[i]);
-                scale_params.push(scale);
-                assert_eq!(probas.len(), neighbour_hood[i].len());
+                let node_param = self.get_scale_from_proba_normalisation(&neighbour_hood[i]);
+                assert_eq!(node_param.probas.len(), neighbour_hood[i].len());
                 for j in 0..neighbour_hood[i].len() {
                     let edge = neighbour_hood[i][j];
-                    edge_list.insert((i,edge.node), probas[j]);
+                    edge_list.insert((i,edge.node), node_param.probas[j]);
                 } // end of for j
+                node_params.push(node_param);
             }
             // now we iter on the hasmap symetrize the graph, and insert in triplets transition_proba
             let mut diagonal = Array1::<f32>::zeros(nbnodes);
@@ -245,7 +254,7 @@ impl <F> Emmbedder<'_, F>
 
 
 
-    // choose scale to satisfy a normalization constraint. 
+    // given neighbours of a node we choose scale to satisfy a normalization constraint. 
     // p_i = exp[- beta * (d(x,y_i) - d(x, y_1)/ local_scale ] 
     // We return beta/local_scale
     // as function is monotonic with respect to scale, we use dichotomy.
@@ -269,11 +278,12 @@ impl <F> Emmbedder<'_, F>
 
 
     // Simplest function where we know really what we do and why. Get a normalized proba with constraint.
+    // given neighbours of a node we choose scale to satisfy a normalization constraint.
     // p_i = exp[- beta * (d(x,y_i)/ local_scale)]  and then normalized to 1.
     // local_scale can be adjusted so that ratio of last praba to first proba >= epsil.
     // This function returns the local scale (i.e mean distance of a point to its nearest neighbour) 
     // and vector of proba weight to nearest neighbours. Min 
-    fn get_scale_from_proba_normalisation(&self, neighbours : &Vec<OutEdge<F>>)  -> (f32, Vec::<f32>) {
+    fn get_scale_from_proba_normalisation(&self, neighbours : &Vec<OutEdge<F>>)  -> NodeParam {
         // p_i = exp[- beta * (d(x,y_i)/ local_scale) * lambda] 
         const PROBA_MIN : f32 = 1.0E-5;
         let nbgh = neighbours.len();
@@ -302,11 +312,11 @@ impl <F> Emmbedder<'_, F>
             for i in 0..nbgh {
                 probas[i] = probas[i]/sum; 
             }
-            return (mean_rho, probas);
+            return NodeParam::new(mean_rho, probas);
         } else {
             // all neighbours are at the same distance!
             let probas = neighbours.iter().map( |_| (1.0 / nbgh as f32)).collect::<Vec<f32>>();
-            return (mean_rho, probas)
+            return NodeParam::new(mean_rho, probas);
         }
     } // end of get_scale_from_proba_normalisation
   
@@ -334,6 +344,12 @@ fn grad_cauchy_edge_weight<F>(initial_point : & Array1<F>, scale : F, other : &A
         gradient[i] = - F::from_f32(2.).unwrap() * (other[i] - initial_point[i]) /  (scale * cauchy_edge_weight(initial_point, scale,initial_point));
     }
 } // end of grad_embedded_weight
+
+
+fn ce_optim_from_point<F> (inital_point : & Array1<F>, i_params : &NodeParam) 
+    where  F : Float + std::iter::Sum + num_traits::cast::FromPrimitive     {
+
+}  // end of ce_optim_from_point
 
 
 
