@@ -163,10 +163,12 @@ impl <F> KGraph<F>
         }
     }  // end of new
 
+    /// get number of nodes of graph
     pub fn get_nb_nodes(&self) -> usize {
         self.nbnodes
     }
 
+    /// get number of neighbour of each node
     pub fn get_nbng(&self) -> usize {
         self.nbng
     }
@@ -176,6 +178,10 @@ impl <F> KGraph<F>
         &self.neighbours
     }
 
+    /// get out edges from node
+    pub fn get_out_edges(&self, node : NodeIdx) -> &Vec<OutEdge<F>> {
+        &self.neighbours[node]
+    }
 
     // edges are supposed directed 
     fn insert_edge_list(edges : &[(NodeIdx, NodeIdx, OutEdge<F>)]) {
