@@ -38,6 +38,12 @@ pub struct OutEdge<F> {
 }  // end of struct OutEdge<F>
 
 
+impl <F>  OutEdge<F> {
+    pub fn new(node:NodeIdx, weight: F) -> Self {
+        OutEdge{node, weight}
+    }
+}
+
 impl <F> PartialEq for OutEdge<F> 
     where F : Float {
     fn eq(&self, other: &OutEdge<F>) -> bool {

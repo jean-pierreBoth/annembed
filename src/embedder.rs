@@ -29,12 +29,12 @@ const PROBA_MIN: f32 = 1.0E-5;
 #[derive(Clone)]
 struct NodeParam {
     scale: f32,
-    probas: Vec<f32>,
+    edges: Vec<OutEdge<f32>>,
 }
 
 impl NodeParam {
-    pub fn new(scale: f32, probas: Vec<f32>) -> Self {
-        NodeParam { scale, probas }
+    pub fn new(scale: f32, edges: Vec<OutEdge<f32>>) -> Self {
+        NodeParam { scale, edges }
     }
 } // end of NodeParam
 
@@ -168,12 +168,12 @@ where
             for i in 0..neighbour_hood.len() {
                 // remind to index each request
                 let node_param = self.get_scale_from_proba_normalisation(&neighbour_hood[i]);
-                assert_eq!(node_param.probas.len(), neighbour_hood[i].len());
+                assert_eq!(node_param.edges.len(), neighbour_hood[i].len());
                 // do not forget to set diagonal transition
                 transition_proba[[i, i]] = 1.;
                 for j in 0..neighbour_hood[i].len() {
                     let edge = neighbour_hood[i][j];
-                    transition_proba[[i, edge.node]] = node_param.probas[j];
+                    transition_proba[[i, edge.node]] = node_param.edges[j].weight;
                 } // end of for j
                 node_params.push(node_param);
             } // end for i
@@ -205,10 +205,10 @@ where
             let mut edge_list = HashMap::<(usize, usize), f32>::with_capacity(nbnodes * nbng);
             for i in 0..neighbour_hood.len() {
                 let node_param = self.get_scale_from_proba_normalisation(&neighbour_hood[i]);
-                assert_eq!(node_param.probas.len(), neighbour_hood[i].len());
+                assert_eq!(node_param.edges.len(), neighbour_hood[i].len());
                 for j in 0..neighbour_hood[i].len() {
                     let edge = neighbour_hood[i][j];
-                    edge_list.insert((i, edge.node), node_param.probas[j]);
+                    edge_list.insert((i, edge.node), node_param.edges[j].weight);
                 } // end of for j
                 node_params.push(node_param);
             }
@@ -322,23 +322,23 @@ where
                 // we rescale mean_rho to avoid too large range of probabilities in neighbours.
                 scale = scale * lambda;
             }
-            let mut probas = neighbours
+            let mut probas_edge = neighbours
                 .iter()
-                .map(|n| (-n.weight.to_f32().unwrap() / scale).exp())
-                .collect::<Vec<f32>>();
-            assert!(probas[probas.len() - 1] / probas[0] <= PROBA_MIN);
-            let sum = probas.iter().sum::<f32>();
+                .map(|n| OutEdge::<f32>::new(n.node, -(n.weight.to_f32().unwrap() / scale).exp()))
+                .collect::<Vec<OutEdge<f32>>>();
+            assert!(probas_edge[probas_edge.len() - 1].weight / probas_edge[0].weight <= PROBA_MIN);
+            let sum = probas_edge.iter().map(|e| e.weight).sum::<f32>();
             for i in 0..nbgh {
-                probas[i] = probas[i] / sum;
+                probas_edge[i].weight = probas_edge[i].weight / sum;
             }
-            return NodeParam::new(mean_rho, probas);
+            return NodeParam::new(mean_rho, probas_edge);
         } else {
             // all neighbours are at the same distance!
-            let probas = neighbours
+            let probas_edge = neighbours
                 .iter()
-                .map(|_| (1.0 / nbgh as f32))
-                .collect::<Vec<f32>>();
-            return NodeParam::new(scale, probas);
+                .map(|n| OutEdge::<f32>::new(n.node, 1.0 / nbgh as f32))
+                .collect::<Vec<OutEdge<f32>>>();
+            return NodeParam::new(scale, probas_edge);
         }
     } // end of get_scale_from_proba_normalisation
 
@@ -359,53 +359,21 @@ where
         Ok(1)
     } // end of entropy_optimize
 
-    // TODO : pass functions corresponding to edge_weight and grad_edge_weight as arguments to test others weight function
-    // TODO This is clearly a function that must be threaded!
-    /// This function optimize cross entropy for Shannon cross entropy
-    fn ce_optim_from_node(&self, node_i: NodeIdx)
-    where
-        F: Float + std::iter::Sum + num_traits::cast::FromPrimitive
-    {
-        // get coordinate of node
-        let y_i = self.get_node_embedding(node_i);
-        let mut gradient = Array1::<F>::zeros(y_i.len());
-        //
-        let node_params = self.initial_space.as_ref().unwrap();
-        let node_param = node_params.get_node_param(node_i);
-        let edge_out_i = self.kgraph.get_out_edges(node_i);
-        let scale = node_param.scale as f64;
-        // loop on connected neighbours taking into account P and 1.-P for each of its neighbours
-        // for that we need read only access to kgraph and not a &mut on self
-        let nbgh = self.kgraph.get_nbng();
-        for j in 0..nbgh {
-            let node_j = edge_out_i[j].node;
-            let y_j = self.get_node_embedding(node_j);
-            // compute l2 norm of y_j - y_i
-            let d_ij : f64 = y_i.iter().zip(y_j.iter()).map(|(vi,vj)| (*vi-*vj)*(*vi-*vj)).sum::<F>().to_f64().unwrap();
-            //
-            let mut coeff_ij = (- node_param.probas[j] as f64 / (scale + d_ij)) + 
-                ( 1. - node_param.probas[j] as f64) / ( (0.001 + d_ij) * (1. + d_ij / scale)  );
-            coeff_ij *= 2.;
-            // update gradient
-            for k in 0..y_i.len() {
-                gradient[k] += (y_j[k] - y_i[k]) * F::from_f64(coeff_ij).unwrap();
-            }
-        }
-        // negative loop with sampling on points that are not initial neighbours
 
-        // mode initial point
-    } // end of ce_optim_from_point
+
 } // end of impl Emmbedder
 
 //==================================================================================================================
 
 
 /// All we need to optimize entropy discrepancy
-/// For each node i , its knbg neighbours in neighbours[i] , its initial scale and transition proba in initial_space
-/// and in embedded_space
+/// A list of edge with its weight, an array of scale for each origin node of an edge, proba (weight) of each edge
+/// and coordinates in embedded_space with lock protection for //
 struct EntropyOptim<F> {
-    /// for each edge , initial node, end node , scale around initial node, proba (weight of edge) 24 bytes
-    edges : Vec<(NodeIdx, NodeIdx, f32, f32)>,
+    /// for each edge , initial node, end node, proba (weight of edge) 24 bytes
+    edges : Vec<(NodeIdx, OutEdge<f32>)>,
+    /// scale for each node
+    scales : Vec<f32>,
     /// embedded coordinates of each node, under RwLock to // optimization     nbnodes * (embedded dim * f32 + lock size))
     embedded : Vec<Arc<RwLock<Array1<F>>>>,
 } // end of EntropyOptim
@@ -416,9 +384,66 @@ struct EntropyOptim<F> {
 impl <F> EntropyOptim<F> 
     where F: Float + std::iter::Sum + num_traits::cast::FromPrimitive {
 
-    pub fn new(initial_embed : &Array2<F>) -> Self {
-        
+    pub fn new(node_params : &NodeParams, initial_embed : & mut Array2<F>) -> Self {
+        let nbng = node_params.params[0].edges.len();
+        let nbnodes = node_params.params.len();
+        let mut edges = Vec::<(NodeIdx, OutEdge<f32>)>::with_capacity(nbnodes*nbng);
+        let mut scales =  Vec::<f32>::with_capacity(nbnodes);
+        // construct field edges
+        for i in 0..nbnodes {
+            scales.push(node_params.params[i].scale);
+            for j in 0..node_params.params[i].edges.len() {
+                edges.push((i, node_params.params[i].edges[j]));
+            }
+        }
+        // construct embedded, initial embed can be droped now
+        let mut embedded = Vec::<Arc<RwLock<Array1<F>>>>::new();
+        let nbrow  = initial_embed.nrows();
+        for i in 0..nbrow {
+            embedded.push(Arc::new(RwLock::new(initial_embed.row(i).to_owned())));
+        }
+        //
+        EntropyOptim { edges, scales, embedded}
+        // construct field embedded
     }  // end of new 
+
+    // TODO : pass functions corresponding to edge_weight and grad_edge_weight as arguments to test others weight function
+    // TODO This is clearly a function that must be threaded!
+    /// This function optimize cross entropy for Shannon cross entropy
+    fn ce_optim_edge(&self, edge_idx : usize)
+    where
+        F: Float + std::iter::Sum + num_traits::cast::FromPrimitive
+    {
+        // get coordinate of node
+        let node_i = self.edges[edge_idx].0;
+        let y_i = self.embedded[node_i].read();
+        let mut gradient = Array1::<F>::zeros(y_i.len());
+        //
+        let edge_out = self.edges[edge_idx];
+        let node_j = edge_out.1.node;
+        let weight = edge_out.1.weight;
+        assert!(weight <= 1.);
+
+        let scale = self.scales[node_i] as f64;
+        // loop on connected neighbours taking into account P and 1.-P for each of its neighbours
+        // for that we need read only access to kgraph and not a &mut on self
+        let y_j = self.embedded[node_j].read();
+        // compute l2 norm of y_j - y_i
+        let d_ij : f64 = y_i.iter().zip(y_j.iter()).map(|(vi,vj)| (*vi-*vj)*(*vi-*vj)).sum::<F>().to_f64().unwrap();
+        //
+        let mut coeff_ij = (- weight as f64 / (scale + d_ij)) + 
+            ( 1. - weight as f64) / ( (0.001 + d_ij) * (1. + d_ij / scale)  );
+        coeff_ij *= 2.;
+        // update gradient
+        for k in 0..y_i.len() {
+            gradient[k] = (y_j[k] - y_i[k]) * F::from_f64(coeff_ij).unwrap();
+        }
+        // negative loop with sampling on points that are not initial neighbours
+
+        // mode initial point
+    } // end of ce_optim_from_point
+
+
 
 }  // end of impl EntropyOptim
 
