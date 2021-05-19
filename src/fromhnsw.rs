@@ -140,8 +140,6 @@ pub struct KGraph<F> {
     /// numboer of nodes. The nodes must be numbered from 0 to nb_nodes.
     /// If GraphK is initialized from the descendant of a point in Hnsw we do not know in advance the number of nodes!!
     nbnodes: usize,
-    /// an edge is given by 2 nodes and a weight
-    edges : Vec<(NodeIdx, OutEdge<F>)>,
     /// neighbours[i] contains the indexes of neighbours node i sorted by increasing weight edge!
     pub neighbours : Vec<Vec<OutEdge<F>>>,
     /// to keep track of current node indexes.
@@ -163,7 +161,6 @@ impl <F> KGraph<F>
         KGraph {
             nbng : nbng,
             nbnodes : 0,
-            edges : Vec::< (NodeIdx, OutEdge<F>) >::new(),
             neighbours :  neighbours_init,
             node_set : IndexSet::new(),
         }
@@ -188,19 +185,6 @@ impl <F> KGraph<F>
     pub fn get_out_edges(&self, node : NodeIdx) -> &Vec<OutEdge<F>> {
         &self.neighbours[node]
     }
-
-    // edges are supposed directed 
-    fn insert_edge_list(edges : &[(NodeIdx, NodeIdx, OutEdge<F>)]) {
-
-        let nb_edge = edges.len();
-        for _i in 0..nb_edge {
-                // check source and target node
-
-
-        }
-
-
-    }  // end of insert_edge_list
 
 
     /// Fills in KGraphStat from KGraphStat

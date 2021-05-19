@@ -591,9 +591,11 @@ mod tests {
 
 //    cargo test svdapprox  -- --nocapture
 //    RUST_LOG=annembed::tools::svdapprox=TRACE cargo test svdapprox  -- --nocapture
+
 #[allow(unused)]
 use super::*;
 
+#[allow(unused)]
 use sprs::{CsMat, TriMatBase};
 
 #[allow(dead_code)]
