@@ -6,12 +6,20 @@
 use num_traits::Float;
 use std::collections::HashMap;
 
-use ndarray::{Array1, Array2, Axis};
+use ndarray::{Array1, Array2, ArrayView1, Axis};
 use ndarray_linalg::{Lapack, Scalar};
 use sprs::{CsMat, TriMatBase};
 
+use parking_lot::{RwLock};
+use std::sync::Arc;
+
 use crate::fromhnsw::*;
 use crate::tools::svdapprox::*;
+
+
+/// do not consider probabilities under PROBA_MIN
+const PROBA_MIN: f32 = 1.0E-5;
+
 
 // We need this structure to compute entropy od neighbour distribution
 /// This structure stores for each node its local scale and proba to its nearest neighbours as referenced in
@@ -41,19 +49,16 @@ impl NodeParams {
     }
 } // end of NodeParams
 
-/// All we need to optimize entropy discrepancy
-/// For each node i , its knbg neighbours in neighbours[i] , its initial scale and transition proba in initial_space
-/// and in embedded_space
-struct EntropyOptim {
-    neighbours: Vec<Vec<NodeIdx>>,
-    initial_space: Option<NodeParams>,
-    embedded_space: Option<NodeParams>,
-}
+
+
+
+//==================================================================================================================
+
 
 /// We use a normalized symetric laplacian to go to the svd.
 /// But we want the left eigenvectors of the normalized R(andom)W(alk) laplacian so we must keep track
 /// of degrees (rown norms)
-pub struct LaplacianGraph {
+struct LaplacianGraph {
     sym_laplacian: MatRepr<f32>,
     degrees: Array1<f32>,
 }
@@ -65,7 +70,7 @@ pub struct Emmbedder<'a, F> {
     kgraph: &'a KGraph<F>,
     asked_dimension: usize,
     initial_space: Option<NodeParams>,
-    embedded_space: Option<NodeParams>,
+//    embedded_space: Option<NodeParams>,
     embedding: Option<Array2<F>>,
 } // end of Emmbedder
 
@@ -164,6 +169,8 @@ where
                 // remind to index each request
                 let node_param = self.get_scale_from_proba_normalisation(&neighbour_hood[i]);
                 assert_eq!(node_param.probas.len(), neighbour_hood[i].len());
+                // do not forget to set diagonal transition
+                transition_proba[[i, i]] = 1.;
                 for j in 0..neighbour_hood[i].len() {
                     let edge = neighbour_hood[i][j];
                     transition_proba[[i, edge.node]] = node_param.probas[j];
@@ -183,7 +190,7 @@ where
                 for j in 0..nbnodes {
                     row /= -(diag[[i]] * diag[[j]]).sqrt();
                 }
-                row[[i]] = 1.;
+                row[[i]] = 0.;      // in fact we take the laplacian to get excatly this!
             }
             //
             let laplacian = LaplacianGraph {
@@ -212,7 +219,7 @@ where
             let mut values = Vec::<f32>::with_capacity(nbnodes * 2 * nbng);
 
             for ((i, j), val) in edge_list.iter() {
-                assert!(*i != *j);
+                assert!(*i != *j);  // we do not store null distance for self (loop) edge, its proba transition is always set to 1.
                 let sym_val;
                 if let Some(t_val) = edge_list.get(&(*j, *i)) {
                     sym_val = (val + t_val) * 0.5;
@@ -230,17 +237,14 @@ where
                 values.push(sym_val);
                 diagonal[*j] += sym_val;
             }
-            // Now we reset non diagonal terms to 1 - val[i,j]/(D[i]*D[j])^1/2 add diagonal term to 1.
+            // Now we reset non diagonal terms to  0. - val[i,j]/(D[i]*D[j])^1/2 
+            // in laplacian we have diagonal terms equal 0.
             for i in 0..rows.len() {
                 let row = rows[i];
                 let col = cols[i];
-                values[i] = 1. - values[i] / (diagonal[row] * diagonal[col]).sqrt();
+                values[i] = 0. - values[i] / (diagonal[row] * diagonal[col]).sqrt();
             }
-            for i in 0..nbnodes {
-                rows.push(i);
-                cols.push(i);
-                values.push(1.);
-            }
+            // 
             let laplacian = TriMatBase::<Vec<usize>, Vec<f32>>::from_triplets(
                 (nbnodes, nbnodes),
                 rows,
@@ -289,12 +293,11 @@ where
     // Simplest function where we know really what we do and why. Get a normalized proba with constraint.
     // given neighbours of a node we choose scale to satisfy a normalization constraint.
     // p_i = exp[- beta * (d(x,y_i)/ local_scale)]  and then normalized to 1.
-    // local_scale can be adjusted so that ratio of last praba to first proba >= epsil.
+    // local_scale can be adjusted so that ratio of last proba to first proba >= epsil.
     // This function returns the local scale (i.e mean distance of a point to its nearest neighbour)
     // and vector of proba weight to nearest neighbours. Min
     fn get_scale_from_proba_normalisation(&self, neighbours: &Vec<OutEdge<F>>) -> NodeParam {
         // p_i = exp[- beta * (d(x,y_i)/ local_scale) * lambda]
-        const PROBA_MIN: f32 = 1.0E-5;
         let nbgh = neighbours.len();
         // determnine mean distance to nearest neighbour at local scale
         let rho_x = neighbours[0].weight.to_f32().unwrap();
@@ -305,19 +308,23 @@ where
             // we rho_x, scales
         } // end of for i
         rho_y_s.push(rho_x);
-        let mut mean_rho = rho_y_s.iter().sum::<f32>() / (rho_y_s.len() as f32);
-        // now we adjust mean_rho so that the ratio of proba of last neighbour to first neighbour do not exceed epsil.
+        let mean_rho = rho_y_s.iter().sum::<f32>() / (rho_y_s.len() as f32);
+        // we set scale so that transition proba can be expected to be 
+        // exp(- first_dist/scale) >= exp(-first_dist/(2* mean_rho)) ~ exp(-0.5) = 0.6
+        // augment scale if transition from proba_i_i = 1 and proba_i_firstneigbour = 0.6 too steep
+        let mut scale =  2. * mean_rho;
+        // now we adjust scale so that the ratio of proba of last neighbour to first neighbour do not exceed epsil.
         let first_dist = neighbours[0].weight.to_f32().unwrap();
         let last_dist = neighbours[nbgh - 1].weight.to_f32().unwrap();
         if last_dist > first_dist {
-            let lambda = (last_dist - first_dist) / (mean_rho * (-PROBA_MIN.ln()));
+            let lambda = (last_dist - first_dist) / (scale * (-PROBA_MIN.ln()));
             if lambda > 1. {
                 // we rescale mean_rho to avoid too large range of probabilities in neighbours.
-                mean_rho = mean_rho * lambda;
+                scale = scale * lambda;
             }
             let mut probas = neighbours
                 .iter()
-                .map(|n| (-n.weight.to_f32().unwrap() / mean_rho).exp())
+                .map(|n| (-n.weight.to_f32().unwrap() / scale).exp())
                 .collect::<Vec<f32>>();
             assert!(probas[probas.len() - 1] / probas[0] <= PROBA_MIN);
             let sum = probas.iter().sum::<f32>();
@@ -331,9 +338,15 @@ where
                 .iter()
                 .map(|_| (1.0 / nbgh as f32))
                 .collect::<Vec<f32>>();
-            return NodeParam::new(mean_rho, probas);
+            return NodeParam::new(scale, probas);
         }
     } // end of get_scale_from_proba_normalisation
+
+    /// get embedding of a given node
+    pub fn get_node_embedding(&self, node : NodeIdx) -> ArrayView1<F> {
+        self.embedding.as_ref().unwrap().row(node)
+    }
+
     // minimize divergence between embedded and initial distribution probability
     // We use cross entropy as in Umap. The edge weight function must take into acccount an initial density estimate and a scale.
     // The initial density makes the embedded graph asymetric as the initial graph.
@@ -349,28 +362,76 @@ where
     // TODO : pass functions corresponding to edge_weight and grad_edge_weight as arguments to test others weight function
     // TODO This is clearly a function that must be threaded!
     /// This function optimize cross entropy for Shannon cross entropy
-    fn ce_optim_from_node(&self, node: NodeIdx)
+    fn ce_optim_from_node(&self, node_i: NodeIdx)
     where
-        F: Float + std::iter::Sum + num_traits::cast::FromPrimitive,
+        F: Float + std::iter::Sum + num_traits::cast::FromPrimitive
     {
+        // get coordinate of node
+        let y_i = self.get_node_embedding(node_i);
+        let mut gradient = Array1::<F>::zeros(y_i.len());
         //
-        //        let gradient = Array1::<F>::zeros(source.len());
         let node_params = self.initial_space.as_ref().unwrap();
-        let node_param = node_params.get_node_param(node);
+        let node_param = node_params.get_node_param(node_i);
+        let edge_out_i = self.kgraph.get_out_edges(node_i);
+        let scale = node_param.scale as f64;
         // loop on connected neighbours taking into account P and 1.-P for each of its neighbours
         // for that we need read only access to kgraph and not a &mut on self
-
+        let nbgh = self.kgraph.get_nbng();
+        for j in 0..nbgh {
+            let node_j = edge_out_i[j].node;
+            let y_j = self.get_node_embedding(node_j);
+            // compute l2 norm of y_j - y_i
+            let d_ij : f64 = y_i.iter().zip(y_j.iter()).map(|(vi,vj)| (*vi-*vj)*(*vi-*vj)).sum::<F>().to_f64().unwrap();
+            //
+            let mut coeff_ij = (- node_param.probas[j] as f64 / (scale + d_ij)) + 
+                ( 1. - node_param.probas[j] as f64) / ( (0.001 + d_ij) * (1. + d_ij / scale)  );
+            coeff_ij *= 2.;
+            // update gradient
+            for k in 0..y_i.len() {
+                gradient[k] += (y_j[k] - y_i[k]) * F::from_f64(coeff_ij).unwrap();
+            }
+        }
         // negative loop with sampling on points that are not initial neighbours
 
         // mode initial point
     } // end of ce_optim_from_point
 } // end of impl Emmbedder
 
+//==================================================================================================================
+
+
+/// All we need to optimize entropy discrepancy
+/// For each node i , its knbg neighbours in neighbours[i] , its initial scale and transition proba in initial_space
+/// and in embedded_space
+struct EntropyOptim<F> {
+    /// for each edge , initial node, end node , scale around initial node, proba (weight of edge) 24 bytes
+    edges : Vec<(NodeIdx, NodeIdx, f32, f32)>,
+    /// embedded coordinates of each node, under RwLock to // optimization     nbnodes * (embedded dim * f32 + lock size))
+    embedded : Vec<Arc<RwLock<Array1<F>>>>,
+} // end of EntropyOptim
+
+
+
+
+impl <F> EntropyOptim<F> 
+    where F: Float + std::iter::Sum + num_traits::cast::FromPrimitive {
+
+    pub fn new(initial_embed : &Array2<F>) -> Self {
+        
+    }  // end of new 
+
+}  // end of impl EntropyOptim
+
+
+
+
+
+
 /// computes the weight of an embedded edge.
 /// scale correspond at density observed at initial point in original graph (hence the asymetry)
 fn cauchy_edge_weight<F>(initial_point: &Array1<F>, scale: F, other: &Array1<F>) -> F
 where
-    F: Float + std::iter::Sum,
+    F: Float + std::iter::Sum
 {
     let dist = initial_point
         .iter()

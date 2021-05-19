@@ -24,6 +24,11 @@ We provide using Renyi entropy and hierarchical representation of neighbourhood 
 
 ### Randomized SVD
 
+## Docs
+
+To build the doc with latex use :
+cargo rustdoc -- --html-in-header katex.html
+
 ## References
 
 - Visualizing Large Scale High Dimensional Data
