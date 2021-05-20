@@ -6,7 +6,7 @@ repository = "https://github.com/jean-pierreBoth/annembed"
 description = "a Rust implemntation of a dimension reduction à la Umap "
 license = "MIT/Apache-2.0"
 readme = "README.md"
-keywords = ["algorithms", "ann", "hdbscan single linkage", "dimension reduction"]
+keywords = ["algorithms", "ann", "hdbscan single linkage", "data embedding", "umap"]
 documentation = "https://docs.rs/annembed"
 edition= "2018"
 
@@ -43,7 +43,7 @@ crossbeam-channel = {version = "0.5"}
 cpu-time = {version = "1.0"}
 time = {version = "0.2"}
 
-ndarray = {version = "0.15", features=["rayon"]}
+ndarray = {version = "0.14", features=["rayon"]}
 ndarray-linalg = {version = "0.13.1"}
 lax = {version = "0.1"}
 lapacke = {version = "0.5"}
@@ -64,6 +64,12 @@ quantiles = {version = "0.7"}
 
 num-traits = {version = "0.2"}
 lazy_static = { version = "1.4"}
+
+# for io
+csv = {version = "1.1"}
+serde= {version = "1.0", features = ["derive"] }
+bincode = {version = "1.3"}
+
 # decreasing order of log for debug build : (max_level_)trace debug info warn error off
 # decreasing order of log for release build (release_max_level_)  .. idem
 log = { version = "0.4", features = ["max_level_trace", "release_max_level_info"] }
@@ -75,6 +81,7 @@ default = ["intel-mkl"]
 intel-mkl = ["ndarray-linalg/intel-mkl"]
 netlib = ["ndarray-linalg/netlib"]
 openblas = ["ndarray-linalg/openblas"]
+
 
 # from katex-doc
 [package.metadata.docs.rs]

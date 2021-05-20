@@ -3,15 +3,20 @@
 #![allow(dead_code)]
 // #![recursion_limit="256"]
 
-use num_traits::Float;
+use num_traits::{Float, NumAssign};
 use std::collections::HashMap;
 
 use ndarray::{Array1, Array2, ArrayView1, Axis};
 use ndarray_linalg::{Lapack, Scalar};
 use sprs::{CsMat, TriMatBase};
 
+// threading needs
+use rayon::prelude::*;
 use parking_lot::{RwLock};
 use std::sync::Arc;
+
+use std::time::Duration;
+use cpu_time::ProcessTime;
 
 use crate::fromhnsw::*;
 use crate::tools::svdapprox::*;
@@ -156,7 +161,6 @@ where
     fn get_laplacian(&self) -> LaplacianGraph {
         let nbnodes = self.kgraph.get_nb_nodes();
         // get stats
-        let graphstats = self.kgraph.get_kraph_stats();
         let nbng = self.kgraph.get_nbng();
         let mut node_params = Vec::<NodeParam>::with_capacity(nbnodes);
         // TODO define a threshold for dense/sparse representation
@@ -177,9 +181,9 @@ where
                 } // end of for j
                 node_params.push(node_param);
             } // end for i
-              // now we symetrize the graph by taking mean
-              // The UMAP formula (p_i+p_j - p_i *p_j) implies taking the non null proba when one proba is null,
-              // so UMAP initialization is more packed.
+            // now we symetrize the graph by taking mean
+            // The UMAP formula (p_i+p_j - p_i *p_j) implies taking the non null proba when one proba is null,
+            // so UMAP initialization is more packed.
             let mut symgraph = (&transition_proba + &transition_proba.view().t()) * 0.5;
             // now we go to the symetric laplacian. compute sum of row and renormalize. See Lafon-Keller-Coifman
             // Diffusions Maps appendix B
@@ -312,6 +316,7 @@ where
         // we set scale so that transition proba can be expected to be 
         // exp(- first_dist/scale) >= exp(-first_dist/(2* mean_rho)) ~ exp(-0.5) = 0.6
         // augment scale if transition from proba_i_i = 1 and proba_i_firstneigbour = 0.6 too steep
+        // TODO some optimization with respect to this 2 ?
         let mut scale =  2. * mean_rho;
         // now we adjust scale so that the ratio of proba of last neighbour to first neighbour do not exceed epsil.
         let first_dist = neighbours[0].weight.to_f32().unwrap();
@@ -342,6 +347,8 @@ where
         }
     } // end of get_scale_from_proba_normalisation
 
+
+
     /// get embedding of a given node
     pub fn get_node_embedding(&self, node : NodeIdx) -> ArrayView1<F> {
         self.embedding.as_ref().unwrap().row(node)
@@ -352,10 +359,24 @@ where
     // The initial density makes the embedded graph asymetric as the initial graph.
     // The optimization function thus should try to restore asymetry and local scale as far as possible.
 
-    fn entropy_optimize(initial: &Array2<F>) -> Result<usize, String> {
+    fn entropy_optimize(&self, initial_embedding: &Array2<F>) -> Result<usize, String> {
+        let ce_optimization = EntropyOptim::new(self.initial_space.as_ref().unwrap(), initial_embedding);
         // compute initial value of objective function
-
-        // loop on points calling ce_optim_from_point
+        let start = ProcessTime::now();
+        let initial_ce = ce_optimization.ce_compute();
+        let cpu_time: Duration = start.elapsed();
+        println!(" initial cross entropy value {:?},  in time {:?}", initial_ce, cpu_time);
+        // We manage some iterations on gradient computing
+        let grad_step_init = 0.1;
+        for iter in 1..=10 {
+            // loop on edges
+            let grad_step = grad_step_init/iter as f64;
+            let start = ProcessTime::now();
+            ce_optimization.gradient_iteration(grad_step);
+            let cpu_time: Duration = start.elapsed();
+            println!(" gradient iteration time {:?}", cpu_time);
+        }
+        //
         Ok(1)
     } // end of entropy_optimize
 
@@ -382,9 +403,9 @@ struct EntropyOptim<F> {
 
 
 impl <F> EntropyOptim<F> 
-    where F: Float + std::iter::Sum + num_traits::cast::FromPrimitive {
-
-    pub fn new(node_params : &NodeParams, initial_embed : & mut Array2<F>) -> Self {
+    where F: Float +  NumAssign + std::iter::Sum + num_traits::cast::FromPrimitive + Send + Sync {
+    //
+    pub fn new(node_params : &NodeParams, initial_embed : &Array2<F>) -> Self {
         let nbng = node_params.params[0].edges.len();
         let nbnodes = node_params.params.len();
         let mut edges = Vec::<(NodeIdx, OutEdge<f32>)>::with_capacity(nbnodes*nbng);
@@ -407,30 +428,60 @@ impl <F> EntropyOptim<F>
         // construct field embedded
     }  // end of new 
 
+
+    // computes croos entropy between initial space and embedded distribution. 
+    // necessary to monitor optimization
+    fn ce_compute(&self) -> f64 {
+        let mut ce_entropy = 0.;
+        for edge in self.edges.iter() {
+            let node_i = edge.0;
+            let node_j = edge.1.node;
+            let weight_ij = edge.1.weight as f64;
+            let weight_ij_embed = cauchy_edge_weight(&self.embedded[node_i].read(), F::from_f32(self.scales[node_i]).unwrap(), &self.embedded[node_j].read()).to_f64().unwrap();
+            ce_entropy += -weight_ij * weight_ij_embed.ln() - (1. - weight_ij) * (1. - weight_ij_embed).ln();
+        }
+        //
+        ce_entropy
+    } // end of ce_compute
+
+
+
+    // threaded version for computing cross entropy between initial distribution and embedded distribution with Cauchy law.
+    fn ce_compute_threaded(&self) -> f64 {
+        let ce_entropy = self.edges.par_iter()
+                .fold( || 0.0f64, | entropy : f64, edge| entropy + {
+                    let node_i = edge.0;
+                    let node_j = edge.1.node;
+                    let weight_ij = edge.1.weight as f64;
+                    let weight_ij_embed = cauchy_edge_weight(&self.embedded[node_i].read(), F::from_f32(self.scales[node_i]).unwrap(), &self.embedded[node_j].read()).to_f64().unwrap();
+                    -weight_ij * weight_ij_embed.ln() - (1. - weight_ij) * (1. - weight_ij_embed).ln()
+                })
+                .sum::<f64>();
+        return ce_entropy;
+    }
+
+
     // TODO : pass functions corresponding to edge_weight and grad_edge_weight as arguments to test others weight function
-    // TODO This is clearly a function that must be threaded!
     /// This function optimize cross entropy for Shannon cross entropy
-    fn ce_optim_edge(&self, edge_idx : usize)
+    fn ce_optim_edge_shannon(&self, edge_idx : usize, grad_step : f64)
     where
-        F: Float + std::iter::Sum + num_traits::cast::FromPrimitive
+        F: Float + NumAssign + std::iter::Sum + num_traits::cast::FromPrimitive
     {
         // get coordinate of node
         let node_i = self.edges[edge_idx].0;
-        let y_i = self.embedded[node_i].read();
+        // we locks once and directly a write lock as conflicts should be small, many edges, some threads. see Recht Hogwild!
+        let mut y_i = self.embedded[node_i].write();
         let mut gradient = Array1::<F>::zeros(y_i.len());
         //
         let edge_out = self.edges[edge_idx];
         let node_j = edge_out.1.node;
         let weight = edge_out.1.weight;
         assert!(weight <= 1.);
-
         let scale = self.scales[node_i] as f64;
-        // loop on connected neighbours taking into account P and 1.-P for each of its neighbours
-        // for that we need read only access to kgraph and not a &mut on self
-        let y_j = self.embedded[node_j].read();
+        let mut y_j = self.embedded[node_j].write();
         // compute l2 norm of y_j - y_i
         let d_ij : f64 = y_i.iter().zip(y_j.iter()).map(|(vi,vj)| (*vi-*vj)*(*vi-*vj)).sum::<F>().to_f64().unwrap();
-        //
+        // taking into account P and 1.-P 
         let mut coeff_ij = (- weight as f64 / (scale + d_ij)) + 
             ( 1. - weight as f64) / ( (0.001 + d_ij) * (1. + d_ij / scale)  );
         coeff_ij *= 2.;
@@ -438,13 +489,21 @@ impl <F> EntropyOptim<F>
         for k in 0..y_i.len() {
             gradient[k] = (y_j[k] - y_i[k]) * F::from_f64(coeff_ij).unwrap();
         }
-        // negative loop with sampling on points that are not initial neighbours
-
-        // mode initial point
+        // update positions
+        for k in 0..y_i.len() {
+            y_i[k] += gradient[k] * F::from_f64(grad_step).unwrap();
+            y_j[k] -= gradient[k] * F::from_f64(grad_step).unwrap();
+        }
     } // end of ce_optim_from_point
 
+    // TODO to be called in // all was done for
+    fn gradient_iteration(&self, grad_step : f64) {
+        for i in 0..self.edges.len() {
+            self.ce_optim_edge_shannon(i, grad_step);
+        }
+    } // end of gradient_iteration
 
-
+    
 }  // end of impl EntropyOptim
 
 
@@ -466,8 +525,10 @@ where
     return dist / scale;
 } // end of embedded_edge_weight
 
-// gradient of embedded_edge_weight
 
+
+
+// gradient of embedded_edge_weight
 fn grad_cauchy_edge_weight<F>(
     initial_point: &Array1<F>,
     scale: F,
@@ -485,6 +546,8 @@ fn grad_cauchy_edge_weight<F>(
     }
 } // end of grad_embedded_weight
 
+
+/// search a root for f(x) = target between lower_r and upper_r. The flag increasing specifies the variation of f. true means increasing
 fn dichotomy_solver<F>(increasing: bool, f: F, lower_r: f32, upper_r: f32, target: f32) -> f32
 where
     F: Fn(f32) -> f32,
