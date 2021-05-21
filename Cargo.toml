@@ -22,6 +22,9 @@ path = "src/lib.rs"
 #crate-type = ["cdylib"]
 
 
+[[example]]
+name = "mnist_digits"
+path = "examples/mnist.rs"
 
 #[[example]]
 
@@ -35,7 +38,7 @@ path = "src/lib.rs"
 
 # for //
 parking_lot = "0.11"
-rayon = {version = "0.9.0"}
+rayon = {version = "1.5"}
 num_cpus = {version = "1.8.0"}
 crossbeam-utils = {version = "0.7"}
 crossbeam-channel = {version = "0.5"}

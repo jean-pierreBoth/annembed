@@ -318,8 +318,11 @@ impl <F> KGraph<F>
 
 mod tests {
 
+#[allow(unused)]
 use super::*;
 
+use rand::distributions::{Uniform};
+use rand::prelude::*;
 
 #[allow(dead_code)]
 fn log_init_test() {
@@ -327,5 +330,43 @@ fn log_init_test() {
 }  
 
 
+fn gen_rand_data_f32(nb_elem: usize , dim:usize) -> Vec<Vec<f32>> {
+    let mut data = Vec::<Vec<f32>>::with_capacity(nb_elem);
+    let mut rng = thread_rng();
+    let unif =  Uniform::<f32>::new(0.,1.);
+    for _ in 0..nb_elem {
+        let v :Vec<f32> = (0..dim).into_iter().map(|_|  rng.sample(unif)).collect();
+        data.push(v);
+    }
+    data
+}
+
+
+/// test conversion of full hnsw to KGraph
+#[test]
+fn test_full_hnsw() {
+    let nb_elem = 1000;
+    let dim = 30;
+    let knbn = 10;
+    let ef = 20;
+    //
+    println!("\n\n test_serial nb_elem {:?}", nb_elem);
+    //
+    let data = gen_rand_data_f32(nb_elem, dim);
+    let data_with_id = data.iter().zip(0..data.len()).collect();
+
+    let ef_c = 100;
+    let max_nb_connection = 16;
+    let nb_layer = 16.min((nb_elem as f32).ln().trunc() as usize);
+    let hns = Hnsw::<f32, DistL1>::new(max_nb_connection, nb_elem, nb_layer, ef_c, DistL1{});
+    hns.parallel_insert(&data_with_id);
+    //
+    let mut kgraph = KGraph::<f32>::new(knbn);
+    let _res = kgraph.init_from_hnsw_all(&hns).unwrap();
+    let kgraph_stats = kgraph.get_kraph_stats();
+    // dump stats on kgraph
+
+
+}
 
 } // end of tests
