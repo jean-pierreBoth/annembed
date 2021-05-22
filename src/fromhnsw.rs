@@ -142,11 +142,12 @@ impl <F:Float> KGraphStat<F> {
 /// The graph comes from an k-nn search so we know the number of neighbours we have
 /// W is a weight on edges and must satisfy Ord, hence the structure OutEdge<F>
 /// 
-/// The nodes must be indexed from 0 to nbnodes-1 (same as hnsw_rs crate)
-/// 
 /// The first initialization from hnsw is a full hnsw representation,
-/// but it should be possible to selecat a layer to get a subsampling of data
-/// or the whole children of a given node at any layer to get a specific region of the data. 
+/// but it should be possible to select a layer to get a subsampling of data
+/// or the whole children of a given node at any layer to get a specific region of the data.  
+///  
+/// Note: The point extracted from the Hnsw are given an index by the KGraph structure
+/// as hnsw do not enforce client id to be in [0..nbpoints]
 /// 
 pub struct KGraph<F> {
     /// The number of neighbours of each node.
@@ -264,11 +265,13 @@ impl <F> KGraph<F>
         //
         log::trace!("entering init_from_hnsw_all");
         //
+        let mut nb_point_below_nbng = 0;
         let mut minimum_nbng = nbng;
+        let mut mean_nbng = 0u64;
         // We must extract the whole structure , for each point the list of its nearest neighbours and weight<F> of corresponding edge
         let max_nb_conn = hnsw.get_max_nb_connection() as usize;    // morally this the k of knn bu we have that for each layer
         // check consistency between max_nb_conn and nbng
-        if max_nb_conn <= self.nbng {
+        if max_nb_conn <= nbng {
             log::error!("init_from_hnsw_all: number of neighbours must be greater than hnsw max_nb_connection : {} ", max_nb_conn);
             println!("init_from_hnsw_all: number of neighbours must be greater than hnsw max_nb_connection : {} ", max_nb_conn);
             return Err(1);
@@ -304,14 +307,16 @@ impl <F> KGraph<F>
                 }
             }
             vec_tmp.sort_unstable_by(| a, b | a.partial_cmp(b).unwrap_or(Ordering::Less));
-            assert!(vec_tmp[0].weight < vec_tmp[1].weight);    // temporary , check we did not invert order
+            assert!(vec_tmp[0].weight <= vec_tmp[1].weight);    // temporary , check we did not invert order
             // keep only the asked size. Could we keep more ?
-            if vec_tmp.len() < self.nbng {
+            if vec_tmp.len() < nbng {
+                nb_point_below_nbng += 1;
                 log::error!("neighbours must have {} neighbours, got only {}", self.nbng, vec_tmp.len());
                 log::info!("try to increase max number of connection");
                 point.debug_dump();
             }
-            vec_tmp.truncate(vec_tmp.len());
+            vec_tmp.truncate(nbng);
+            mean_nbng += vec_tmp.len() as u64;
             minimum_nbng = minimum_nbng.min(vec_tmp.len());
             //
             // We insert neighborhood info at slot corresponding to index beccause we want to access points in coherence with neighbours referencing
@@ -324,7 +329,9 @@ impl <F> KGraph<F>
         assert_eq!(self.nbnodes, nb_point);
         log::trace!("KGraph::exiting init_from_hnsw_all");
         // now we can fill some statistics on density and incoming degrees for nodes!
+        log::info!("mean number of neighbours obtained = {:.2e}", mean_nbng as f64 / nb_point as f64);
         log::info!("minimal number of neighbours {}", minimum_nbng);
+        log::info!("number of points with less than : {} neighbours = {} ", nbng, nb_point_below_nbng);
         //
         Ok(minimum_nbng)
     }   // end init_from_hnsw_all
@@ -364,8 +371,9 @@ fn gen_rand_data_f32(nb_elem: usize , dim:usize) -> Vec<Vec<f32>> {
     let mut data = Vec::<Vec<f32>>::with_capacity(nb_elem);
     let mut rng = thread_rng();
     let unif =  Uniform::<f32>::new(0.,1.);
-    for _ in 0..nb_elem {
-        let v :Vec<f32> = (0..dim).into_iter().map(|_|  rng.sample(unif)).collect();
+    for i in 0..nb_elem {
+        let val = 10. * i as f32 * rng.sample(unif);
+        let v :Vec<f32> = (0..dim).into_iter().map(|_|  val * rng.sample(unif)).collect();
         data.push(v);
     }
     data
