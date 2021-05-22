@@ -150,8 +150,8 @@ impl <F:Float> KGraphStat<F> {
 /// as hnsw do not enforce client id to be in [0..nbpoints]
 /// 
 pub struct KGraph<F> {
-    /// The number of neighbours of each node.
-    nbng : usize,
+    /// max number of neighbours of each node. Note it can a littel less.
+    max_nbng : usize,
     /// numboer of nodes. The nodes must be numbered from 0 to nb_nodes.
     /// If GraphK is initialized from the descendant of a point in Hnsw we do not know in advance the number of nodes!!
     nbnodes: usize,
@@ -174,7 +174,7 @@ impl <F> KGraph<F>
     pub fn new() -> Self {
         let neighbours_init = Vec::<Vec<OutEdge<F>>>::new();
         KGraph {
-            nbng : 0,
+            max_nbng : 0,
             nbnodes : 0,
             neighbours :  neighbours_init,
             node_set : IndexSet::new(),
@@ -187,8 +187,8 @@ impl <F> KGraph<F>
     }
 
     /// get number of neighbour of each node
-    pub fn get_nbng(&self) -> usize {
-        self.nbng
+    pub fn get_max_nbng(&self) -> usize {
+        self.max_nbng
     }
 
     /// returns a reference to Neighbourhood info
@@ -265,6 +265,7 @@ impl <F> KGraph<F>
         //
         log::trace!("entering init_from_hnsw_all");
         //
+        self.max_nbng = nbng;
         let mut nb_point_below_nbng = 0;
         let mut minimum_nbng = nbng;
         let mut mean_nbng = 0u64;
@@ -307,13 +308,12 @@ impl <F> KGraph<F>
                 }
             }
             vec_tmp.sort_unstable_by(| a, b | a.partial_cmp(b).unwrap_or(Ordering::Less));
-            assert!(vec_tmp[0].weight <= vec_tmp[1].weight);    // temporary , check we did not invert order
+            assert!(vec_tmp.len() <= 1 || vec_tmp[0].weight <= vec_tmp[1].weight);    // temporary , check we did not invert order
             // keep only the asked size. Could we keep more ?
             if vec_tmp.len() < nbng {
                 nb_point_below_nbng += 1;
-                log::error!("neighbours must have {} neighbours, got only {}", self.nbng, vec_tmp.len());
+                log::error!("neighbours must have {} neighbours, got only {}", self.max_nbng, vec_tmp.len());
                 log::info!("try to increase max number of connection");
-                point.debug_dump();
             }
             vec_tmp.truncate(nbng);
             mean_nbng += vec_tmp.len() as u64;
@@ -324,7 +324,6 @@ impl <F> KGraph<F>
             //  
             self.neighbours[index] = vec_tmp;
         }
-        self.nbng = minimum_nbng;
         self.nbnodes = self.neighbours.len();
         assert_eq!(self.nbnodes, nb_point);
         log::trace!("KGraph::exiting init_from_hnsw_all");
@@ -408,7 +407,7 @@ fn test_full_hnsw() {
     if res.is_err() {
         panic!("init_from_hnsw_all  failed");
     }
-    log::info!("minimum number of neighbours {}", kgraph.get_nbng());
+    log::info!("minimum number of neighbours {}", kgraph.get_max_nbng());
     let _kgraph_stats = kgraph.get_kraph_stats();
 }  // end of test_full_hnsw
 
