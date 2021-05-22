@@ -120,7 +120,7 @@ where
             let max_dim = asked_dim.min(first_non_zero + 1); // is in [1..len()]
                                                              // We get U at index in range first_non_zero-max_dim..first_non_zero
             let u = svdapprox.get_u().as_ref().unwrap();
-            assert_eq!(u.nrows(), self.kgraph.get_nbng());
+            assert!(u.nrows() <= self.kgraph.get_max_nbng());
             let mut embedded = Array2::<F>::zeros((u.nrows(), max_dim));
             // according to theory (See Luxburg or Lafon-Keller diffusion maps) we must go back to eigen vectors of rw laplacian.
             // moreover we must get back to type F
@@ -161,7 +161,7 @@ where
     fn get_laplacian(&self) -> LaplacianGraph {
         let nbnodes = self.kgraph.get_nb_nodes();
         // get stats
-        let nbng = self.kgraph.get_nbng();
+        let max_nbng = self.kgraph.get_max_nbng();
         let mut node_params = Vec::<NodeParam>::with_capacity(nbnodes);
         // TODO define a threshold for dense/sparse representation
         if nbnodes <= 30000 {
@@ -206,7 +206,7 @@ where
             // now we must construct a CsrMat to store the symetrized graph transition probablity to go svd.
             let neighbour_hood = self.kgraph.get_neighbours();
             // TODO This can be made // with a chashmap
-            let mut edge_list = HashMap::<(usize, usize), f32>::with_capacity(nbnodes * nbng);
+            let mut edge_list = HashMap::<(usize, usize), f32>::with_capacity(nbnodes * max_nbng);
             for i in 0..neighbour_hood.len() {
                 let node_param = self.get_scale_from_proba_normalisation(&neighbour_hood[i]);
                 assert_eq!(node_param.edges.len(), neighbour_hood[i].len());
@@ -218,9 +218,9 @@ where
             }
             // now we iter on the hasmap symetrize the graph, and insert in triplets transition_proba
             let mut diagonal = Array1::<f32>::zeros(nbnodes);
-            let mut rows = Vec::<usize>::with_capacity(nbnodes * 2 * nbng);
-            let mut cols = Vec::<usize>::with_capacity(nbnodes * 2 * nbng);
-            let mut values = Vec::<f32>::with_capacity(nbnodes * 2 * nbng);
+            let mut rows = Vec::<usize>::with_capacity(nbnodes * 2 * max_nbng);
+            let mut cols = Vec::<usize>::with_capacity(nbnodes * 2 * max_nbng);
+            let mut values = Vec::<f32>::with_capacity(nbnodes * 2 * max_nbng);
 
             for ((i, j), val) in edge_list.iter() {
                 assert!(*i != *j);  // we do not store null distance for self (loop) edge, its proba transition is always set to 1.
