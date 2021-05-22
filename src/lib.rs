@@ -31,7 +31,6 @@ fn init_log() -> u64 {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     #[test]
     // initialize once log system for tests.
     fn init_log() {

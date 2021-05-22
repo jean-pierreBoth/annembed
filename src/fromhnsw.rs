@@ -113,12 +113,26 @@ impl <F:Float> KGraphStat<F> {
         self.max_in_degree
     }
 
+    /// return mean incoming degree of nodes
     pub fn get_mean_in_degree(&self) -> usize {
         self.mean_in_degree
     }
   
-    
-    
+    /// returns incoming degrees
+    pub fn get_in_degrees(&self) -> &Vec<u32> {
+        &self.in_degrees
+    }
+
+    /// return radius at quantile
+    pub fn get_radius_at_quantile(&self, frac:f64) -> f32 {
+        if frac >=0. && frac<=1. {
+            self.min_radius_q.query(frac).unwrap().1
+        }
+        else {
+            // do we panic! ?
+            0.
+        }
+    }
 }  // end of impl block for KGraphStat
 
 
@@ -156,10 +170,10 @@ impl <F> KGraph<F>
         Display + Debug + LowerExp + UpperExp + std::iter::Sum + Send + Sync 
 {
     /// allocates a graph with expected size nbnodes and nbng neighbours 
-    pub fn new(nbng : usize) -> Self {
+    pub fn new() -> Self {
         let neighbours_init = Vec::<Vec<OutEdge<F>>>::new();
         KGraph {
-            nbng : nbng,
+            nbng : 0,
             nbnodes : 0,
             neighbours :  neighbours_init,
             node_set : IndexSet::new(),
@@ -189,7 +203,7 @@ impl <F> KGraph<F>
 
     /// Fills in KGraphStat from KGraphStat
     pub fn get_kraph_stats(&self) -> KGraphStat<F> {
-        let mut in_degrees = Vec::<u32>::with_capacity(self.nbnodes);
+        let mut in_degrees : Vec<u32> = (0..self.nbnodes).into_iter().map(|_| 0).collect();
         let mut ranges = Vec::<RangeNgbh<F>>::with_capacity(self.nbnodes);
         //
         let mut max_max_r = F::zero();
@@ -207,7 +221,7 @@ impl <F> KGraph<F>
             // compute in_degrees
             ranges.push(RangeNgbh(min_r, max_r));
             for j in 0..self.neighbours[i].len() {
-                    in_degrees[self.neighbours[i][j].node] += 1;
+                in_degrees[self.neighbours[i][j].node] += 1;
             }
         }
         // dump some info
@@ -222,11 +236,12 @@ impl <F> KGraph<F>
         println!("\n ==========================");
         println!("\n minimal graph statistics \n");
         println!("max in degree : {}", max_in_degree);
-        println!("min in degree : {}", mean_in_degree);
+        println!("mean in degree : {}", mean_in_degree);
         println!("max max range : {} ", max_max_r);
         println!("min min range : {} ", min_min_r);
-        println!("min radius quantile at 0.05 {} , 0.5 {}, 0.95 {}", 
-                    quant.query(0.05).unwrap().1, quant.query(0.5).unwrap().1, quant.query(0.95).unwrap().1);
+        println!("min radius quantile at 0.05 : {:.2e} , 0.5 :  {:.2e}, 0.95 : {:.2e}, 0.99 : {:.2e}", 
+                    quant.query(0.05).unwrap().1, quant.query(0.5).unwrap().1, 
+                    quant.query(0.95).unwrap().1, quant.query(0.99).unwrap().1);
         //
         KGraphStat{ranges, in_degrees, mean_in_degree : mean_in_degree.round() as usize, max_in_degree : max_in_degree as usize, 
                     min_radius_q : quant}
@@ -235,15 +250,21 @@ impl <F> KGraph<F>
 
 
 
-
-    /// initialization for the case we use all points of the hnsw structure
+    /// initialization of a graph with expected number of neighbours nbng.
+    /// This initialization corresponds to the case where use all points of the hnsw structure
     /// see also *initialize_from_layer* and *initialize_from_descendants*
+    /// The nbng is the maximal number of neighbours retained. It can be less, and is returned in the
+    /// OK field or method or can be with the get_nbng function.
+    /// in this case try to increase the hnsw parameters (max_number_of_connections) 
     /// 
-    pub fn init_from_hnsw_all<D>(&mut self, hnsw : &Hnsw<F,D>) -> std::result::Result<usize, usize> 
+    pub fn init_from_hnsw_all<D>(&mut self, hnsw : &Hnsw<F,D>, nbng : usize) -> std::result::Result<usize, usize> 
         where   F : Float + AddAssign + SubAssign + MulAssign + DivAssign + RemAssign +
                     Display + Debug + LowerExp + UpperExp + std::iter::Sum + Send + Sync,
                 D : Distance<F> + Send + Sync {
         //
+        log::trace!("entering init_from_hnsw_all");
+        //
+        let mut minimum_nbng = nbng;
         // We must extract the whole structure , for each point the list of its nearest neighbours and weight<F> of corresponding edge
         let max_nb_conn = hnsw.get_max_nb_connection() as usize;    // morally this the k of knn bu we have that for each layer
         // check consistency between max_nb_conn and nbng
@@ -284,23 +305,28 @@ impl <F> KGraph<F>
             }
             vec_tmp.sort_unstable_by(| a, b | a.partial_cmp(b).unwrap_or(Ordering::Less));
             assert!(vec_tmp[0].weight < vec_tmp[1].weight);    // temporary , check we did not invert order
-            // keep only the good size. Could we keep more ?
-            if vec_tmp.len() < max_nb_conn {
-                log::error!("neighbours must have {} neighbours", self.nbng);
-                return Err(1);                
+            // keep only the asked size. Could we keep more ?
+            if vec_tmp.len() < self.nbng {
+                log::error!("neighbours must have {} neighbours, got only {}", self.nbng, vec_tmp.len());
+                log::info!("try to increase max number of connection");
+                point.debug_dump();
             }
-            vec_tmp.truncate(max_nb_conn);
+            vec_tmp.truncate(vec_tmp.len());
+            minimum_nbng = minimum_nbng.min(vec_tmp.len());
             //
             // We insert neighborhood info at slot corresponding to index beccause we want to access points in coherence with neighbours referencing
             // =====================================================================================================================================
             //  
             self.neighbours[index] = vec_tmp;
         }
+        self.nbng = minimum_nbng;
         self.nbnodes = self.neighbours.len();
         assert_eq!(self.nbnodes, nb_point);
+        log::trace!("KGraph::exiting init_from_hnsw_all");
         // now we can fill some statistics on density and incoming degrees for nodes!
+        log::info!("minimal number of neighbours {}", minimum_nbng);
         //
-        Ok(1)
+        Ok(minimum_nbng)
     }   // end init_from_hnsw_all
 
 
@@ -318,6 +344,9 @@ impl <F> KGraph<F>
 
 mod tests {
 
+//    cargo test fromhnsw  -- --nocapture
+//    RUST_LOG=annembed::fromhnsw=TRACE cargo test fromhnsw -- --nocapture
+
 #[allow(unused)]
 use super::*;
 
@@ -330,6 +359,7 @@ fn log_init_test() {
 }  
 
 
+#[allow(unused)]
 fn gen_rand_data_f32(nb_elem: usize , dim:usize) -> Vec<Vec<f32>> {
     let mut data = Vec::<Vec<f32>>::with_capacity(nb_elem);
     let mut rng = thread_rng();
@@ -345,28 +375,33 @@ fn gen_rand_data_f32(nb_elem: usize , dim:usize) -> Vec<Vec<f32>> {
 /// test conversion of full hnsw to KGraph
 #[test]
 fn test_full_hnsw() {
-    let nb_elem = 1000;
+    //
+    log_init_test();
+    //
+    let nb_elem = 2000;
     let dim = 30;
     let knbn = 10;
-    let ef = 20;
     //
     println!("\n\n test_serial nb_elem {:?}", nb_elem);
     //
     let data = gen_rand_data_f32(nb_elem, dim);
     let data_with_id = data.iter().zip(0..data.len()).collect();
 
-    let ef_c = 100;
-    let max_nb_connection = 16;
+    let ef_c = 300;
+    let max_nb_connection = 100;
     let nb_layer = 16.min((nb_elem as f32).ln().trunc() as usize);
     let hns = Hnsw::<f32, DistL1>::new(max_nb_connection, nb_elem, nb_layer, ef_c, DistL1{});
     hns.parallel_insert(&data_with_id);
+    hns.dump_layer_info();
     //
-    let mut kgraph = KGraph::<f32>::new(knbn);
-    let _res = kgraph.init_from_hnsw_all(&hns).unwrap();
-    let kgraph_stats = kgraph.get_kraph_stats();
-    // dump stats on kgraph
-
-
-}
+    let mut kgraph = KGraph::<f32>::new();
+    log::info!("calling kgraph.init_from_hnsw_all");
+    let res = kgraph.init_from_hnsw_all(&hns, knbn);
+    if res.is_err() {
+        panic!("init_from_hnsw_all  failed");
+    }
+    log::info!("minimum number of neighbours {}", kgraph.get_nbng());
+    let _kgraph_stats = kgraph.get_kraph_stats();
+}  // end of test_full_hnsw
 
 } // end of tests
