@@ -34,6 +34,6 @@ mod tests {
     #[test]
     // initialize once log system for tests.
     fn init_log() {
-        let _res = env_logger::try_init().unwrap();
+        let _res = env_logger::try_init();
     }
 }  // end of tests

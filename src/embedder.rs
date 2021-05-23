@@ -640,8 +640,9 @@ where
 
 mod tests {
 
+    #[allow(unused)]
     use super::*;
-    #[allow(dead_code)]
+    #[allow(unused)]
     fn log_init_test() {
         let _ = env_logger::builder().is_test(true).try_init();
     }

@@ -18,7 +18,6 @@ use quantiles::{ckms::CKMS};     // we could use also greenwald_khanna
 use hnsw_rs::prelude::*;
 use hnsw_rs::hnsw::Neighbour;
 
-use crate::embedder;
 
 
 /// morally F should be f32 and f64
@@ -87,7 +86,7 @@ struct RangeNgbh<F:Float>(F, F);
 ///  - range of neighbourhood
 ///  - how many edges arrives in a node (in_degree)
 pub struct KGraphStat<F:Float> {
-    /// min and max neighbours for each node
+    /// for each node, distances to nearest and farthest neighbours
     ranges : Vec<RangeNgbh<F>>,
     /// incoming degrees
     in_degrees : Vec<u32>,
@@ -152,14 +151,14 @@ impl <F:Float> KGraphStat<F> {
 pub struct KGraph<F> {
     /// max number of neighbours of each node. Note it can a littel less.
     max_nbng : usize,
-    /// numboer of nodes. The nodes must be numbered from 0 to nb_nodes.
+    /// number of nodes.
     /// If GraphK is initialized from the descendant of a point in Hnsw we do not know in advance the number of nodes!!
     nbnodes: usize,
     /// neighbours[i] contains the indexes of neighbours node i sorted by increasing weight edge!
+    /// all node indexing is done after indexation in node_set
     pub neighbours : Vec<Vec<OutEdge<F>>>,
     /// to keep track of current node indexes.
     node_set : IndexSet<NodeIdx>,
-
 }   // end of struct KGraph
 
 
@@ -254,10 +253,9 @@ impl <F> KGraph<F>
     /// initialization of a graph with expected number of neighbours nbng.
     /// This initialization corresponds to the case where use all points of the hnsw structure
     /// see also *initialize_from_layer* and *initialize_from_descendants*
-    /// The nbng is the maximal number of neighbours retained. It can be less, and is returned in the
-    /// OK field or method or can be with the get_nbng function.
-    /// in this case try to increase the hnsw parameters (max_number_of_connections) 
-    /// 
+    /// The nbng is the maximal number of neighbours kept. The effective mean number can be less,
+    /// in this case use the Hnsw.set_keeping_pruned(true) to restrict pruning in the search.
+    ///
     pub fn init_from_hnsw_all<D>(&mut self, hnsw : &Hnsw<F,D>, nbng : usize) -> std::result::Result<usize, usize> 
         where   F : Float + AddAssign + SubAssign + MulAssign + DivAssign + RemAssign +
                     Display + Debug + LowerExp + UpperExp + std::iter::Sum + Send + Sync,
@@ -312,8 +310,7 @@ impl <F> KGraph<F>
             // keep only the asked size. Could we keep more ?
             if vec_tmp.len() < nbng {
                 nb_point_below_nbng += 1;
-                log::error!("neighbours must have {} neighbours, got only {}", self.max_nbng, vec_tmp.len());
-                log::info!("try to increase max number of connection");
+                log::warn!("neighbours must have {} neighbours, got only {}", self.max_nbng, vec_tmp.len());
             }
             vec_tmp.truncate(nbng);
             mean_nbng += vec_tmp.len() as u64;
@@ -331,6 +328,10 @@ impl <F> KGraph<F>
         log::info!("mean number of neighbours obtained = {:.2e}", mean_nbng as f64 / nb_point as f64);
         log::info!("minimal number of neighbours {}", minimum_nbng);
         log::info!("number of points with less than : {} neighbours = {} ", nbng, nb_point_below_nbng);
+        if (mean_nbng as f64 / nb_point as f64) < nbng as f64 {
+            println!(" mean number of neighbours obtained : {:2.e}", mean_nbng);
+            println!(" possibly use hnsw.reset_keeping_pruned(true)");
+        }
         //
         Ok(minimum_nbng)
     }   // end init_from_hnsw_all
@@ -394,10 +395,12 @@ fn test_full_hnsw() {
     let data = gen_rand_data_f32(nb_elem, dim);
     let data_with_id = data.iter().zip(0..data.len()).collect();
 
-    let ef_c = 300;
-    let max_nb_connection = 100;
+    let ef_c = 50;
+    let max_nb_connection = 50;
     let nb_layer = 16.min((nb_elem as f32).ln().trunc() as usize);
-    let hns = Hnsw::<f32, DistL1>::new(max_nb_connection, nb_elem, nb_layer, ef_c, DistL1{});
+    let mut hns = Hnsw::<f32, DistL1>::new(max_nb_connection, nb_elem, nb_layer, ef_c, DistL1{});
+    // to enforce the asked number of neighbour
+    hns.set_keeping_pruned(true);
     hns.parallel_insert(&data_with_id);
     hns.dump_layer_info();
     //

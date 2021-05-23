@@ -6,6 +6,12 @@ use ndarray::{Array3, Array1, s};
 use std::fs::{OpenOptions};
 use std::path::{PathBuf};
 
+
+
+use hnsw_rs::prelude::*;
+
+use annembed::fromhnsw::*;
+
 /// A struct to load/store [MNIST data](http://yann.lecun.com/exdb/mnist/)  
 /// stores labels (i.e : digits between 0 and 9) coming from file train-labels-idx1-ubyte      
 /// and hand written characters as 28*28 images with values between 0 and 255 coming from train-images-idx3-ubyte
@@ -142,9 +148,29 @@ pub fn main() {
         println!("could not open label file : {:?}", label_fname);
         return;
     }
-
     let mnist_data  = MnistData::new(image_fname, label_fname).unwrap();
-    // send mnist_data to hnsw
+    let images = mnist_data.get_images();
+    let( _, _, nbimages) = images.dim();
+    //
+    let ef_c = 50;
+    let max_nb_connection = 50;
+    let nb_layer = 16.min((nbimages as f32).ln().trunc() as usize);
+    let hnsw = Hnsw::<f32, DistL1>::new(max_nb_connection, nbimages, nb_layer, ef_c, DistL1{});
+    // we must pay fortran indexation once!. transform image to a vector
+    for k in 0..nbimages {
+        let v : Vec<f32> = images.slice(s![.., .., k]).iter().map(|v| *v as f32).collect();
+        hnsw.insert((&v,k));
+    }
+    // images as vectors of f32 and send to hnsw
+    hnsw.dump_layer_info();
+    //
+    let mut kgraph = KGraph::<f32>::new();
+    log::info!("calling kgraph.init_from_hnsw_all");
+    let knbn = 20;
+    let res = kgraph.init_from_hnsw_all(&hnsw, knbn);
+    if res.is_err() {
+        panic!("init_from_hnsw_all  failed");
+    }
 
     // 
 }
