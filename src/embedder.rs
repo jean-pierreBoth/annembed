@@ -309,7 +309,7 @@ where
         for i in 0..nbgh {
             let y_i = neighbours[i].node; // y_i is a NodeIx = usize
             rho_y_s.push(self.kgraph.neighbours[y_i][0].weight.to_f32().unwrap());
-            // we rho_x, scales
+            // we rho_x, initial_scales
         } // end of for i
         rho_y_s.push(rho_x);
         let mean_rho = rho_y_s.iter().sum::<f32>() / (rho_y_s.len() as f32);
@@ -394,9 +394,11 @@ struct EntropyOptim<F> {
     /// for each edge , initial node, end node, proba (weight of edge) 24 bytes
     edges : Vec<(NodeIdx, OutEdge<f32>)>,
     /// scale for each node
-    scales : Vec<f32>,
+    initial_scales : Vec<f32>,
     /// embedded coordinates of each node, under RwLock to // optimization     nbnodes * (embedded dim * f32 + lock size))
     embedded : Vec<Arc<RwLock<Array1<F>>>>,
+    /// embedded_scales
+    embedded_scales : Vec<f32>,
 } // end of EntropyOptim
 
 
@@ -409,10 +411,10 @@ impl <F> EntropyOptim<F>
         let nbng = node_params.params[0].edges.len();
         let nbnodes = node_params.params.len();
         let mut edges = Vec::<(NodeIdx, OutEdge<f32>)>::with_capacity(nbnodes*nbng);
-        let mut scales =  Vec::<f32>::with_capacity(nbnodes);
+        let mut initial_scales =  Vec::<f32>::with_capacity(nbnodes);
         // construct field edges
         for i in 0..nbnodes {
-            scales.push(node_params.params[i].scale);
+            initial_scales.push(node_params.params[i].scale);
             for j in 0..node_params.params[i].edges.len() {
                 edges.push((i, node_params.params[i].edges[j]));
             }
@@ -423,8 +425,10 @@ impl <F> EntropyOptim<F>
         for i in 0..nbrow {
             embedded.push(Arc::new(RwLock::new(initial_embed.row(i).to_owned())));
         }
+        // compute embedded scales
+        let embedded_scales = estimate_scales_from_first_neighbours(node_params, initial_embed);
         //
-        EntropyOptim { edges, scales, embedded}
+        EntropyOptim { edges, initial_scales, embedded, embedded_scales}
         // construct field embedded
     }  // end of new 
 
@@ -437,7 +441,8 @@ impl <F> EntropyOptim<F>
             let node_i = edge.0;
             let node_j = edge.1.node;
             let weight_ij = edge.1.weight as f64;
-            let weight_ij_embed = cauchy_edge_weight(&self.embedded[node_i].read(), F::from_f32(self.scales[node_i]).unwrap(), &self.embedded[node_j].read()).to_f64().unwrap();
+            let weight_ij_embed = cauchy_edge_weight(&self.embedded[node_i].read(), 
+                F::from_f32(self.initial_scales[node_i]).unwrap(), &self.embedded[node_j].read()).to_f64().unwrap();
             ce_entropy += -weight_ij * weight_ij_embed.ln() - (1. - weight_ij) * (1. - weight_ij_embed).ln();
         }
         //
@@ -453,7 +458,8 @@ impl <F> EntropyOptim<F>
                     let node_i = edge.0;
                     let node_j = edge.1.node;
                     let weight_ij = edge.1.weight as f64;
-                    let weight_ij_embed = cauchy_edge_weight(&self.embedded[node_i].read(), F::from_f32(self.scales[node_i]).unwrap(), &self.embedded[node_j].read()).to_f64().unwrap();
+                    let weight_ij_embed = cauchy_edge_weight(&self.embedded[node_i].read(), 
+                            F::from_f32(self.initial_scales[node_i]).unwrap(), &self.embedded[node_j].read()).to_f64().unwrap();
                     -weight_ij * weight_ij_embed.ln() - (1. - weight_ij) * (1. - weight_ij_embed).ln()
                 })
                 .sum::<f64>();
@@ -477,7 +483,7 @@ impl <F> EntropyOptim<F>
         let node_j = edge_out.1.node;
         let weight = edge_out.1.weight;
         assert!(weight <= 1.);
-        let scale = self.scales[node_i] as f64;
+        let scale = self.initial_scales[node_i] as f64;
         let mut y_j = self.embedded[node_j].write();
         // compute l2 norm of y_j - y_i
         let d_ij : f64 = y_i.iter().zip(y_j.iter()).map(|(vi,vj)| (*vi-*vj)*(*vi-*vj)).sum::<F>().to_f64().unwrap();
@@ -545,6 +551,30 @@ fn grad_cauchy_edge_weight<F>(
             / (scale * cauchy_edge_weight(initial_point, scale, initial_point));
     }
 } // end of grad_embedded_weight
+
+
+
+fn l2_dist<F>(y1: &ArrayView1<'_, F> , y2 : &ArrayView1<'_, F>) -> F 
+where F :  Float + std::iter::Sum + num_traits::cast::FromPrimitive {
+    //
+    y1.iter().zip(y2.iter()).map(|(v1,v2)| (*v1 - *v2) * (*v1- *v2)).sum()
+ 
+}  // end of l2_dist
+
+
+fn estimate_scales_from_first_neighbours<F> (node_params : &NodeParams, initial_embed : &Array2<F>) -> Vec<f32> 
+    where F :  Float + std::iter::Sum + num_traits::cast::FromPrimitive {
+    let nbnodes = node_params.params.len();
+    let mut embedded_scales = Vec::<f32>::with_capacity(nbnodes);
+    for i in 0..nbnodes {
+        let first_edge = node_params.params[i].edges[0];
+        let p1 = first_edge.weight;
+        let n1 = first_edge.node;
+        let new_scale = p1/(1.- p1) * l2_dist(&initial_embed.row(i), &initial_embed.row(n1)).to_f32().unwrap();
+        embedded_scales.push(new_scale);
+    }
+    embedded_scales
+} // end of estimate_scales_from_first_neighbours
 
 
 /// search a root for f(x) = target between lower_r and upper_r. The flag increasing specifies the variation of f. true means increasing
