@@ -359,8 +359,8 @@ where
     // The initial density makes the embedded graph asymetric as the initial graph.
     // The optimization function thus should try to restore asymetry and local scale as far as possible.
 
-    fn entropy_optimize(&self, initial_embedding: &Array2<F>) -> Result<usize, String> {
-        let ce_optimization = EntropyOptim::new(self.initial_space.as_ref().unwrap(), initial_embedding);
+    fn entropy_optimize(&self, b: f32, initial_embedding: &Array2<F>) -> Result<usize, String> {
+        let ce_optimization = EntropyOptim::new(self.initial_space.as_ref().unwrap(), b, initial_embedding);
         // compute initial value of objective function
         let start = ProcessTime::now();
         let initial_ce = ce_optimization.ce_compute();
@@ -399,6 +399,8 @@ struct EntropyOptim<F> {
     embedded : Vec<Arc<RwLock<Array1<F>>>>,
     /// embedded_scales
     embedded_scales : Vec<f32>,
+    ///
+    b : f32
 } // end of EntropyOptim
 
 
@@ -407,7 +409,7 @@ struct EntropyOptim<F> {
 impl <F> EntropyOptim<F> 
     where F: Float +  NumAssign + std::iter::Sum + num_traits::cast::FromPrimitive + Send + Sync {
     //
-    pub fn new(node_params : &NodeParams, initial_embed : &Array2<F>) -> Self {
+    pub fn new(node_params : &NodeParams, b: f32, initial_embed : &Array2<F>) -> Self {
         let nbng = node_params.params[0].edges.len();
         let nbnodes = node_params.params.len();
         let mut edges = Vec::<(NodeIdx, OutEdge<f32>)>::with_capacity(nbnodes*nbng);
@@ -426,9 +428,10 @@ impl <F> EntropyOptim<F>
             embedded.push(Arc::new(RwLock::new(initial_embed.row(i).to_owned())));
         }
         // compute embedded scales
-        let embedded_scales = estimate_scales_from_first_neighbours(node_params, initial_embed);
+//        let embedded_scales = estimate_embedded_scales_from_first_neighbour(node_params, b, initial_embed);
+        let embedded_scales = estimate_embedded_scale_from_initial_scales(&initial_scales);
         //
-        EntropyOptim { edges, initial_scales, embedded, embedded_scales}
+        EntropyOptim { edges, initial_scales, embedded, embedded_scales, b}
         // construct field embedded
     }  // end of new 
 
@@ -442,7 +445,8 @@ impl <F> EntropyOptim<F>
             let node_j = edge.1.node;
             let weight_ij = edge.1.weight as f64;
             let weight_ij_embed = cauchy_edge_weight(&self.embedded[node_i].read(), 
-                F::from_f32(self.initial_scales[node_i]).unwrap(), &self.embedded[node_j].read()).to_f64().unwrap();
+                    F::from_f32(self.initial_scales[node_i]).unwrap(), self.b,
+                    &self.embedded[node_j].read()).to_f64().unwrap();
             ce_entropy += -weight_ij * weight_ij_embed.ln() - (1. - weight_ij) * (1. - weight_ij_embed).ln();
         }
         //
@@ -459,7 +463,8 @@ impl <F> EntropyOptim<F>
                     let node_j = edge.1.node;
                     let weight_ij = edge.1.weight as f64;
                     let weight_ij_embed = cauchy_edge_weight(&self.embedded[node_i].read(), 
-                            F::from_f32(self.initial_scales[node_i]).unwrap(), &self.embedded[node_j].read()).to_f64().unwrap();
+                            F::from_f32(self.initial_scales[node_i]).unwrap(), self.b,
+                            &self.embedded[node_j].read()).to_f64().unwrap();
                     -weight_ij * weight_ij_embed.ln() - (1. - weight_ij) * (1. - weight_ij_embed).ln()
                 })
                 .sum::<f64>();
@@ -519,36 +524,40 @@ impl <F> EntropyOptim<F>
 
 /// computes the weight of an embedded edge.
 /// scale correspond at density observed at initial point in original graph (hence the asymetry)
-fn cauchy_edge_weight<F>(initial_point: &Array1<F>, scale: F, other: &Array1<F>) -> F
+fn cauchy_edge_weight<F>(initial_point: &Array1<F>, scale: F, b : f32, other: &Array1<F>) -> F
 where
     F: Float + std::iter::Sum
 {
-    let dist = initial_point
+    let mut dist = initial_point
         .iter()
         .zip(other.iter())
         .map(|(i, f)| (*i - *f) * (*i - *f))
         .sum::<F>();
-    return dist / scale;
+    dist = dist / (scale*scale);
+    // ( b^dist = exp(d*log(b) )
+    dist = F::from((b*(dist.to_f32().unwrap()).ln()).exp()).unwrap();         
+    return F::one() + dist;
 } // end of embedded_edge_weight
 
 
 
 
-// gradient of embedded_edge_weight
-fn grad_cauchy_edge_weight<F>(
-    initial_point: &Array1<F>,
-    scale: F,
-    other: &Array1<F>,
-    gradient: &mut Array1<F>,
+// gradient of embedded_edge_weight, fills in gradient to avoid allocation in return
+fn grad_cauchy_edge_weight<F>(initial_point: &Array1<F>, scale: F, b : f32, other: &Array1<F>,
+            gradient: &mut Array1<F>,
 ) where
     F: Float + std::iter::Sum + num_traits::cast::FromPrimitive,
 {
     //
     assert_eq!(gradient.len(), initial_point.len());
     //
+    // compute rescaled squared distance as a f32
+    let d_ij = (l2_dist(&initial_point.view(), &other.view())/(scale*scale)).to_f32().unwrap();
+    let cauchy_weight = cauchy_edge_weight(initial_point, scale, b, initial_point);
+    //
+    let coeff_f = F::from(2. * b * d_ij.pow(b - 1.)).unwrap() * (cauchy_weight * cauchy_weight);
     for i in 0..gradient.len() {
-        gradient[i] = -F::from_f32(2.).unwrap() * (other[i] - initial_point[i])
-            / (scale * cauchy_edge_weight(initial_point, scale, initial_point));
+        gradient[i] = coeff_f * (other[i] - initial_point[i]);
     }
 } // end of grad_embedded_weight
 
@@ -558,11 +567,13 @@ fn l2_dist<F>(y1: &ArrayView1<'_, F> , y2 : &ArrayView1<'_, F>) -> F
 where F :  Float + std::iter::Sum + num_traits::cast::FromPrimitive {
     //
     y1.iter().zip(y2.iter()).map(|(v1,v2)| (*v1 - *v2) * (*v1- *v2)).sum()
- 
 }  // end of l2_dist
 
 
-fn estimate_scales_from_first_neighbours<F> (node_params : &NodeParams, initial_embed : &Array2<F>) -> Vec<f32> 
+
+// in this function we compute scale in embedded space so a point is not pushed with respect to what corresponds to
+// its first neighbour in original space. what sense
+fn estimate_embedded_scales_from_first_neighbour<F> (node_params : &NodeParams, b : f32, initial_embed : &Array2<F>) -> Vec<f32> 
     where F :  Float + std::iter::Sum + num_traits::cast::FromPrimitive {
     let nbnodes = node_params.params.len();
     let mut embedded_scales = Vec::<f32>::with_capacity(nbnodes);
@@ -570,12 +581,19 @@ fn estimate_scales_from_first_neighbours<F> (node_params : &NodeParams, initial_
         let first_edge = node_params.params[i].edges[0];
         let p1 = first_edge.weight;
         let n1 = first_edge.node;
-        let new_scale = p1/(1.- p1) * l2_dist(&initial_embed.row(i), &initial_embed.row(n1)).to_f32().unwrap();
+        let new_scale = (p1/(1.- p1)).pow(1./b) * l2_dist(&initial_embed.row(i), &initial_embed.row(n1)).to_f32().unwrap();
         embedded_scales.push(new_scale);
     }
     embedded_scales
 } // end of estimate_scales_from_first_neighbours
 
+
+// in embedded space (in unit ball) the scale is chosen as the scale at corresponding point / divided by mean initial scales.
+fn estimate_embedded_scale_from_initial_scales(initial_scales :&Vec<f32>) -> Vec<f32> {
+    let mean_scale : f32 = initial_scales.iter().sum();
+    let embedded_scale : Vec<f32> = initial_scales.iter().map(|x| x/mean_scale).collect();
+    embedded_scale
+}  // end of estimate_embedded_scale_from_initial_scales
 
 /// search a root for f(x) = target between lower_r and upper_r. The flag increasing specifies the variation of f. true means increasing
 fn dichotomy_solver<F>(increasing: bool, f: F, lower_r: f32, upper_r: f32, target: f32) -> f32
