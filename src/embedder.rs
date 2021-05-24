@@ -22,14 +22,15 @@ use crate::fromhnsw::*;
 use crate::tools::svdapprox::*;
 
 
-/// do not consider probabilities under PROBA_MIN
+/// do not consider probabilities under PROBA_MIN, thresolded!!
 const PROBA_MIN: f32 = 1.0E-5;
 
 
 // We need this structure to compute entropy od neighbour distribution
-/// This structure stores for each node its local scale and proba to its nearest neighbours as referenced in
-/// field neighbours of KGraph. Field neighbours gives us acces to neighbours id and original distances.
-/// So this field gives a local scale and transition proba.
+/// This structure stores gathers parameters of a node:
+///  - its local scale
+///  - list of edges (distance and proba) to its nearest neighbours as referenced in field neighbours of KGraph.
+///
 /// Identity of neighbour node must be fetched in KGraph structure to spare memory
 #[derive(Clone)]
 struct NodeParam {
@@ -71,22 +72,48 @@ struct LaplacianGraph {
 /// The structure corresponding to the embedding process
 /// It must be initiamized by the graph extracted from Hnsw according to the choosen strategy
 /// and the asked dimension for embedding
-pub struct Emmbedder<'a, F> {
+pub struct Embedder<'a,F> {
+    /// graph constrcuted with fromhnsw module
     kgraph: &'a KGraph<F>,
+    /// the embedding dimension
     asked_dimension: usize,
+    ///
     initial_space: Option<NodeParams>,
-//    embedded_space: Option<NodeParams>,
     embedding: Option<Array2<F>>,
-} // end of Emmbedder
+} // end of Embedder
 
-impl<F> Emmbedder<'_, F>
+
+impl<'a,F> Embedder<'a,F>
 where
     F: Float + Lapack + Scalar + ndarray::ScalarOperand + Send + Sync,
 {
-    // this function initialize embedding by a svd (or else?)
+    /// constructor from a graph and asked embedding dimension
+    pub fn new(kgraph : &'a KGraph<F>, asked_dimension : usize) -> Self {
+        Embedder::<F>{kgraph, asked_dimension, initial_space:None, embedding:None}
+    } // end of new
+
+
+
+    /// do the embedding
+    pub fn embed(&mut self) -> Result<usize, usize> {
+        // initial embedding via diffusion maps
+        let initial_embedding = self.get_dmap_initial_embedding(self.asked_dimension);
+        // cross entropy optimization
+        let b : f32 = 1.;
+        let embedding = self.entropy_optimize(b, &initial_embedding);
+
+        //
+        Ok(1)
+    } /// end embed
+
+
+
+
+    // this function initialize and returns embedding by a svd (or else?)
     // We are intersested in first eigenvalues (excpeting 1.) of transition probability matrix
     // i.e last non null eigenvalues of laplacian matrix!!
     // It is in fact diffusion Maps at time 0
+    //
     fn get_dmap_initial_embedding(&mut self, asked_dim: usize) -> Array2<F> {
         // get eigen values of normalized symetric lapalcian
         let laplacian = self.get_laplacian();
@@ -116,6 +143,12 @@ where
                 first_non_zero,
                 lambdas[first_non_zero]
             );
+            // get info on spectral gap
+            if first_non_zero > 0 {
+                log::info!("next non null eigenvalue rank : {} value : {}", first_non_zero-1, lambdas[first_non_zero-1]);
+            }
+            log::info!("lowest eigenvalue value : {}", lambdas[0]);
+            //
             assert!(first_non_zero >= asked_dim);
             let max_dim = asked_dim.min(first_non_zero + 1); // is in [1..len()]
                                                              // We get U at index in range first_non_zero-max_dim..first_non_zero
@@ -138,12 +171,12 @@ where
                         F::from_f32(row_i[first_non_zero - j] / j_weights[i]).unwrap();
                 }
             }
-            // according to theory (See Luxburg or Lafon-Keller diffusion maps) we must go back to eigen vectors of rw laplacian.
-            // moreover we must get back to type F
             return embedded;
         }
         //
     } // end of get_initial_embedding
+
+
 
     // the function computes a symetric laplacian graph for svd.
     // We will then need the lower non zero eigenvalues and eigen vectors.
@@ -159,6 +192,8 @@ where
     // See also Veerman A Primer on Laplacian Dynamics in Directed Graphs 2020 arxiv https://arxiv.org/abs/2002.02605
 
     fn get_laplacian(&self) -> LaplacianGraph {
+        log::debug!("in Embedder::get_laplacian");
+        //
         let nbnodes = self.kgraph.get_nb_nodes();
         // get stats
         let max_nbng = self.kgraph.get_max_nbng();
@@ -194,7 +229,7 @@ where
                 for j in 0..nbnodes {
                     row /= -(diag[[i]] * diag[[j]]).sqrt();
                 }
-                row[[i]] = 0.;      // in fact we take the laplacian to get excatly this!
+                row[[i]] += 1.;      // in fact we take the laplacian to get excatly this!
             }
             //
             let laplacian = LaplacianGraph {
@@ -203,6 +238,8 @@ where
             };
             laplacian
         } else {
+            log::debug!("Embedder using csr matrix");
+            //
             // now we must construct a CsrMat to store the symetrized graph transition probablity to go svd.
             let neighbour_hood = self.kgraph.get_neighbours();
             // TODO This can be made // with a chashmap
@@ -246,7 +283,7 @@ where
             for i in 0..rows.len() {
                 let row = rows[i];
                 let col = cols[i];
-                values[i] = 0. - values[i] / (diagonal[row] * diagonal[col]).sqrt();
+                values[i] = 1. - values[i] / (diagonal[row] * diagonal[col]).sqrt();
             }
             // 
             let laplacian = TriMatBase::<Vec<usize>, Vec<f32>>::from_triplets(
@@ -264,6 +301,7 @@ where
         } // end case CsMat
           //
     } // end of into_matrepr_for_svd
+
 
     // given neighbours of a node we choose scale to satisfy a normalization constraint.
     // p_i = exp[- beta * (d(x,y_i) - d(x, y_1)/ local_scale ]
@@ -294,6 +332,7 @@ where
         (1. / beta, dist)
     } // end of get_scale_from_umap
 
+
     // Simplest function where we know really what we do and why. Get a normalized proba with constraint.
     // given neighbours of a node we choose scale to satisfy a normalization constraint.
     // p_i = exp[- beta * (d(x,y_i)/ local_scale)]  and then normalized to 1.
@@ -301,6 +340,7 @@ where
     // This function returns the local scale (i.e mean distance of a point to its nearest neighbour)
     // and vector of proba weight to nearest neighbours. Min
     fn get_scale_from_proba_normalisation(&self, neighbours: &Vec<OutEdge<F>>) -> NodeParam {
+        log::debug!("in Embedder::get_scale_from_proba_normalisation");
         // p_i = exp[- beta * (d(x,y_i)/ local_scale) * lambda]
         let nbgh = neighbours.len();
         // determnine mean distance to nearest neighbour at local scale
@@ -359,7 +399,10 @@ where
     // The initial density makes the embedded graph asymetric as the initial graph.
     // The optimization function thus should try to restore asymetry and local scale as far as possible.
 
-    fn entropy_optimize(&self, b: f32, initial_embedding: &Array2<F>) -> Result<usize, String> {
+    fn entropy_optimize(&self, b: f32, initial_embedding : &Array2<F>) -> Result<usize, String> {
+        //
+        log::debug!("in Embedder::entropy_optimize");
+        //
         let ce_optimization = EntropyOptim::new(self.initial_space.as_ref().unwrap(), b, initial_embedding);
         // compute initial value of objective function
         let start = ProcessTime::now();
@@ -368,6 +411,9 @@ where
         println!(" initial cross entropy value {:?},  in time {:?}", initial_ce, cpu_time);
         // We manage some iterations on gradient computing
         let grad_step_init = 0.1;
+        //
+        log::debug!("in Embedder::entropy_optimize  ... gradient iterations");
+        let start = ProcessTime::now();
         for iter in 1..=10 {
             // loop on edges
             let grad_step = grad_step_init/iter as f64;
@@ -376,13 +422,15 @@ where
             let cpu_time: Duration = start.elapsed();
             println!(" gradient iteration time {:?}", cpu_time);
         }
+        let cpu_time: Duration = start.elapsed();
+        println!(" gradient iterations cpu_time {:?}",  cpu_time);
         //
         Ok(1)
     } // end of entropy_optimize
 
 
 
-} // end of impl Emmbedder
+} // end of impl Embedder
 
 //==================================================================================================================
 
@@ -410,6 +458,8 @@ impl <F> EntropyOptim<F>
     where F: Float +  NumAssign + std::iter::Sum + num_traits::cast::FromPrimitive + Send + Sync {
     //
     pub fn new(node_params : &NodeParams, b: f32, initial_embed : &Array2<F>) -> Self {
+        log::info!("entering EntropyOptim::new");
+        //
         let nbng = node_params.params[0].edges.len();
         let nbnodes = node_params.params.len();
         let mut edges = Vec::<(NodeIdx, OutEdge<f32>)>::with_capacity(nbnodes*nbng);
@@ -439,6 +489,8 @@ impl <F> EntropyOptim<F>
     // computes croos entropy between initial space and embedded distribution. 
     // necessary to monitor optimization
     fn ce_compute(&self) -> f64 {
+        log::info!("entering EntropyOptim::ce_compute");
+        //
         let mut ce_entropy = 0.;
         for edge in self.edges.iter() {
             let node_i = edge.0;
@@ -457,6 +509,8 @@ impl <F> EntropyOptim<F>
 
     // threaded version for computing cross entropy between initial distribution and embedded distribution with Cauchy law.
     fn ce_compute_threaded(&self) -> f64 {
+        log::info!("entering EntropyOptim::ce_compute_threaded");
+        //
         let ce_entropy = self.edges.par_iter()
                 .fold( || 0.0f64, | entropy : f64, edge| entropy + {
                     let node_i = edge.0;
@@ -594,6 +648,8 @@ fn estimate_embedded_scale_from_initial_scales(initial_scales :&Vec<f32>) -> Vec
     let embedded_scale : Vec<f32> = initial_scales.iter().map(|x| x/mean_scale).collect();
     embedded_scale
 }  // end of estimate_embedded_scale_from_initial_scales
+
+
 
 /// search a root for f(x) = target between lower_r and upper_r. The flag increasing specifies the variation of f. true means increasing
 fn dichotomy_solver<F>(increasing: bool, f: F, lower_r: f32, upper_r: f32, target: f32) -> f32

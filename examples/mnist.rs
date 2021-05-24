@@ -171,6 +171,14 @@ pub fn main() {
     if res.is_err() {
         panic!("init_from_hnsw_all  failed");
     }
+    //
+    let mut kgraph = KGraph::<f32>::new();
+    log::info!("calling kgraph.init_from_hnsw_all");
+    let res = kgraph.init_from_hnsw_all(&hnsw, knbn);
+    if res.is_err() {
+        panic!("init_from_hnsw_all  failed");
+    }
+    log::info!("minimum number of neighbours {}", kgraph.get_max_nbng());
 
     // 
 }
