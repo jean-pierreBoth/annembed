@@ -29,7 +29,8 @@ const PROBA_MIN: f32 = 1.0E-5;
 // We need this structure to compute entropy od neighbour distribution
 /// This structure stores gathers parameters of a node:
 ///  - its local scale
-///  - list of edges (distance and proba) to its nearest neighbours as referenced in field neighbours of KGraph.
+///  - list of edges. The f32 field constains distance or directed proba of edge going out of each node
+///    (distance and proba) to its nearest neighbours as referenced in field neighbours of KGraph.
 ///
 /// Identity of neighbour node must be fetched in KGraph structure to spare memory
 #[derive(Clone)]
@@ -77,7 +78,8 @@ pub struct Embedder<'a,F> {
     kgraph: &'a KGraph<F>,
     /// the embedding dimension
     asked_dimension: usize,
-    ///
+    /// contains edge probabilities according to the probabilized graph constructed before laplacian symetrization
+    /// It is this representation that is used for cross entropy optimization!
     initial_space: Option<NodeParams>,
     embedding: Option<Array2<F>>,
 } // end of Embedder
@@ -98,9 +100,10 @@ where
     pub fn embed(&mut self) -> Result<usize, usize> {
         // initial embedding via diffusion maps
         let initial_embedding = self.get_dmap_initial_embedding(self.asked_dimension);
+        // we nedd to construct field initial_space has been contructed in get_laplacian 
         // cross entropy optimization
         let b : f32 = 1.;
-        let embedding = self.entropy_optimize(b, &initial_embedding);
+        let _embedding = self.entropy_optimize(b, &initial_embedding);
 
         //
         Ok(1)
@@ -117,10 +120,12 @@ where
     fn get_dmap_initial_embedding(&mut self, asked_dim: usize) -> Array2<F> {
         // get eigen values of normalized symetric lapalcian
         let laplacian = self.get_laplacian();
+        log::trace!("got laplacian, going to svd ...");
         let mut svdapprox = SvdApprox::new(&laplacian.sym_laplacian);
         // TODO adjust epsil ?
         let svdmode = RangeApproxMode::EPSIL(RangePrecision::new(0.1, 5));
         let svd_res = svdapprox.direct_svd(svdmode);
+        log::trace!("exited svd");
         if !svd_res.is_ok() {
             println!("svd approximation failed");
             std::panic!();
@@ -132,14 +137,17 @@ where
             panic!("svd spectrum not decreasing");
         }
         // get first non null lamba
-        let first_non_zero_opt = lambdas.iter().rev().position(|&x| x > 0.);
+        // lowest lambda should be near 0. effect of laplacian graph.
+        log::info!("highest laplacian eigenvalue value : {}", lambdas[lambdas.len() - 1]);
+        assert!((lambdas[lambdas.len() - 1]).abs() < 1.0E-4);
+        let first_non_zero_opt = lambdas.iter().rev().position(|&x| x > 1.0E-5);
         if !first_non_zero_opt.is_some() {
             println!("cannot find positive eigenvalue");
             std::panic!();
         } else {
             let first_non_zero = lambdas.len() - 1 - first_non_zero_opt.unwrap(); // is in [0..len()-1]
             log::info!(
-                "last non null eigenvalue at rank : {}, value : {}",
+                "laplacian last non null eigenvalue at rank : {}, value : {}",
                 first_non_zero,
                 lambdas[first_non_zero]
             );
@@ -147,13 +155,17 @@ where
             if first_non_zero > 0 {
                 log::info!("next non null eigenvalue rank : {} value : {}", first_non_zero-1, lambdas[first_non_zero-1]);
             }
-            log::info!("lowest eigenvalue value : {}", lambdas[0]);
+            if lambdas[0] > 1. {
+                log::error!("highest laplacian eigenvalue value : {}", lambdas[0]);
+            }
+            log::info!("highest eigenvalue value : {}", lambdas[0]);
             //
             assert!(first_non_zero >= asked_dim);
             let max_dim = asked_dim.min(first_non_zero + 1); // is in [1..len()]
                                                              // We get U at index in range first_non_zero-max_dim..first_non_zero
             let u = svdapprox.get_u().as_ref().unwrap();
-            assert!(u.nrows() <= self.kgraph.get_max_nbng());
+            log::debug!("u shape : nrows: {} ,  ncols : {} ", u.nrows(), u.ncols());
+            // we can get svd from approx range so that nrows and ncols can be number of nodes!
             let mut embedded = Array2::<F>::zeros((u.nrows(), max_dim));
             // according to theory (See Luxburg or Lafon-Keller diffusion maps) we must go back to eigen vectors of rw laplacian.
             // moreover we must get back to type F
@@ -171,6 +183,7 @@ where
                         F::from_f32(row_i[first_non_zero - j] / j_weights[i]).unwrap();
                 }
             }
+            log::trace!("ended get_dmap_initial_embedding");
             return embedded;
         }
         //
@@ -191,7 +204,7 @@ where
     //     the problem is : how to choose alfa, this is done in get_scale_from_proba_normalisation
     // See also Veerman A Primer on Laplacian Dynamics in Directed Graphs 2020 arxiv https://arxiv.org/abs/2002.02605
 
-    fn get_laplacian(&self) -> LaplacianGraph {
+    fn get_laplacian(&mut self) -> LaplacianGraph {
         log::debug!("in Embedder::get_laplacian");
         //
         let nbnodes = self.kgraph.get_nb_nodes();
@@ -206,16 +219,20 @@ where
             let neighbour_hood = self.kgraph.get_neighbours();
             for i in 0..neighbour_hood.len() {
                 // remind to index each request
+                log::trace!(" scaling node {}", i);
                 let node_param = self.get_scale_from_proba_normalisation(&neighbour_hood[i]);
                 assert_eq!(node_param.edges.len(), neighbour_hood[i].len());
-                // do not forget to set diagonal transition
-                transition_proba[[i, i]] = 1.;
-                for j in 0..neighbour_hood[i].len() {
-                    let edge = neighbour_hood[i][j];
-                    transition_proba[[i, edge.node]] = node_param.edges[j].weight;
+                // CAVEAT diagonal transition 0. or 1. ? Choose 0. as in t-sne umap LargeVis
+                transition_proba[[i, i]] = 0.;
+                for j in 0..node_param.edges.len() {
+                    let edge = node_param.edges[j];
+                    transition_proba[[i, edge.node]] = edge.weight;
                 } // end of for j
                 node_params.push(node_param);
             } // end for i
+            log::trace!("scaling of nodes done");            
+             // do not forget to store this representation of initial space as we need it for entropy optimization
+            self.initial_space = Some(NodeParams{params:node_params});
             // now we symetrize the graph by taking mean
             // The UMAP formula (p_i+p_j - p_i *p_j) implies taking the non null proba when one proba is null,
             // so UMAP initialization is more packed.
@@ -227,11 +244,12 @@ where
             for i in 0..nbnodes {
                 let mut row = symgraph.row_mut(i);
                 for j in 0..nbnodes {
-                    row /= -(diag[[i]] * diag[[j]]).sqrt();
+                    row[[j]] /= -(diag[[i]] * diag[[j]]).sqrt();
                 }
                 row[[i]] += 1.;      // in fact we take the laplacian to get excatly this!
             }
             //
+            log::trace!("\n allocating full matrix laplacian");            
             let laplacian = LaplacianGraph {
                 sym_laplacian: MatRepr::from_array2(symgraph),
                 degrees: diag,
@@ -239,8 +257,8 @@ where
             laplacian
         } else {
             log::debug!("Embedder using csr matrix");
-            //
             // now we must construct a CsrMat to store the symetrized graph transition probablity to go svd.
+            // and initialize field initial_space with some NodeParams
             let neighbour_hood = self.kgraph.get_neighbours();
             // TODO This can be made // with a chashmap
             let mut edge_list = HashMap::<(usize, usize), f32>::with_capacity(nbnodes * max_nbng);
@@ -253,6 +271,8 @@ where
                 } // end of for j
                 node_params.push(node_param);
             }
+            // do not forget to store this representation of initial space as we need it for entropy optimization
+            self.initial_space = Some(NodeParams{params:node_params});
             // now we iter on the hasmap symetrize the graph, and insert in triplets transition_proba
             let mut diagonal = Array1::<f32>::zeros(nbnodes);
             let mut rows = Vec::<usize>::with_capacity(nbnodes * 2 * max_nbng);
@@ -260,7 +280,7 @@ where
             let mut values = Vec::<f32>::with_capacity(nbnodes * 2 * max_nbng);
 
             for ((i, j), val) in edge_list.iter() {
-                assert!(*i != *j);  // we do not store null distance for self (loop) edge, its proba transition is always set to 1.
+                assert!(*i != *j);  // we do not store null distance for self (loop) edge, its proba transition is always set to 0. CAVEAT
                 let sym_val;
                 if let Some(t_val) = edge_list.get(&(*j, *i)) {
                     sym_val = (val + t_val) * 0.5;
@@ -278,14 +298,25 @@ where
                 values.push(sym_val);
                 diagonal[*j] += sym_val;
             }
-            // Now we reset non diagonal terms to  0. - val[i,j]/(D[i]*D[j])^1/2 
-            // in laplacian we have diagonal terms equal 0.
+            // now we push terms (i,i) in csr
+            for i in 0..nbnodes {
+                rows.push(i);
+                cols.push(i);
+                values.push(0.);
+            }
+            // Now we reset non diagonal terms to I-D^-1/2 G D^-1/2  i.e 1. - val[i,j]/(D[i]*D[j])^1/2
             for i in 0..rows.len() {
                 let row = rows[i];
                 let col = cols[i];
-                values[i] = 1. - values[i] / (diagonal[row] * diagonal[col]).sqrt();
+                if row == col {
+                    values[i] = 1. - values[i] / (diagonal[row] * diagonal[col]).sqrt();
+                }
+                else {
+                    values[i] = - values[i] / (diagonal[row] * diagonal[col]).sqrt();
+                }
             }
             // 
+            log::trace!("allocating csr laplacian");            
             let laplacian = TriMatBase::<Vec<usize>, Vec<f32>>::from_triplets(
                 (nbnodes, nbnodes),
                 rows,
@@ -340,7 +371,7 @@ where
     // This function returns the local scale (i.e mean distance of a point to its nearest neighbour)
     // and vector of proba weight to nearest neighbours. Min
     fn get_scale_from_proba_normalisation(&self, neighbours: &Vec<OutEdge<F>>) -> NodeParam {
-        log::debug!("in Embedder::get_scale_from_proba_normalisation");
+//        log::trace!("in Embedder::get_scale_from_proba_normalisation");
         // p_i = exp[- beta * (d(x,y_i)/ local_scale) * lambda]
         let nbgh = neighbours.len();
         // determnine mean distance to nearest neighbour at local scale
@@ -353,25 +384,37 @@ where
         } // end of for i
         rho_y_s.push(rho_x);
         let mean_rho = rho_y_s.iter().sum::<f32>() / (rho_y_s.len() as f32);
-        // we set scale so that transition proba can be expected to be 
-        // exp(- first_dist/scale) >= exp(-first_dist/(2* mean_rho)) ~ exp(-0.5) = 0.6
-        // augment scale if transition from proba_i_i = 1 and proba_i_firstneigbour = 0.6 too steep
-        // TODO some optimization with respect to this 2 ?
-        let mut scale =  2. * mean_rho;
+        // we set scale so that transition proba do not vary more than PROBA_MIN between first and last neighbour
+        // exp(- (first_dist -last_dist)/scale) >= PROBA_MIN
+        // TODO do we need some optimization with respect to this 1 ? as we have lambda for high variations
+        let mut scale =  1. * mean_rho;
+        assert!(scale > 0.);
         // now we adjust scale so that the ratio of proba of last neighbour to first neighbour do not exceed epsil.
         let first_dist = neighbours[0].weight.to_f32().unwrap();
         let last_dist = neighbours[nbgh - 1].weight.to_f32().unwrap();
+        assert!(first_dist > 0. && last_dist > 0.);
+        assert!(last_dist >= first_dist);
+        //
         if last_dist > first_dist {
             let lambda = (last_dist - first_dist) / (scale * (-PROBA_MIN.ln()));
             if lambda > 1. {
+                log::trace!("rescaling with lambda = {}", lambda);
                 // we rescale mean_rho to avoid too large range of probabilities in neighbours.
                 scale = scale * lambda;
             }
             let mut probas_edge = neighbours
                 .iter()
-                .map(|n| OutEdge::<f32>::new(n.node, -(n.weight.to_f32().unwrap() / scale).exp()))
+                .map(|n| OutEdge::<f32>::new(n.node, (-n.weight.to_f32().unwrap() / scale).exp()))
                 .collect::<Vec<OutEdge<f32>>>();
-            assert!(probas_edge[probas_edge.len() - 1].weight / probas_edge[0].weight <= PROBA_MIN);
+            //
+            // if probas_edge[probas_edge.len() - 1].weight / probas_edge[0].weight > PROBA_MIN {
+            //     for i in 0..probas_edge.len() {
+            //         println!("edge {} , proba : {} ", neighbours[i].weight.to_f32().unwrap(), probas_edge[i].weight);
+            //     }
+            // }
+//            log::trace!(" first dist {}, last_dist {}", first_dist, last_dist);
+            log::trace!("scale : {} proba gap {}", scale, probas_edge[probas_edge.len() - 1].weight / probas_edge[0].weight);
+            assert!(probas_edge[probas_edge.len() - 1].weight / probas_edge[0].weight >= PROBA_MIN);
             let sum = probas_edge.iter().map(|e| e.weight).sum::<f32>();
             for i in 0..nbgh {
                 probas_edge[i].weight = probas_edge[i].weight / sum;
@@ -403,6 +446,10 @@ where
         //
         log::debug!("in Embedder::entropy_optimize");
         //
+        if self.initial_space.is_none() {
+            log::error!("Embedder::entropy_optimize : initial_space not constructed, exiting");
+            return Err(String::from(" initial_space not constructed, no NodeParams"));
+        }
         let ce_optimization = EntropyOptim::new(self.initial_space.as_ref().unwrap(), b, initial_embedding);
         // compute initial value of objective function
         let start = ProcessTime::now();
@@ -424,6 +471,8 @@ where
         }
         let cpu_time: Duration = start.elapsed();
         println!(" gradient iterations cpu_time {:?}",  cpu_time);
+        let final_ce = ce_optimization.ce_compute();
+        println!(" final cross entropy value {:?}", final_ce);
         //
         Ok(1)
     } // end of entropy_optimize
@@ -499,7 +548,16 @@ impl <F> EntropyOptim<F>
             let weight_ij_embed = cauchy_edge_weight(&self.embedded[node_i].read(), 
                     F::from_f32(self.initial_scales[node_i]).unwrap(), self.b,
                     &self.embedded[node_j].read()).to_f64().unwrap();
-            ce_entropy += -weight_ij * weight_ij_embed.ln() - (1. - weight_ij) * (1. - weight_ij_embed).ln();
+            if weight_ij_embed > 0. {
+                ce_entropy += -weight_ij * weight_ij_embed.ln();
+            }
+            if weight_ij_embed < 1. {
+                ce_entropy += - (1. - weight_ij) * (1. - weight_ij_embed).ln();
+            }            
+            if !ce_entropy.is_finite() {
+                log::debug!("weight_ij {} weight_ij_embed {}", weight_ij, weight_ij_embed);
+                std::panic!();
+            }
         }
         //
         ce_entropy
@@ -519,7 +577,14 @@ impl <F> EntropyOptim<F>
                     let weight_ij_embed = cauchy_edge_weight(&self.embedded[node_i].read(), 
                             F::from_f32(self.initial_scales[node_i]).unwrap(), self.b,
                             &self.embedded[node_j].read()).to_f64().unwrap();
-                    -weight_ij * weight_ij_embed.ln() - (1. - weight_ij) * (1. - weight_ij_embed).ln()
+                    let mut term = 0.;
+                    if weight_ij_embed > 0. {
+                        term += -weight_ij * weight_ij_embed.ln();
+                    }
+                    if weight_ij_embed < 1. {
+                        term += - (1. - weight_ij) * (1. - weight_ij_embed).ln();
+                    }
+                    term
                 })
                 .sum::<f64>();
         return ce_entropy;
@@ -561,6 +626,8 @@ impl <F> EntropyOptim<F>
         }
     } // end of ce_optim_from_point
 
+
+
     // TODO to be called in // all was done for
     fn gradient_iteration(&self, grad_step : f64) {
         for i in 0..self.edges.len() {
@@ -589,8 +656,11 @@ where
         .sum::<F>();
     dist = dist / (scale*scale);
     // ( b^dist = exp(d*log(b) )
-    dist = F::from((b*(dist.to_f32().unwrap()).ln()).exp()).unwrap();         
-    return F::one() + dist;
+    dist = F::from((b*(dist.to_f32().unwrap()).ln()).exp()).unwrap();
+    //
+    let weight =  F::one() / (F::one() + dist);
+    assert!(weight.is_normal());      
+    return weight;
 } // end of embedded_edge_weight
 
 
@@ -714,12 +784,29 @@ where
 
 mod tests {
 
+//    cargo test embedder  -- --nocapture
+
+
     #[allow(unused)]
     use super::*;
+
+
+    use rand::distributions::{Uniform};
+    use rand::prelude::*;
+
+
+    // have a warning with and error without ?
+    #[allow(unused)]
+    use hnsw_rs::prelude::*;
+    #[allow(unused)]
+    use hnsw_rs::hnsw::Neighbour;
+
     #[allow(unused)]
     fn log_init_test() {
         let _ = env_logger::builder().is_test(true).try_init();
     }
+
+
     #[test]
     fn test_dichotomy_inc() {
         let f = |x: f32| x * x;
@@ -736,4 +823,54 @@ mod tests {
         println!("beta : {}", beta);
         assert!((beta - 2.0f32.sqrt()).abs() < 1.0E-4);
     } // test_dichotomy_dec
+
+
+    #[allow(unused)]
+    fn gen_rand_data_f32(nb_elem: usize , dim:usize) -> Vec<Vec<f32>> {
+        let mut data = Vec::<Vec<f32>>::with_capacity(nb_elem);
+        let mut rng = thread_rng();
+        let unif =  Uniform::<f32>::new(0.,1.);
+        for i in 0..nb_elem {
+            let val = 2. * i as f32 * rng.sample(unif);
+            let v :Vec<f32> = (0..dim).into_iter().map(|_|  val * rng.sample(unif)).collect();
+            data.push(v);
+        }
+        data
+    }
+    
+    #[test]
+    fn mini_embed_full() {
+        log_init_test();
+        // generate datz
+        let nb_elem = 500;
+        let embed_dim = 20;
+        let data = gen_rand_data_f32(nb_elem, embed_dim);
+        let data_with_id = data.iter().zip(0..data.len()).collect();
+        // hnsw construction
+        let ef_c = 50;
+        let max_nb_connection = 50;
+        let nb_layer = 16.min((nb_elem as f32).ln().trunc() as usize);
+        let mut hns = Hnsw::<f32, DistL1>::new(max_nb_connection, nb_elem, nb_layer, ef_c, DistL1{});
+        // to enforce the asked number of neighbour
+        hns.set_keeping_pruned(true);
+        hns.parallel_insert(&data_with_id);
+        hns.dump_layer_info();
+        // go to kgraph
+        let knbn = 10;
+        let mut kgraph = KGraph::<f32>::new();
+        log::info!("calling kgraph.init_from_hnsw_all");
+        let res = kgraph.init_from_hnsw_all(&hns, knbn);
+        if res.is_err() {
+            panic!("init_from_hnsw_all  failed");
+        }
+        log::info!("minimum number of neighbours {}", kgraph.get_max_nbng());
+        let _kgraph_stats = kgraph.get_kraph_stats();
+        let embed_dim = 5;
+        let mut embedder = Embedder::new(&kgraph, embed_dim);
+        let embed_res = embedder.embed();
+        assert!(embed_res.is_ok());
+    } // end of mini_embed_full
+
+
+
 } // end of tests

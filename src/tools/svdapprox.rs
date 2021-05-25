@@ -328,6 +328,9 @@ pub fn subspace_iteration<F> (mat : &Array2<F>, rank : usize, nbiter : usize) ->
 /// 
 pub fn adaptative_range_finder_matrep<F>(mat : &MatRepr<F> , epsil:f64, r : usize) -> Array2<F> 
         where F : Float + Scalar  + Lapack + ndarray::ScalarOperand + sprs::MulAcc {
+    //
+    log::trace!(" in adaptative_range_finder_matrep");
+    //
     let mut rng = RandomGaussianGenerator::new();
     let data_shape = mat.shape();
     let m = data_shape[0];  // nb rows
@@ -348,9 +351,16 @@ pub fn adaptative_range_finder_matrep<F>(mat : &MatRepr<F> , epsil:f64, r : usiz
     // This vectors stores L2-norm of each Y  vector of which there are r
     let mut norms_y : Array1<F> = (0..r).into_iter().map( |i| norm_l2(&y_vec[i].view())).collect();
     assert_eq!(norms_y.len() , r); 
+    println!("{:?}",norms_y);
     //
     let mut norm_sup_y;
-    norm_sup_y = norms_y.iter().max_by(|x,y| x.partial_cmp(y).unwrap()).unwrap();
+    let norm_iter_res = norms_y.iter().max_by(|x,y| x.partial_cmp(y).unwrap());
+    if norm_iter_res.is_none() {
+        log::error!("svdapprox::adaptative_range_finder_matrep cannot sort norms");
+        println!("{:?}",norms_y);
+        std::panic!("adaptative_range_finder_matrep sorting norms failed, most probably some Nan");
+    }
+    norm_sup_y = norm_iter_res.unwrap();
     log::debug!(" norm_sup {} ",norm_sup_y);
     let mut j = 0;
     let mut nb_iter = 0;
@@ -367,8 +377,7 @@ pub fn adaptative_range_finder_matrep<F>(mat : &MatRepr<F> , epsil:f64, r : usiz
             log::debug!("exiting at nb_iter {} with n_j {:.3e} ", nb_iter, n_j);
             break;
         }
-        println!("j {} n_j {:.3e} ", j, n_j);
-        log::debug!("j {} n_j {:.3e} ", j, n_j);
+//        log::trace!("j {} n_j {:.3e} ", j, n_j);
         let q_j = &y_vec[j] / n_j;
         // we add q_j to q_mat so we consumed on y vector
         q_mat.push(q_j.clone());
@@ -395,6 +404,7 @@ pub fn adaptative_range_finder_matrep<F>(mat : &MatRepr<F> , epsil:f64, r : usiz
         j = (j+1)%r;
         nb_iter += 1;
     }
+    log::debug!("adaptative_range_finder_matrep exit iteration {}, norm sup {} ", nb_iter, norm_sup_y);
     //
     // to avoid the cost to zeros
     log::debug!("range finder returning a a matrix ({}, {})", m, q_mat.len());
@@ -495,6 +505,7 @@ impl <'a, F> SvdApprox<'a, F>
         let mut b = match &self.data.data {
             MatMode::FULL(mat) => { q.t().dot(mat)},
             MatMode::CSR(mat)  => { 
+                                    log::trace!("direct_svd got csr matrix");
                                     small_transpose_dense_mult_csr(&q, mat)
                                 },
         };
@@ -507,6 +518,7 @@ impl <'a, F> SvdApprox<'a, F>
             return Err(String::from("not contiguous or not in standard order"));
         }
         // use divide conquer (calls lapack gesdd), faster but could use svd (lapack gesvd)
+        log::trace!("direct_svd calling svddc driver");
         let res_svd_b = F::svddc(layout,  UVTFlag::Some, slice_for_svd_opt.unwrap());
         if res_svd_b.is_err()  {
             println!("direct_svd, svddc failed");
