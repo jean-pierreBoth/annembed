@@ -78,6 +78,8 @@ pub struct Embedder<'a,F> {
     kgraph: &'a KGraph<F>,
     /// the embedding dimension
     asked_dimension: usize,
+    /// tells if we used approximated svd (with CSR mode)
+    approximated_svd : bool,
     /// contains edge probabilities according to the probabilized graph constructed before laplacian symetrization
     /// It is this representation that is used for cross entropy optimization!
     initial_space: Option<NodeParams>,
@@ -91,7 +93,7 @@ where
 {
     /// constructor from a graph and asked embedding dimension
     pub fn new(kgraph : &'a KGraph<F>, asked_dimension : usize) -> Self {
-        Embedder::<F>{kgraph, asked_dimension, initial_space:None, embedding:None}
+        Embedder::<F>{kgraph, asked_dimension, approximated_svd : false, initial_space:None, embedding:None}
     } // end of new
 
 
@@ -132,61 +134,73 @@ where
         }
         // As we used a laplacian and probability transitions we eigenvectors corresponding to lower eigenvalues
         let lambdas = svdapprox.get_sigma().as_ref().unwrap();
-        // singular vectors are stored in decrasing order according to lapack for both gesdd and gesvd
+        // singular vectors are stored in decrasing order according to lapack for both gesdd and gesvd. 
         if lambdas.len() > 2 && lambdas[1] > lambdas[0] {
             panic!("svd spectrum not decreasing");
         }
+        // we examine spectrum
         // get first non null lamba
         // lowest lambda should be near 0. effect of laplacian graph.
         log::info!("highest laplacian eigenvalue value : {}", lambdas[lambdas.len() - 1]);
-        assert!((lambdas[lambdas.len() - 1]).abs() < 1.0E-4);
-        let first_non_zero_opt = lambdas.iter().rev().position(|&x| x > 1.0E-5);
-        if !first_non_zero_opt.is_some() {
-            println!("cannot find positive eigenvalue");
-            std::panic!();
-        } else {
-            let first_non_zero = lambdas.len() - 1 - first_non_zero_opt.unwrap(); // is in [0..len()-1]
-            log::info!(
-                "laplacian last non null eigenvalue at rank : {}, value : {}",
-                first_non_zero,
-                lambdas[first_non_zero]
-            );
-            // get info on spectral gap
-            if first_non_zero > 0 {
-                log::info!("next non null eigenvalue rank : {} value : {}", first_non_zero-1, lambdas[first_non_zero-1]);
+        let first_non_zero_from_end : usize;
+        if !self.approximated_svd {
+            assert!((lambdas[lambdas.len() - 1]).abs() < 1.0E-4);
+            let first_non_zero_opt = lambdas.iter().rev().position(|&x| x > 1.0E-5);
+            if !first_non_zero_opt.is_some() {
+                println!("cannot find positive eigenvalue");
+                std::panic!();
             }
-            if lambdas[0] > 1. {
-                log::error!("highest laplacian eigenvalue value : {}", lambdas[0]);
+            else {
+                first_non_zero_from_end = first_non_zero_opt.unwrap();
             }
-            log::info!("highest eigenvalue value : {}", lambdas[0]);
-            //
-            assert!(first_non_zero >= asked_dim);
-            let max_dim = asked_dim.min(first_non_zero + 1); // is in [1..len()]
-                                                             // We get U at index in range first_non_zero-max_dim..first_non_zero
-            let u = svdapprox.get_u().as_ref().unwrap();
-            log::debug!("u shape : nrows: {} ,  ncols : {} ", u.nrows(), u.ncols());
-            // we can get svd from approx range so that nrows and ncols can be number of nodes!
-            let mut embedded = Array2::<F>::zeros((u.nrows(), max_dim));
-            // according to theory (See Luxburg or Lafon-Keller diffusion maps) we must go back to eigen vectors of rw laplacian.
-            // moreover we must get back to type F
-            let sum_diag = laplacian.degrees.into_iter().sum::<f32>().sqrt();
-            let j_weights: Vec<f32> = laplacian
-                .degrees
-                .into_iter()
-                .map(|x| x.sqrt() / sum_diag)
-                .collect();
-            for i in 0..u.nrows() {
-                let row_i = u.row(i);
-                for j in 0..asked_dim {
-                    // divide j value by diagonal and convert to F
-                    embedded[[i, j]] =
-                        F::from_f32(row_i[first_non_zero - j] / j_weights[i]).unwrap();
-                }
-            }
-            log::trace!("ended get_dmap_initial_embedding");
-            return embedded;
+        }
+        else { // csr case
+            first_non_zero_from_end = 0;
         }
         //
+        let first_non_zero = lambdas.len() - 1 - first_non_zero_from_end; // is in [0..len()-1]
+        log::info!(
+            "laplacian last non null eigenvalue at rank : {}, value : {}",
+            first_non_zero,
+            lambdas[first_non_zero]
+        );
+        // get info on spectral gap
+        if first_non_zero > 0 {
+            log::info!("\n first non null eigenvalue rank : {} value : {}", first_non_zero, lambdas[first_non_zero]);
+            log::info!("\n next non null eigenvalue rank : {} value : {} \n", first_non_zero-1, lambdas[first_non_zero-1]);
+            let rank_dim = asked_dim.min(first_non_zero);
+            log::info!("\n eigenvalue at asked_dim : {} value : {} \n", first_non_zero-rank_dim, lambdas[first_non_zero-rank_dim]);
+        }
+        if lambdas[0] > 1. {
+            log::error!("highest laplacian eigenvalue value : {}", lambdas[0]);
+        }
+        log::info!("\n highest eigenvalue value : {}", lambdas[0]);
+        //
+        assert!(first_non_zero >= asked_dim);
+        let max_dim = asked_dim.min(first_non_zero + 1); // is in [1..len()]
+        // We get U at index in range first_non_zero-max_dim..first_non_zero
+        let u = svdapprox.get_u().as_ref().unwrap();
+        log::debug!("u shape : nrows: {} ,  ncols : {} ", u.nrows(), u.ncols());
+        // we can get svd from approx range so that nrows and ncols can be number of nodes!
+        let mut embedded = Array2::<F>::zeros((u.nrows(), max_dim));
+        // according to theory (See Luxburg or Lafon-Keller diffusion maps) we must go back to eigen vectors of rw laplacian.
+        // moreover we must get back to type F
+        let sum_diag = laplacian.degrees.into_iter().sum::<f32>().sqrt();
+        let j_weights: Vec<f32> = laplacian
+            .degrees
+            .into_iter()
+            .map(|x| x.sqrt() / sum_diag)
+            .collect();
+        for i in 0..u.nrows() {
+            let row_i = u.row(i);
+            for j in 0..asked_dim {
+                // divide j value by diagonal and convert to F
+                embedded[[i, j]] =
+                    F::from_f32(row_i[first_non_zero - j] / j_weights[i]).unwrap();
+            }
+        }
+        log::trace!("ended get_dmap_initial_embedding");
+        return embedded;
     } // end of get_initial_embedding
 
 
@@ -212,7 +226,8 @@ where
         let max_nbng = self.kgraph.get_max_nbng();
         let mut node_params = Vec::<NodeParam>::with_capacity(nbnodes);
         // TODO define a threshold for dense/sparse representation
-        if nbnodes <= 30000 {
+        if nbnodes <= 300 {
+            log::debug!("Embedder using full matrix");
             let mut transition_proba = Array2::<f32>::zeros((nbnodes, nbnodes));
             // we loop on all nodes, for each we want nearest neighbours, and get scale of distances around it
             // TODO can be // with rayon taking care of indexation
@@ -257,6 +272,7 @@ where
             laplacian
         } else {
             log::debug!("Embedder using csr matrix");
+            self.approximated_svd = true;
             // now we must construct a CsrMat to store the symetrized graph transition probablity to go svd.
             // and initialize field initial_space with some NodeParams
             let neighbour_hood = self.kgraph.get_neighbours();
@@ -413,7 +429,7 @@ where
             //     }
             // }
 //            log::trace!(" first dist {}, last_dist {}", first_dist, last_dist);
-            log::trace!("scale : {} proba gap {}", scale, probas_edge[probas_edge.len() - 1].weight / probas_edge[0].weight);
+            log::trace!("scale : {:.2e} proba gap {:.2e}", scale, probas_edge[probas_edge.len() - 1].weight / probas_edge[0].weight);
             assert!(probas_edge[probas_edge.len() - 1].weight / probas_edge[0].weight >= PROBA_MIN);
             let sum = probas_edge.iter().map(|e| e.weight).sum::<f32>();
             for i in 0..nbgh {
