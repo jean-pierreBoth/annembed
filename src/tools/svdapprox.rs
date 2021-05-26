@@ -29,7 +29,6 @@
 // ndarray_linalg::Scalar provides Exp notation + Display + Debug + Serialize and sum on iterators
 
 
-#![allow(dead_code)]
 
 
 
@@ -207,7 +206,7 @@ pub struct RangePrecision {
 }
 
 impl RangePrecision {
-    /// epsil : precision required, step : rank iincrment, max_rank : max rank asked
+    /// epsil : precision required, step : rank increment, max_rank : max rank asked
     pub fn new(epsil : f64, step : usize, max_rank : usize) -> Self {
         RangePrecision{epsil, step, max_rank}
     }
@@ -330,13 +329,18 @@ pub fn subspace_iteration<F> (mat : &Array2<F>, rank : usize, nbiter : usize) ->
     //      - check for norm sup of y
     //
 
-/// Returns a matrix Q such that || data - Q*t(Q)*data || < epsil
-///  - epsil is the residual l2 norm asked for.
+/// Returns a matrix Q such that :
+/// ```math 
+/// || mat - Q*Q^{t}*mat || < ε \quad with  \space probability  \space \gt 1. - min(m,n) 10^{-r} 
+/// ```
+///  - epsil is the l2 norm of the last block of r columns vectors added in Q.
 ///  - r is the rank increment in iterations
 ///  - max_rank is the maximum rank asked for.
-///  Iterations stop when the objective on epsil or max_rank.
 /// 
-/// Adaptive Randomized Range Finder algo 4.2. from Halko-Tropp
+///  Iterations stop when the block of r vectors added is less than epsil or if max_rank has been reached
+///  This last stop rule is somewhat easier to define.
+/// 
+/// Algorithm : Adaptive Randomized Range Finder algo 4.2. from Halko-Martinsson-Tropp 2011
 /// 
 pub fn adaptative_range_finder_matrep<F>(mat : &MatRepr<F> , epsil:f64, r : usize, max_rank : usize) -> Array2<F> 
         where F : Float + Scalar  + Lapack + ndarray::ScalarOperand + sprs::MulAcc {
@@ -432,7 +436,8 @@ pub fn adaptative_range_finder_matrep<F>(mat : &MatRepr<F> , epsil:f64, r : usiz
 } // end of adaptative_range_finder_csmat
 
 
-fn check_range_approx<F:Float+ Scalar> (a_mat : &ArrayView2<F>, q_mat: &ArrayView2<F>) -> F {
+/// just to check a range approximation
+pub fn check_range_approx<F:Float+ Scalar> (a_mat : &ArrayView2<F>, q_mat: &ArrayView2<F>) -> F {
     let residue = a_mat - & q_mat.dot(&q_mat.t()).dot(a_mat);
     let norm_residue = norm_l2(&residue.view());
     norm_residue

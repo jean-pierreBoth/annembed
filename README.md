@@ -1,6 +1,6 @@
 # Some data clustering and embedding tools
 
-The crate provides:
+The crate will provide:
 
 1. Some variations on data embedding tools from t-Sne (2008) to Umap 2018.
    Our implementation is in fact a mix of the various embedding algorithms
@@ -8,22 +8,22 @@ The crate provides:
 
    - The graph is initialized by the Hnsw nearest neighbour algorithm. This provides for free sub-sampling in the data to embed by considering less densely occupied layers. It it is also possible to embed only the neighbourhood of a point by extracting recursively neighbours of a the initial point down to the most dense layers.
   
-   - The preliminary graph used in the embedding is initialized with an exponential kernel (as in Umap) but taking into account a local density of points. The symetrisation is done as in t-sne or LargeVis. We use the diffusion maps algorithm (Lafon-Keller-Coifman).
+   - The preliminary graph used in the embedding uses an exponential kernel (as in Umap) but taking into account a local density of points. The symetrisation is done as in t-sne or LargeVis. We use the diffusion maps algorithm (Lafon-Keller-Coifman), even though we have an exponential kernel.
 
-   - We also use a cross entropy optimization of this initial layout but try to take into account the initial local density estimate.
+   - We also use a cross entropy optimization of this initial layout but try to take into account the initial local density estimate of each point.
 
 2. An implementation of the Mapper algorithm using the C++ **Ripser** module from U. Bauer
 
 3. Some by-products :
     - an implementation of range approximation and approximated SVD for denses and row compressed matrices as described in Halko-Tropp (Cf. [Tsvd](https://arxiv.org/abs/0909.4061)).
 
-    - a Diffusion Maps implementation (Cf [Dmap](https://www.pnas.org/content/102/21/7426))
-
     - A single-linkage hierarchical clustering function
+
+## *The embedding and tools for approxiated for SVD are currently implemented*
 
 ## Results
 
-### Humap
+### Embedder
 
 ### Mapper
 

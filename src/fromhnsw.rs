@@ -4,13 +4,14 @@
 //! 
 
 use num_traits::{Float};
+use num_traits::cast::FromPrimitive;
 
 use indexmap::set::*;
 
 use core::ops::*;  // for  AddAssign + SubAssign + MulAssign + DivAssign + RemAssign 
 use std::fmt::*;   // for Display + Debug + LowerExp + UpperExp 
 use std::cmp::Ordering;
-use num_traits::cast::FromPrimitive;
+
 
 use quantiles::{ckms::CKMS};     // we could use also greenwald_khanna
 
