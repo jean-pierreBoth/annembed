@@ -125,7 +125,7 @@ where
         log::trace!("got laplacian, going to svd ...");
         let mut svdapprox = SvdApprox::new(&laplacian.sym_laplacian);
         // TODO adjust epsil ?
-        let svdmode = RangeApproxMode::EPSIL(RangePrecision::new(0.1, 5));
+        let svdmode = RangeApproxMode::EPSIL(RangePrecision::new(0.1, 5, asked_dim + 5));
         let svd_res = svdapprox.direct_svd(svdmode);
         log::trace!("exited svd");
         if !svd_res.is_ok() {
@@ -219,7 +219,7 @@ where
     // See also Veerman A Primer on Laplacian Dynamics in Directed Graphs 2020 arxiv https://arxiv.org/abs/2002.02605
 
     fn get_laplacian(&mut self) -> LaplacianGraph {
-        log::debug!("in Embedder::get_laplacian");
+        log::trace!("in Embedder::get_laplacian");
         //
         let nbnodes = self.kgraph.get_nb_nodes();
         // get stats
@@ -428,7 +428,6 @@ where
             //         println!("edge {} , proba : {} ", neighbours[i].weight.to_f32().unwrap(), probas_edge[i].weight);
             //     }
             // }
-//            log::trace!(" first dist {}, last_dist {}", first_dist, last_dist);
             log::trace!("scale : {:.2e} proba gap {:.2e}", scale, probas_edge[probas_edge.len() - 1].weight / probas_edge[0].weight);
             assert!(probas_edge[probas_edge.len() - 1].weight / probas_edge[0].weight >= PROBA_MIN);
             let sum = probas_edge.iter().map(|e| e.weight).sum::<f32>();
@@ -460,7 +459,7 @@ where
 
     fn entropy_optimize(&self, b: f32, initial_embedding : &Array2<F>) -> Result<usize, String> {
         //
-        log::debug!("in Embedder::entropy_optimize");
+        log::info!("in Embedder::entropy_optimize");
         //
         if self.initial_space.is_none() {
             log::error!("Embedder::entropy_optimize : initial_space not constructed, exiting");

@@ -193,19 +193,23 @@ fn small_transpose_dense_mult_csr<F>(qmat : &Array2<F>, csrmat : &CsMat<F>) -> A
 
 
 /// We can ask for a range approximation of matrix on two modes:
-/// - asking for precision
-///       At each iteration, step new base vectors of the range matrix are searched.
+/// - epsil     : asking for precision lé norm residual under epsil
+/// - step      : at each iteration, step new base vectors of the range matrix are searched.
+/// - max_rank  : maximum rank of approximation
 #[derive(Clone, Copy)]
 pub struct RangePrecision {
     /// precision asked for. Froebonius norm of the residual
     epsil :f64,
     /// increment step for the number of base vector of the range matrix  5 to 10  is a good range 
     step : usize,
+    /// maximum rank asked. Iterations stop when epsil preicison is reached or maximum rank is reached.
+    max_rank : usize,
 }
 
 impl RangePrecision {
-    pub fn new(epsil : f64, step : usize) -> Self {
-        RangePrecision{epsil, step}
+    /// epsil : precision required, step : rank iincrment, max_rank : max rank asked
+    pub fn new(epsil : f64, step : usize, max_rank : usize) -> Self {
+        RangePrecision{epsil, step, max_rank}
     }
 
 }  // end of RangePrecision
@@ -256,7 +260,7 @@ impl <'a, F > RangeApprox<'a, F>
     pub fn approximate(&self) -> Option<Array2<F>> {
         match self.mode {
             RangeApproxMode::EPSIL(precision) => {
-                return Some(adaptative_range_finder_matrep(self.mat, precision.epsil, precision.step));
+                return Some(adaptative_range_finder_matrep(self.mat, precision.epsil, precision.step, precision.max_rank));
             }, 
             RangeApproxMode::RANK(rank) => {
                 // at present time this approximation is only allowed for Array2 matrix representation
@@ -274,8 +278,11 @@ impl <'a, F > RangeApprox<'a, F>
 
 
 
-/// This algorith returns a (m,l) matrix approximation the range of input, q is a number of iterations
+/// This algorithm returns a (m,l) matrix approximation the range of input, rank is the asked rank
+/// and nb_iter is a number of iterations
+/// 
 /// It implements the QR iterations as descibed in Algorithm 4.4 from Halko-Tropp
+/// 
 pub fn subspace_iteration<F> (mat : &Array2<F>, rank : usize, nbiter : usize) -> Array2<F>
             where F : Float + Scalar  + Lapack + ndarray::ScalarOperand {
     //
@@ -324,9 +331,14 @@ pub fn subspace_iteration<F> (mat : &Array2<F>, rank : usize, nbiter : usize) ->
     //
 
 /// Returns a matrix Q such that || data - Q*t(Q)*data || < epsil
+///  - epsil is the residual l2 norm asked for.
+///  - r is the rank increment in iterations
+///  - max_rank is the maximum rank asked for.
+///  Iterations stop when the objective on epsil or max_rank.
+/// 
 /// Adaptive Randomized Range Finder algo 4.2. from Halko-Tropp
 /// 
-pub fn adaptative_range_finder_matrep<F>(mat : &MatRepr<F> , epsil:f64, r : usize) -> Array2<F> 
+pub fn adaptative_range_finder_matrep<F>(mat : &MatRepr<F> , epsil:f64, r : usize, max_rank : usize) -> Array2<F> 
         where F : Float + Scalar  + Lapack + ndarray::ScalarOperand + sprs::MulAcc {
     //
     log::trace!(" in adaptative_range_finder_matrep");
@@ -366,7 +378,7 @@ pub fn adaptative_range_finder_matrep<F>(mat : &MatRepr<F> , epsil:f64, r : usiz
     let mut nb_iter = 0;
     let max_iter = data_shape[0].min(data_shape[1]);
     //
-    while norm_sup_y > &F::from_f64(stop_val).unwrap() && nb_iter <= max_iter {
+    while norm_sup_y > &F::from_f64(stop_val).unwrap() && nb_iter <= max_iter && q_mat.len() < max_rank {
         // numerical stabilization
         if q_mat.len() > 0 {
             orthogonalize_with_q(&q_mat[0..q_mat.len()], &mut y_vec[j].view_mut());
@@ -630,14 +642,15 @@ fn log_init_test() {
     fn test_range_approx_randomized_1() {
         log_init_test();
         //
-        let data = RandomGaussianGenerator::<f64>::new().generate_matrix(Dim([6,50]));
-        let rp = RangePrecision { epsil : 0.05 , step : 5};
+        let data = RandomGaussianGenerator::<f64>::new().generate_matrix(Dim([15,50]));
+        let norm_data = norm_l2(&data.mat.view());
+        let rp = RangePrecision { epsil : 0.05 , step : 5, max_rank : 10};
         let matrepr = MatRepr::from_array2(data.mat);
         let range_approx = RangeApprox::new(&matrepr,  RangeApproxMode::EPSIL(rp));
         let q = range_approx.approximate().unwrap();
-        log::debug!(" q(m,n) {} {} ", q.shape()[0], q.shape()[1]);
+        log::info!(" q(m,n) {} {} ", q.shape()[0], q.shape()[1]);
         let residue = check_range_approx_repr(&matrepr, &q);
-        log::debug!(" residue {:3.e} \n", residue);
+        log::info!(" subspace_iteration nom_l2 {:.2e} residue {:.2e} \n", norm_data, residue);
     } // end of test_range_approx_1
 
     #[test]
@@ -645,14 +658,15 @@ fn log_init_test() {
         log_init_test();
         //
         let data = RandomGaussianGenerator::<f32>::new().generate_matrix(Dim([50,500]));
-        let rp = RangePrecision { epsil : 0.05 , step : 5};
+        let norm_data = norm_l2(&data.mat.view());
+        let rp = RangePrecision { epsil : 0.05 , step : 5, max_rank : 25};
         let matrepr = MatRepr::from_array2(data.mat);
         let range_approx = RangeApprox::new(&matrepr,  RangeApproxMode::EPSIL(rp));
         let q = range_approx.approximate().unwrap();
         //
-        log::debug!(" q(m,n) {} {} ", q.shape()[0], q.shape()[1]);
+        log::info!(" q(m,n) {} {} ", q.shape()[0], q.shape()[1]);
         let residue = check_range_approx_repr(&matrepr, &q);
-        log::debug!(" residue {:3.e} \n", residue);
+        log::info!(" subspace_iteration nom_l2 {:.2e} residue {:.2e} \n", norm_data, residue);
     } // end of test_range_approx_1
 
 
@@ -661,12 +675,13 @@ fn log_init_test() {
         log_init_test();
         //
         let data = RandomGaussianGenerator::<f64>::new().generate_matrix(Dim([6,50]));
-        let rp = RangeRank { rank : 6 , nbiter : 5};
+        let norm_data = norm_l2(&data.mat.view());
+        let rp = RangeRank { rank : 7 , nbiter : 5};            // check for too large rank asked
         let matrepr = MatRepr::from_array2(data.mat);
         let range_approx = RangeApprox::new(&matrepr, RangeApproxMode::RANK(rp));
         let q = range_approx.approximate().unwrap(); // args are rank , nbiter
         let residue = check_range_approx_repr(&matrepr, &q);
-        log::debug!(" subspace_iteration residue {:3.e} \n ", residue);
+        log::info!(" subspace_iteration nom_l2 {:.2e} residue {:.2e} \n", norm_data, residue);
     } // end of test_range_approx_subspace_iteration_1
 
     #[test]
@@ -674,12 +689,13 @@ fn log_init_test() {
         log_init_test();
         //
         let data = RandomGaussianGenerator::<f64>::new().generate_matrix(Dim([50,500]));
-        let rp = RangeRank { rank : 6 , nbiter : 5};
+        let norm_data = norm_l2(&data.mat.view());
+        let rp = RangeRank { rank : 25 , nbiter : 5};
         let matrepr = MatRepr::from_array2(data.mat);
         let range_approx = RangeApprox::new(&matrepr, RangeApproxMode::RANK(rp));
         let q = range_approx.approximate().unwrap();
         let residue = check_range_approx_repr(&matrepr, &q);
-        log::debug!(" subspace_iteration residue {:3.e} \n", residue);
+        log::info!(" subspace_iteration nom_l2 {:.2e} residue {:.2e} \n", norm_data, residue);
     } // end of test_range_approx_subspace_iteration_2
 
     // TODO test with m >> n 
@@ -766,7 +782,7 @@ fn test_svd_wiki_csr_epsil () {
     let csr_mat : CsMat<f32> = trimat.to_csr();
     let matrepr = MatRepr::from_csrmat(csr_mat);
     let mut svdapprox = SvdApprox::new(&matrepr);
-    let svdmode = RangeApproxMode::EPSIL(RangePrecision{epsil:0.1 , step:5});
+    let svdmode = RangeApproxMode::EPSIL(RangePrecision{epsil:0.1 , step:5, max_rank : 10});
     let res = svdapprox.direct_svd(svdmode);
     assert!(res.is_ok());
     assert!(svdapprox.get_sigma().is_some());
@@ -795,7 +811,7 @@ fn test_svd_wiki_csr_epsil () {
 
 
 #[test]
-fn test_svd_wiki_epsil () {
+fn test_svd_wiki_full_epsil () {
     //
     log_init_test();
     //
@@ -810,7 +826,7 @@ fn test_svd_wiki_epsil () {
     //
     let matrepr = MatRepr::from_array2(mat);
     let mut svdapprox = SvdApprox::new(&matrepr);
-    let svdmode = RangeApproxMode::EPSIL(RangePrecision{epsil:0.1 , step:5});
+    let svdmode = RangeApproxMode::EPSIL(RangePrecision{epsil:0.1 , step:5, max_rank : 4});
     let res = svdapprox.direct_svd(svdmode);
     assert!(res.is_ok());
     assert!(svdapprox.get_sigma().is_some());
