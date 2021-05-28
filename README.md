@@ -6,7 +6,7 @@ The crate will provide:
    Our implementation is in fact a mix of the various embedding algorithms
     published recently and mentioned in References.
 
-   - The graph is initialized by the Hnsw nearest neighbour algorithm. This provides for free sub-sampling in the data to embed by considering less densely occupied layers. It it is also possible to embed only the neighbourhood of a point by extracting recursively neighbours of a the initial point down to the most dense layers.
+   - The graph is initialized by the Hnsw nearest neighbour algorithm. This provides for free sub-sampling in the data to embed by considering less densely occupied layers. It is also possible to embed only the neighbourhood of a point by extracting recursively neighbours of a initial point in a given layer down to the most dense layers.
   
    - The preliminary graph used in the embedding uses an exponential kernel (as in Umap) but taking into account a local density of points. The symetrisation is done as in t-sne or LargeVis. We use the diffusion maps algorithm (Lafon-Keller-Coifman), even though we have an exponential kernel.
 
@@ -19,7 +19,7 @@ The crate will provide:
 
     - A single-linkage hierarchical clustering function
 
-## *The embedding and tools for approxiated for SVD are currently implemented*
+## *Currently only the embedding and tools for approximated for SVD implemented*
 
 ## Results
 

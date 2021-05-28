@@ -14,6 +14,8 @@ pub mod fromhnsw;
 pub mod hdbscan;
 pub mod embedder;
 
+pub mod io;
+
 
 lazy_static! {
     static ref LOG: u64 = {
