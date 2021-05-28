@@ -213,17 +213,19 @@ impl <F> KGraph<F>
         let mut quant = CKMS::<f32>::new(0.001);
         //
         for i in 0..self.neighbours.len() {
-            let min_r = self.neighbours[i][0].weight;
-            let max_r = self.neighbours[i][self.neighbours[i].len()-1].weight;
-            quant.insert(F::to_f32(&min_r).unwrap());
-            //
-            max_max_r = max_max_r.max(max_r);
-            min_min_r = min_min_r.min(min_r);
-            // compute in_degrees
-            ranges.push(RangeNgbh(min_r, max_r));
-            for j in 0..self.neighbours[i].len() {
-                in_degrees[self.neighbours[i][j].node] += 1;
-            }
+            if self.neighbours[i].len() > 0 {
+                let min_r = self.neighbours[i][0].weight;
+                let max_r = self.neighbours[i][self.neighbours[i].len()-1].weight;
+                quant.insert(F::to_f32(&min_r).unwrap());
+                //
+                max_max_r = max_max_r.max(max_r);
+                min_min_r = min_min_r.min(min_r);
+                // compute in_degrees
+                ranges.push(RangeNgbh(min_r, max_r));
+                for j in 0..self.neighbours[i].len() {
+                    in_degrees[self.neighbours[i][j].node] += 1;
+                }
+           }
         }
         // dump some info
         let mut max_in_degree = 0;
@@ -240,9 +242,11 @@ impl <F> KGraph<F>
         println!("mean in degree : {}", mean_in_degree);
         println!("max max range : {} ", max_max_r);
         println!("min min range : {} ", min_min_r);
-        println!("min radius quantile at 0.05 : {:.2e} , 0.5 :  {:.2e}, 0.95 : {:.2e}, 0.99 : {:.2e}", 
-                    quant.query(0.05).unwrap().1, quant.query(0.5).unwrap().1, 
-                    quant.query(0.95).unwrap().1, quant.query(0.99).unwrap().1);
+        if quant.count() > 0 {
+            println!("min radius quantile at 0.05 : {:.2e} , 0.5 :  {:.2e}, 0.95 : {:.2e}, 0.99 : {:.2e}", 
+                        quant.query(0.05).unwrap().1, quant.query(0.5).unwrap().1, 
+                        quant.query(0.95).unwrap().1, quant.query(0.99).unwrap().1);
+        }
         //
         KGraphStat{ranges, in_degrees, mean_in_degree : mean_in_degree.round() as usize, max_in_degree : max_in_degree as usize, 
                     min_radius_q : quant}
@@ -278,6 +282,7 @@ impl <F> KGraph<F>
         }
         let point_indexation = hnsw.get_point_indexation();
         let nb_point = point_indexation.get_nb_point();
+        self.node_set = IndexSet::with_capacity(nb_point);
         // now we have nb_point we can allocate neighbour field, and we push vectors inside as we will fill in ordre we do not know!
         self.neighbours = Vec::<Vec<OutEdge<F>>>::with_capacity(nb_point);
         for _i in 0..nb_point {
@@ -338,9 +343,92 @@ impl <F> KGraph<F>
     }   // end init_from_hnsw_all
 
 
-
-
-
+    /// extract points from a given layer (this provides sub samplwhere each point has nbng neighbours.
+    /// The number of neighbours asked for must be smaller than for init_from_hnsw_all as we do inspect only 
+    /// a fraction of the points and a fraction of the neighbourhood of each point. (all the focus is inside a layer)
+    pub fn init_from_hnsw_layer<D>(&mut self, hnsw : &Hnsw<F,D>, nbng : usize ,layer : usize) -> std::result::Result<usize, usize> 
+        where   F : Float + AddAssign + SubAssign + MulAssign + DivAssign + RemAssign +
+                    Display + Debug + LowerExp + UpperExp + std::iter::Sum + Send + Sync,
+                D : Distance<F> + Send + Sync {
+        //
+        log::trace!("init_from_hnsw_layer");
+        //
+        self.max_nbng = nbng;
+        let mut nb_point_below_nbng = 0;
+        let mut minimum_nbng = nbng;
+        let mut mean_nbng = 0u64;
+        let nb_point = hnsw.get_point_indexation().get_layer_nb_point(layer);
+        log::trace!("init_from_hnsw_layer , layer has  {} nbpoint", nb_point);
+        // now we have nb_point we can allocate neighbour field, and we push vectors inside as we will fill in an order we do not know!
+        self.neighbours = Vec::<Vec<OutEdge<F>>>::with_capacity(nb_point);
+        for _i in 0..nb_point {
+            self.neighbours.push(Vec::<OutEdge<F>>::new());
+        }    
+        //
+        let max_nb_conn = hnsw.get_max_nb_connection() as usize;
+        let mut layer_iter = hnsw.get_point_indexation().get_layer_iterator(layer);
+        self.node_set = IndexSet::with_capacity(nb_point);
+        //
+        while let Some(point) = layer_iter.next() {
+            // now point is an Arc<Point<F>>
+            // point_id must be in 0..nb_point. CAVEAT This is not enforced as in petgraph. We should check that
+            let origin_id = point.get_origin_id();
+            let p_id = point.get_point_id();
+            if p_id.0 as usize != layer {
+                log::trace!("p_id layer : {} ",p_id.0 as usize);
+            }
+            assert_eq!(p_id.0 as usize, layer);
+            // remap _point_id
+            let (index, _) = self.node_set.insert_full(origin_id);
+            if index >= nb_point {
+                log::trace!("init_from_hnsw_layer point_id {} index {}", origin_id, index);
+                assert!(index < nb_point);
+            }
+            //
+            let neighbours_hnsw = point.get_neighborhood_id();
+            // get neighbours of point in the same layer
+            // possibly use a BinaryHeap?
+            let mut vec_tmp = Vec::<OutEdge<F>>::with_capacity(max_nb_conn);
+            for j in 0..neighbours_hnsw[layer].len() {
+                let n_origin_id = neighbours_hnsw[layer][j].get_origin_id();
+                let n_p_id = neighbours_hnsw[layer][j].p_id;
+//               assert!(n_p_id.0 as usize >= layer);
+                if n_p_id.0 as usize >= layer {
+                // remap id. nodeset enforce reindexation from 0 to nbpoint
+                    let (neighbour_idx, _already) = self.node_set.insert_full(n_origin_id);
+    //            log::trace!("init_from_hnsw_layer point_id {} index {} already {}",neighbours_hnsw[layer][j].get_origin_id() , 
+    //                            neighbour_idx, _already);
+                    vec_tmp.push(OutEdge::<F>{ node : neighbour_idx, weight : F::from_f32(neighbours_hnsw[layer][j].distance).unwrap()});
+                }
+            } // end of for j
+            vec_tmp.sort_unstable_by(| a, b | a.partial_cmp(b).unwrap_or(Ordering::Less));
+            assert!(vec_tmp.len() <= 1 || vec_tmp[0].weight <= vec_tmp[1].weight);    // temporary , check we did not invert order
+            // keep only the asked size. Could we keep more ?
+            if vec_tmp.len() < nbng {
+                 nb_point_below_nbng += 1;
+                log::warn!("neighbours must have {} neighbours, got only {}", self.max_nbng, vec_tmp.len());
+            }
+            vec_tmp.truncate(nbng);
+            mean_nbng += vec_tmp.len() as u64;
+            minimum_nbng = minimum_nbng.min(vec_tmp.len());
+           // We insert neighborhood info at slot corresponding to index beccause we want to access points in coherence with neighbours referencing
+           // =====================================================================================================================================
+            self.neighbours[index] = vec_tmp;
+        } // end of while
+        self.nbnodes = self.neighbours.len();
+        assert_eq!(self.nbnodes, nb_point);
+        log::trace!("KGraph::exiting init_from_hnsw_layer");
+        // now we can fill some statistics on density and incoming degrees for nodes!
+        log::info!("mean number of neighbours obtained = {:.2e}", mean_nbng as f64 / nb_point as f64);
+        log::info!("minimal number of neighbours {}", minimum_nbng);
+        log::info!("number of points with less than : {} neighbours = {} ", nbng, nb_point_below_nbng);
+        if (mean_nbng as f64 / nb_point as f64) < nbng as f64 {
+            println!(" mean number of neighbours obtained : {:2.e}", mean_nbng);
+            println!(" possibly use hnsw.reset_keeping_pruned(true)");
+        }
+        //
+        Ok(minimum_nbng)
+    } // end of init_from_hnsw_layer
 }  // end of impl KGraph<F>
 
 
@@ -414,5 +502,61 @@ fn test_full_hnsw() {
     log::info!("minimum number of neighbours {}", kgraph.get_max_nbng());
     let _kgraph_stats = kgraph.get_kraph_stats();
 }  // end of test_full_hnsw
+
+
+#[test]
+fn test_layer_hnsw() {
+    //
+    log_init_test();
+    //
+    let nb_elem = 2000;
+    let dim = 30;
+    let knbn = 10;
+    //
+    println!("\n\n test_serial nb_elem {:?}", nb_elem);
+    //
+    let data = gen_rand_data_f32(nb_elem, dim);
+    let data_with_id : Vec<(&Vec<f32>, usize)> = data.iter().zip(0..data.len()).collect();
+
+    let ef_c = 50;
+    let layer = 1;
+    let max_nb_connection = 50;
+    let nb_layer = 16.min((nb_elem as f32).ln().trunc() as usize);
+    let mut hns = Hnsw::<f32, DistL1>::new(max_nb_connection, nb_elem, nb_layer, ef_c, DistL1{});
+    // to enforce the asked number of neighbour
+    hns.set_keeping_pruned(true);
+    for d in data_with_id {
+        hns.insert(d);
+    }
+    hns.dump_layer_info();
+    //
+    let mut kgraph = KGraph::<f32>::new();
+    log::info!("calling kgraph.init_from_hnsw_layer");
+    let res = kgraph.init_from_hnsw_layer(&hns, knbn, layer);
+    if res.is_err() {
+        panic!("init_from_hnsw_all  failed");
+    }
+    log::info!("minimum number of neighbours {}", kgraph.get_max_nbng());
+    let _kgraph_stats = kgraph.get_kraph_stats();
+}  // end of test_layer_hnsw
+
+
+
+#[test]
+fn test_small_indexset() {
+    let _ = env_logger::builder().is_test(true).try_init();
+    let size = 30;
+    let mut idxset = IndexSet::<usize>::with_capacity(size);
+    let from = 10000;
+    let between = Uniform::from(from..from+size);
+    let mut rng = rand::thread_rng();
+
+    for _i in 0..100000 {
+        let xsi = between.sample(&mut rng);
+        let (idx, _already) = idxset.insert_full(xsi);
+        assert!(idx < size);
+    }
+}
+
 
 } // end of tests
