@@ -10,7 +10,7 @@ use std::path::{PathBuf};
 
 use hnsw_rs::prelude::*;
 
-use annembed::fromhnsw::*;
+use annembed::{fromhnsw::*, embedder::*};
 
 /// A struct to load/store [MNIST data](http://yann.lecun.com/exdb/mnist/)  
 /// stores labels (i.e : digits between 0 and 9) coming from file train-labels-idx1-ubyte      
@@ -133,6 +133,9 @@ pub fn read_label_file(io_in: &mut dyn Read) -> Array1<u8>{
 //============================================================================================
 
 pub fn main() {
+    //
+    let _ = env_logger::builder().is_test(true).try_init();
+    //
     let image_fname = String::from("/home.1/jpboth/Data/MNIST/train-images-idx3-ubyte");
     let image_path = PathBuf::from(image_fname.clone());
     let image_file_res = OpenOptions::new().read(true).open(&image_path);
@@ -148,19 +151,27 @@ pub fn main() {
         println!("could not open label file : {:?}", label_fname);
         return;
     }
-    let mnist_data  = MnistData::new(image_fname, label_fname).unwrap();
-    let images = mnist_data.get_images();
-    let( _, _, nbimages) = images.dim();
+    let mut images_as_v:  Vec::<Vec<f32>>;
+    {
+        let mnist_data  = MnistData::new(image_fname, label_fname).unwrap();
+        let images = mnist_data.get_images();
+        let( _, _, nbimages) = images.dim();
+        //
+        images_as_v = Vec::<Vec<f32>>::with_capacity(nbimages);
+        for k in 0..nbimages {
+            let v : Vec<f32> = images.slice(s![.., .., k]).iter().map(|v| *v as f32).collect();
+            images_as_v.push(v);
+        }
+    }  // drop mnist_data
     //
     let ef_c = 50;
     let max_nb_connection = 50;
+    let nbimages = images_as_v.len();
     let nb_layer = 16.min((nbimages as f32).ln().trunc() as usize);
     let hnsw = Hnsw::<f32, DistL1>::new(max_nb_connection, nbimages, nb_layer, ef_c, DistL1{});
     // we must pay fortran indexation once!. transform image to a vector
-    for k in 0..nbimages {
-        let v : Vec<f32> = images.slice(s![.., .., k]).iter().map(|v| *v as f32).collect();
-        hnsw.insert((&v,k));
-    }
+    let data_with_id = images_as_v.iter().zip(0..images_as_v.len()).collect();
+    hnsw.parallel_insert(&data_with_id);
     // images as vectors of f32 and send to hnsw
     hnsw.dump_layer_info();
     //
@@ -179,8 +190,12 @@ pub fn main() {
         panic!("init_from_hnsw_all  failed");
     }
     log::info!("minimum number of neighbours {}", kgraph.get_max_nbng());
-
     // 
+    let _kgraph_stats = kgraph.get_kraph_stats();
+    let embed_dim = 5;
+    let mut embedder = Embedder::new(&kgraph, embed_dim);
+    let embed_res = embedder.embed();
+    assert!(embed_res.is_ok());    
 }
 
 

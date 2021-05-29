@@ -379,7 +379,6 @@ impl <F> KGraph<F>
             let mut layer_iter = hnsw.get_point_indexation().get_layer_iterator(l);
             //
             while let Some(point) = layer_iter.next() {
-                nb_point_collected += 1;
                 // now point is an Arc<Point<F>>
                 // point_id must be in 0..nb_point. CAVEAT This is not enforced as in petgraph. We should check that
                 let origin_id = point.get_origin_id();
@@ -418,11 +417,12 @@ impl <F> KGraph<F>
                     if vec_tmp.len() == 0 {
                         let p_id = point.get_point_id();
                         log::warn!(" graph will not be connected, isolated point at layer {}  , pos in layer {} ", p_id.0, p_id.1);
+                        self.node_set.remove(&index);
+                        continue;
                     }
                 } 
-                else {
-                    vec_tmp.truncate(nbng);
-                }
+                vec_tmp.truncate(nbng);
+                nb_point_collected += 1;
                 mean_nbng += vec_tmp.len() as u64;
                 minimum_nbng = minimum_nbng.min(vec_tmp.len());
                 // We insert neighborhood info at slot corresponding to index beccause we want to access points in coherence with neighbours referencing
@@ -434,7 +434,7 @@ impl <F> KGraph<F>
         log::trace!("KGraph::exiting init_from_hnsw_layer");
         log::trace!("collected {} points", nb_point_collected);
         // now we can fill some statistics on density and incoming degrees for nodes!
-        log::info!("mean number of neighbours obtained = {:.2e}", mean_nbng as f64 / nb_point as f64);
+        log::info!("mean number of neighbours obtained = {:.2e}", mean_nbng as f64 / nb_point_collected as f64);
         log::info!("minimal number of neighbours {}", minimum_nbng);
         log::info!("number of points with less than : {} neighbours = {} ", nbng, nb_point_below_nbng);
         if (mean_nbng as f64 / nb_point as f64) < nbng as f64 {
@@ -526,7 +526,7 @@ fn test_layer_hnsw() {
     //
     let nb_elem = 80000;
     let dim = 30;
-    let knbn = 10;
+    let knbn = 20;
     //
     println!("\n\n test_serial nb_elem {:?}", nb_elem);
     //
@@ -535,11 +535,12 @@ fn test_layer_hnsw() {
 
     let ef_c = 50;
     let layer = 1;
-    let max_nb_connection = 50;
+    let max_nb_connection = 64;
     let nb_layer = 16.min((nb_elem as f32).ln().trunc() as usize);
     let mut hns = Hnsw::<f32, DistL1>::new(max_nb_connection, nb_elem, nb_layer, ef_c, DistL1{});
     // to enforce the asked number of neighbour
     hns.set_keeping_pruned(true);
+//    hns.set_extend_candidates(true);
     hns.parallel_insert(&data_with_id);
 /*     for d in data_with_id {
         hns.insert(d);
