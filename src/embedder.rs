@@ -83,6 +83,7 @@ pub struct Embedder<'a,F> {
     /// contains edge probabilities according to the probabilized graph constructed before laplacian symetrization
     /// It is this representation that is used for cross entropy optimization!
     initial_space: Option<NodeParams>,
+    ///
     embedding: Option<Array2<F>>,
 } // end of Embedder
 
@@ -112,7 +113,10 @@ where
     } /// end embed
 
 
-
+    /// returns the embedded data
+    pub fn get_emmbedded(&self) -> Option<&Array2<F>> {
+        return self.embedding.as_ref();
+    }
 
     // this function initialize and returns embedding by a svd (or else?)
     // We are intersested in first eigenvalues (excpeting 1.) of transition probability matrix
@@ -548,6 +552,22 @@ impl <F> EntropyOptim<F>
         EntropyOptim { edges, initial_scales, embedded, embedded_scales, b}
         // construct field embedded
     }  // end of new 
+
+
+    // return result as an Array2<F> cloning data to return result to struct Embedder
+    fn get_embedded(&mut self) -> Array2<F> {
+        let nbrow = self.embedded.len();
+        let nbcol = self.embedded[0].read().len();
+        let mut embedding_res = Array2::<F>::zeros((nbrow, nbcol));
+        // TODO version 0.15 provides move_into and push_row
+        for i in 0..nbrow {
+            let row = self.embedded[i].read();
+            for j in 0..nbcol {
+                embedding_res[[i,j]] = row[j];
+            }
+        }
+        return embedding_res;
+    }
 
 
     // computes croos entropy between initial space and embedded distribution. 

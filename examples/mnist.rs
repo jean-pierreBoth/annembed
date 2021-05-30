@@ -10,7 +10,7 @@ use std::path::{PathBuf};
 
 use hnsw_rs::prelude::*;
 
-use annembed::{fromhnsw::*, embedder::*};
+use annembed::prelude::*;
 
 /// A struct to load/store [MNIST data](http://yann.lecun.com/exdb/mnist/)  
 /// stores labels (i.e : digits between 0 and 9) coming from file train-labels-idx1-ubyte      
@@ -132,6 +132,9 @@ pub fn read_label_file(io_in: &mut dyn Read) -> Array1<u8>{
 
 //============================================================================================
 
+use csv::*;
+
+
 pub fn main() {
     //
     let _ = env_logger::builder().is_test(true).try_init();
@@ -152,9 +155,11 @@ pub fn main() {
         return;
     }
     let mut images_as_v:  Vec::<Vec<f32>>;
+    let labels :  Array1::<u8>;
     {
         let mnist_data  = MnistData::new(image_fname, label_fname).unwrap();
         let images = mnist_data.get_images();
+        labels = mnist_data.get_labels().clone();
         let( _, _, nbimages) = images.dim();
         //
         images_as_v = Vec::<Vec<f32>>::with_capacity(nbimages);
@@ -195,7 +200,11 @@ pub fn main() {
     let embed_dim = 5;
     let mut embedder = Embedder::new(&kgraph, embed_dim);
     let embed_res = embedder.embed();
-    assert!(embed_res.is_ok());    
+    assert!(embed_res.is_ok());  
+    // dump
+    let mut csv_w = Writer::from_path("mnist_csv").unwrap();
+    let _res = write_csv_labeled_array2(&mut csv_w, labels.as_slice().unwrap(), embedder.get_emmbedded().unwrap());
+    csv_w.flush().unwrap();
 }
 
 

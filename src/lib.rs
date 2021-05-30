@@ -13,6 +13,7 @@ pub mod tools;
 pub mod fromhnsw;
 pub mod hdbscan;
 pub mod embedder;
+pub mod prelude;
 
 pub mod io;
 
