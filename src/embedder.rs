@@ -83,7 +83,9 @@ pub struct Embedder<'a,F> {
     /// contains edge probabilities according to the probabilized graph constructed before laplacian symetrization
     /// It is this representation that is used for cross entropy optimization!
     initial_space: Option<NodeParams>,
-    ///
+    /// initial embedding (option for degugging analyzing)
+    initial_embedding : Option<Array2<F>>,
+    /// final embedding
     embedding: Option<Array2<F>>,
 } // end of Embedder
 
@@ -94,7 +96,7 @@ where
 {
     /// constructor from a graph and asked embedding dimension
     pub fn new(kgraph : &'a KGraph<F>, asked_dimension : usize) -> Self {
-        Embedder::<F>{kgraph, asked_dimension, approximated_svd : false, initial_space:None, embedding:None}
+        Embedder::<F>{kgraph, asked_dimension, approximated_svd : false, initial_space:None, initial_embedding : None, embedding:None}
     } // end of new
 
 
@@ -107,6 +109,9 @@ where
         // cross entropy optimization
         let b : f32 = 1.;
         let embedding_res = self.entropy_optimize(b, &initial_embedding);
+        // optional store dump initial embedding
+        self.initial_embedding = Some(initial_embedding);
+        //
         match embedding_res {
             Ok(embedding) => {
                 self.embedding = Some(embedding);
@@ -117,6 +122,7 @@ where
                 return Err(1);
             }        
         }
+
         //
     } /// end embed
 
@@ -126,6 +132,11 @@ where
         return self.embedding.as_ref();
     }
 
+     /// returns the initial embedding. Storage is optional TODO
+     pub fn get_initial_embedding(&self) -> Option<&Array2<F>> {
+        return self.initial_embedding.as_ref();
+    }   
+
     // this function initialize and returns embedding by a svd (or else?)
     // We are intersested in first eigenvalues (excpeting 1.) of transition probability matrix
     // i.e last non null eigenvalues of laplacian matrix!!
@@ -134,7 +145,7 @@ where
     fn get_dmap_initial_embedding(&mut self, asked_dim: usize) -> Array2<F> {
         // get eigen values of normalized symetric lapalcian
         let laplacian = self.get_laplacian();
-        log::trace!("got laplacian, going to svd ... asked_dim :  {}", asked_dim);
+        log::debug!("got laplacian, going to svd ... asked_dim :  {}", asked_dim);
         let mut svdapprox = SvdApprox::new(&laplacian.sym_laplacian);
         // TODO adjust epsil ?
         let svdmode = RangeApproxMode::EPSIL(RangePrecision::new(0.1, 5, asked_dim));
@@ -189,7 +200,8 @@ where
         }
         log::info!("\n highest eigenvalue value : {}", lambdas[0]);
         //
-        assert!(first_non_zero >= asked_dim-1);          // 0 indexation!
+        assert!(first_non_zero +1 >= asked_dim);          // 0 indexation!
+        log::debug!("keeping nb columns : {}", asked_dim);
         let max_dim = asked_dim.min(first_non_zero + 1); // is in [1..len()]
         // We get U at index in range first_non_zero-max_dim..first_non_zero
         let u = svdapprox.get_u().as_ref().unwrap();
@@ -481,7 +493,7 @@ where
         let ce_optimization = EntropyOptim::new(self.initial_space.as_ref().unwrap(), b, initial_embedding);
         // compute initial value of objective function
         let start = ProcessTime::now();
-        let initial_ce = ce_optimization.ce_compute_threaded();
+        let initial_ce = ce_optimization.ce_compute();
         let cpu_time: Duration = start.elapsed();
         println!(" initial cross entropy value {:.2e},  in time {:?}", initial_ce, cpu_time);
         // We manage some iterations on gradient computing

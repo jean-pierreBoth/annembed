@@ -197,12 +197,21 @@ pub fn main() {
     log::info!("minimum number of neighbours {}", kgraph.get_max_nbng());
     // 
     let _kgraph_stats = kgraph.get_kraph_stats();
-    let embed_dim = 5;
+    let embed_dim = 2;
     let mut embedder = Embedder::new(&kgraph, embed_dim);
     let embed_res = embedder.embed();
-    assert!(embed_res.is_ok());  
+    assert!(embed_res.is_ok()); 
+    assert!(embedder.get_emmbedded().is_some());
     // dump
-    let mut csv_w = Writer::from_path("mnist_csv").unwrap();
+
+    
+    log::info!("dumping initial embedding in csv file");
+    let mut csv_w = Writer::from_path("mnist_init.csv").unwrap();
+    let _res = write_csv_labeled_array2(&mut csv_w, labels.as_slice().unwrap(), embedder.get_initial_embedding().unwrap());
+    csv_w.flush().unwrap();
+
+    log::info!("dumping in csv file");
+    let mut csv_w = Writer::from_path("mnist.csv").unwrap();
     let _res = write_csv_labeled_array2(&mut csv_w, labels.as_slice().unwrap(), embedder.get_emmbedded().unwrap());
     csv_w.flush().unwrap();
 }
