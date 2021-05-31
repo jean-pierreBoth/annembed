@@ -266,7 +266,7 @@ impl <F> KGraph<F>
                     Display + Debug + LowerExp + UpperExp + std::iter::Sum + Send + Sync,
                 D : Distance<F> + Send + Sync {
         //
-        log::trace!("entering init_from_hnsw_all");
+        log::info!("entering init_from_hnsw_all");
         //
         self.max_nbng = nbng;
         let mut nb_point_below_nbng = 0;

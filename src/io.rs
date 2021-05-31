@@ -12,20 +12,19 @@ use csv::*;
 
 
 /// This function is mostly dedicated to write embedded data in very few dimensions
-pub fn write_csv_array2<F>(mat : &Array2<F>, filename : &str) -> std::io::Result<usize>
+pub fn write_csv_labeled_array2<F>(csv_writer : &mut Writer<std::fs::File>, labels : &[u8], mat : &Array2<F>) -> std::io::Result<usize>
             where F : Float {
     //
-    let mut wtr = Writer::from_path(filename)?;
     let (nbrow, nbcol) = mat.dim();
-    let mut line : Vec<String> = (0..(nbcol+1)).into_iter().map(|_| String::from("")).collect();
+    let mut line : Vec<String> = ((0..=nbcol)).into_iter().map(|_| String::from("")).collect();
     for i in 0..nbrow {
-        line[0] = i.to_string();
+        line[0] = labels[i].to_string();
         for j in 0..nbcol {
-            line[j] = mat[[i,j]].to_f32().unwrap().to_string();
+            line[1+j] = format!("{:.2e}", mat[[i,j]].to_f32().unwrap());
         }
-        wtr.write_record(&line)?;
+        csv_writer.write_record(&line)?;
     }
-    wtr.flush()?;
+    csv_writer.flush()?;
     //
     return Ok(1);
 } // end of dump_csv_array2

@@ -106,10 +106,18 @@ where
         // we nedd to construct field initial_space has been contructed in get_laplacian 
         // cross entropy optimization
         let b : f32 = 1.;
-        let _embedding = self.entropy_optimize(b, &initial_embedding);
-
+        let embedding_res = self.entropy_optimize(b, &initial_embedding);
+        match embedding_res {
+            Ok(embedding) => {
+                self.embedding = Some(embedding);
+                return Ok(1);
+            }
+            _ => {
+                log::info!("Embedder::embed : embedding optimization failed");
+                return Err(1);
+            }        
+        }
         //
-        Ok(1)
     } /// end embed
 
 
@@ -126,10 +134,10 @@ where
     fn get_dmap_initial_embedding(&mut self, asked_dim: usize) -> Array2<F> {
         // get eigen values of normalized symetric lapalcian
         let laplacian = self.get_laplacian();
-        log::trace!("got laplacian, going to svd ...");
+        log::trace!("got laplacian, going to svd ... asked_dim :  {}", asked_dim);
         let mut svdapprox = SvdApprox::new(&laplacian.sym_laplacian);
         // TODO adjust epsil ?
-        let svdmode = RangeApproxMode::EPSIL(RangePrecision::new(0.1, 5, asked_dim + 5));
+        let svdmode = RangeApproxMode::EPSIL(RangePrecision::new(0.1, 5, asked_dim));
         let svd_res = svdapprox.direct_svd(svdmode);
         log::trace!("exited svd");
         if !svd_res.is_ok() {
@@ -145,7 +153,7 @@ where
         // we examine spectrum
         // get first non null lamba
         // lowest lambda should be near 0. effect of laplacian graph.
-        log::info!("highest laplacian eigenvalue value : {}", lambdas[lambdas.len() - 1]);
+        log::info!("last laplacian eigenvalue value : {}", lambdas[lambdas.len() - 1]);
         let first_non_zero_from_end : usize;
         if !self.approximated_svd {
             assert!((lambdas[lambdas.len() - 1]).abs() < 1.0E-4);
@@ -156,6 +164,7 @@ where
             }
             else {
                 first_non_zero_from_end = first_non_zero_opt.unwrap();
+                log::debug!("first_non_zero_from_end : {}", first_non_zero_from_end)
             }
         }
         else { // csr case
@@ -180,7 +189,7 @@ where
         }
         log::info!("\n highest eigenvalue value : {}", lambdas[0]);
         //
-        assert!(first_non_zero >= asked_dim);
+        assert!(first_non_zero >= asked_dim-1);          // 0 indexation!
         let max_dim = asked_dim.min(first_non_zero + 1); // is in [1..len()]
         // We get U at index in range first_non_zero-max_dim..first_non_zero
         let u = svdapprox.get_u().as_ref().unwrap();
@@ -461,7 +470,7 @@ where
     // The initial density makes the embedded graph asymetric as the initial graph.
     // The optimization function thus should try to restore asymetry and local scale as far as possible.
 
-    fn entropy_optimize(&self, b: f32, initial_embedding : &Array2<F>) -> Result<usize, String> {
+    fn entropy_optimize(&self, b: f32, initial_embedding : &Array2<F>) -> Result<Array2<F>, String> {
         //
         log::info!("in Embedder::entropy_optimize");
         //
@@ -472,9 +481,9 @@ where
         let ce_optimization = EntropyOptim::new(self.initial_space.as_ref().unwrap(), b, initial_embedding);
         // compute initial value of objective function
         let start = ProcessTime::now();
-        let initial_ce = ce_optimization.ce_compute();
+        let initial_ce = ce_optimization.ce_compute_threaded();
         let cpu_time: Duration = start.elapsed();
-        println!(" initial cross entropy value {:?},  in time {:?}", initial_ce, cpu_time);
+        println!(" initial cross entropy value {:.2e},  in time {:?}", initial_ce, cpu_time);
         // We manage some iterations on gradient computing
         let grad_step_init = 0.1;
         //
@@ -491,9 +500,10 @@ where
         let cpu_time: Duration = start.elapsed();
         println!(" gradient iterations cpu_time {:?}",  cpu_time);
         let final_ce = ce_optimization.ce_compute();
-        println!(" final cross entropy value {:?}", final_ce);
+        println!(" final cross entropy value {:.2e}", final_ce);
         //
-        Ok(1)
+        Ok(ce_optimization.get_embedded())
+        //
     } // end of entropy_optimize
 
 
@@ -555,7 +565,7 @@ impl <F> EntropyOptim<F>
 
 
     // return result as an Array2<F> cloning data to return result to struct Embedder
-    fn get_embedded(&mut self) -> Array2<F> {
+    fn get_embedded(& self) -> Array2<F> {
         let nbrow = self.embedded.len();
         let nbcol = self.embedded[0].read().len();
         let mut embedding_res = Array2::<F>::zeros((nbrow, nbcol));
@@ -573,7 +583,7 @@ impl <F> EntropyOptim<F>
     // computes croos entropy between initial space and embedded distribution. 
     // necessary to monitor optimization
     fn ce_compute(&self) -> f64 {
-        log::info!("entering EntropyOptim::ce_compute");
+        log::info!("\n entering EntropyOptim::ce_compute");
         //
         let mut ce_entropy = 0.;
         for edge in self.edges.iter() {
@@ -602,7 +612,7 @@ impl <F> EntropyOptim<F>
 
     // threaded version for computing cross entropy between initial distribution and embedded distribution with Cauchy law.
     fn ce_compute_threaded(&self) -> f64 {
-        log::info!("entering EntropyOptim::ce_compute_threaded");
+        log::info!("\n entering EntropyOptim::ce_compute_threaded");
         //
         let ce_entropy = self.edges.par_iter()
                 .fold( || 0.0f64, | entropy : f64, edge| entropy + {
@@ -635,25 +645,31 @@ impl <F> EntropyOptim<F>
         // get coordinate of node
         let node_i = self.edges[edge_idx].0;
         // we locks once and directly a write lock as conflicts should be small, many edges, some threads. see Recht Hogwild!
-        let mut y_i = self.embedded[node_i].write();
-        let mut gradient = Array1::<F>::zeros(y_i.len());
+        let y_i_len = self.embedded[node_i].read().len();
+        let mut gradient = Array1::<F>::zeros(y_i_len);
         //
         let edge_out = self.edges[edge_idx];
         let node_j = edge_out.1.node;
+        assert!(node_i != node_j);
         let weight = edge_out.1.weight;
         assert!(weight <= 1.);
         let scale = self.initial_scales[node_i] as f64;
-        let mut y_j = self.embedded[node_j].write();
-        // compute l2 norm of y_j - y_i
-        let d_ij : f64 = y_i.iter().zip(y_j.iter()).map(|(vi,vj)| (*vi-*vj)*(*vi-*vj)).sum::<F>().to_f64().unwrap();
-        // taking into account P and 1.-P 
-        let mut coeff_ij = (- weight as f64 / (scale + d_ij)) + 
-            ( 1. - weight as f64) / ( (0.001 + d_ij) * (1. + d_ij / scale)  );
-        coeff_ij *= 2.;
-        // update gradient
-        for k in 0..y_i.len() {
-            gradient[k] = (y_j[k] - y_i[k]) * F::from_f64(coeff_ij).unwrap();
+        { // get read lock 
+            let y_i = self.embedded[node_i].read();
+            let y_j = self.embedded[node_j].read();
+            // compute l2 norm of y_j - y_i
+            let d_ij : f64 = y_i.iter().zip(y_j.iter()).map(|(vi,vj)| (*vi-*vj)*(*vi-*vj)).sum::<F>().to_f64().unwrap();
+            // taking into account P and 1.-P 
+            let mut coeff_ij = (- weight as f64 / (scale + d_ij)) + 
+                ( 1. - weight as f64) / ( (0.001 + d_ij) * (1. + d_ij / scale)  );
+            coeff_ij *= 2.;
+            for k in 0..y_i.len() {
+                gradient[k] = (y_j[k] - y_i[k]) * F::from_f64(coeff_ij).unwrap();
+            }
         }
+        // update gradient, we need a awrite lock
+        let mut y_i = self.embedded[node_i].write();
+        let mut y_j = self.embedded[node_j].write();
         // update positions
         for k in 0..y_i.len() {
             y_i[k] += gradient[k] * F::from_f64(grad_step).unwrap();
@@ -670,6 +686,12 @@ impl <F> EntropyOptim<F>
         }
     } // end of gradient_iteration
 
+
+
+    fn gradient_iteration_threaded(&self, grad_step : f64) {
+        (0..self.edges.len()).into_par_iter().for_each( |i| self.ce_optim_edge_shannon(i, grad_step));
+    } // end of gradient_iteration_threaded
+    
     
 }  // end of impl EntropyOptim
 
