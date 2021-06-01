@@ -6,7 +6,7 @@
 use num_traits::{Float, NumAssign};
 use std::collections::HashMap;
 
-use ndarray::{Array1, Array2, ArrayView1, Axis};
+use ndarray::{Array1, Array2, ArrayView1, Axis, Array};
 use ndarray_linalg::{Lapack, Scalar};
 use sprs::{CsMat, TriMatBase};
 
@@ -64,11 +64,120 @@ impl NodeParams {
 
 /// We use a normalized symetric laplacian to go to the svd.
 /// But we want the left eigenvectors of the normalized R(andom)W(alk) laplacian so we must keep track
-/// of degrees (rown norms)
+/// of degrees (rown L1 norms)
 struct LaplacianGraph {
+    // symetrized graph. Exactly D^{-1/2} * G * D^{-1/2}
     sym_laplacian: MatRepr<f32>,
+    // the vector giving D of the symtrized graph
     degrees: Array1<f32>,
+    // 
+    s : Option<Array1<f32>>,
+    //
+    u : Option<Array2<f32>>
 }
+
+use lax::{layout::MatrixLayout, UVTFlag, SVDDC_};
+
+impl LaplacianGraph {
+
+
+    pub fn new(sym_laplacian: MatRepr<f32>, degrees: Array1<f32>) -> Self {
+        LaplacianGraph{sym_laplacian, degrees, s : None, u: None}
+    } // end of new for LaplacianGraph
+
+
+
+#[inline]
+    fn is_csr(&self) -> bool {
+        self.sym_laplacian.is_csr()
+    } // end is_csr
+
+    fn get_nbrow(&self) -> usize {
+        self.degrees.len()
+    }
+
+    fn do_full_svd(&mut self) -> Result<SvdResult<f32>, String> {
+        //
+        log::trace!("LaplacianGraph doing full svd");
+        let b = self.sym_laplacian.get_full_mut().unwrap();
+        log::trace!("LaplacianGraph ... size nbrow {} nbcol {} ", b.shape()[0], b.shape()[1]);
+
+        let layout = MatrixLayout::C { row: b.shape()[0] as i32, lda: b.shape()[1] as i32 };
+        let slice_for_svd_opt = b.as_slice_mut();
+        if slice_for_svd_opt.is_none() {
+            println!("direct_svd Matrix cannot be transformed into a slice : not contiguous or not in standard order");
+            return Err(String::from("not contiguous or not in standard order"));
+        }
+        // use divide conquer (calls lapack gesdd), faster but could use svd (lapack gesvd)
+        log::trace!("direct_svd calling svddc driver");
+        let res_svd_b = f32::svddc(layout,  UVTFlag::Some, slice_for_svd_opt.unwrap());
+        if res_svd_b.is_err()  {
+            log::info!("LaplacianGraph do_full_svd svddc failed");
+            return Err(String::from("LaplacianGraph svddc failed"));
+        };
+        // we have to decode res and fill in SvdApprox fields.
+        // lax does encapsulte dgesvd (double) and sgesvd (single)  which returns U and Vt as vectors.
+        // We must reconstruct Array2 from slices.
+        // now we must match results
+        // u is (m,r) , vt must be (r, n) with m = self.data.shape()[0]  and n = self.data.shape()[1]
+        let res_svd_b = res_svd_b.unwrap();
+        let r = res_svd_b.s.len();
+        let m = b.shape()[0];
+        // must truncate to asked dim
+        let s : Array1<f32> = res_svd_b.s.iter().map(|x| *x).collect::<Array1<f32>>();
+        //
+        let s_u : Option<Array2<f32>>;
+        if let Some(u_vec) = res_svd_b.u {
+            s_u = Some(Array::from_shape_vec((m, r), u_vec).unwrap());
+        }
+        else {
+            s_u = None;
+        }
+        Ok(SvdResult{s : Some(s), u: s_u, vt : None})
+    }  // end of do_full_svd
+
+
+    /// do a partial approxlated svd
+    fn do_approx_svd(&mut self, asked_dim : usize) -> Result<SvdResult<f32>, String> {
+        assert!(asked_dim >= 2);
+        // get eigen values of normalized symetric lapalcian
+        //
+        //  switch to full or partial svd depending on csr representation and size
+        // csr implies approx svd.
+        log::debug!("got laplacian, going to approximated svd ... asked_dim :  {}", asked_dim);
+        let mut svdapprox = SvdApprox::new(&self.sym_laplacian);
+        // TODO adjust epsil ?
+        // we need one dim more beccause we get rid of first eigen vector as in dmap
+        let svdmode = RangeApproxMode::EPSIL(RangePrecision::new(0.1, 25, asked_dim+5));
+        let svd_res = svdapprox.direct_svd(svdmode);
+        log::trace!("exited svd");
+        if !svd_res.is_ok() {
+            println!("svd approximation failed");
+            std::panic!();
+        }
+        return svd_res;
+    } // end if do_approx_svd
+
+
+
+    fn do_svd(&mut self, asked_dim : usize) -> Result<SvdResult<f32>, String> {
+        if !self.is_csr() && self.get_nbrow() <= 300 {  // try direct svd
+            self.do_full_svd()
+        }
+        else {
+            self.do_approx_svd(asked_dim)
+        }
+     
+    } // end of init_from_sv_approx
+
+
+} // end of impl LaplacianGraph
+
+
+
+
+//=====================================================================================
+
 
 /// The structure corresponding to the embedding process
 /// It must be initiamized by the graph extracted from Hnsw according to the choosen strategy
@@ -107,7 +216,7 @@ where
         let initial_embedding = self.get_dmap_initial_embedding(self.asked_dimension);
         // we nedd to construct field initial_space has been contructed in get_laplacian 
         // cross entropy optimization
-        let b : f32 = 1.;
+        let b : f64 = 1.;
         let embedding_res = self.entropy_optimize(b, &initial_embedding);
         // optional store dump initial embedding
         self.initial_embedding = Some(initial_embedding);
@@ -143,85 +252,42 @@ where
     // It is in fact diffusion Maps at time 0
     //
     fn get_dmap_initial_embedding(&mut self, asked_dim: usize) -> Array2<F> {
+        //
+        assert!(asked_dim >= 2);
         // get eigen values of normalized symetric lapalcian
-        let laplacian = self.get_laplacian();
+        let mut laplacian = self.get_laplacian();
+        //
         log::debug!("got laplacian, going to svd ... asked_dim :  {}", asked_dim);
-        let mut svdapprox = SvdApprox::new(&laplacian.sym_laplacian);
-        // TODO adjust epsil ?
-        let svdmode = RangeApproxMode::EPSIL(RangePrecision::new(0.1, 5, asked_dim));
-        let svd_res = svdapprox.direct_svd(svdmode);
-        log::trace!("exited svd");
-        if !svd_res.is_ok() {
-            println!("svd approximation failed");
-            std::panic!();
-        }
+        let svd_res = laplacian.do_svd(asked_dim+5).unwrap();
         // As we used a laplacian and probability transitions we eigenvectors corresponding to lower eigenvalues
-        let lambdas = svdapprox.get_sigma().as_ref().unwrap();
+        let lambdas = svd_res.get_sigma().as_ref().unwrap();
         // singular vectors are stored in decrasing order according to lapack for both gesdd and gesvd. 
         if lambdas.len() > 2 && lambdas[1] > lambdas[0] {
             panic!("svd spectrum not decreasing");
         }
         // we examine spectrum
-        // get first non null lamba
-        // lowest lambda should be near 0. effect of laplacian graph.
-        log::info!("last laplacian eigenvalue value : {}", lambdas[lambdas.len() - 1]);
-        let first_non_zero_from_end : usize;
-        if !self.approximated_svd {
-            assert!((lambdas[lambdas.len() - 1]).abs() < 1.0E-4);
-            let first_non_zero_opt = lambdas.iter().rev().position(|&x| x > 1.0E-5);
-            if !first_non_zero_opt.is_some() {
-                println!("cannot find positive eigenvalue");
-                std::panic!();
-            }
-            else {
-                first_non_zero_from_end = first_non_zero_opt.unwrap();
-                log::debug!("first_non_zero_from_end : {}", first_non_zero_from_end)
-            }
-        }
-        else { // csr case
-            first_non_zero_from_end = 0;
-        }
-        //
-        let first_non_zero = lambdas.len() - 1 - first_non_zero_from_end; // is in [0..len()-1]
-        log::info!(
-            "laplacian last non null eigenvalue at rank : {}, value : {}",
-            first_non_zero,
-            lambdas[first_non_zero]
-        );
+        // our laplacian is without the term I-G , we use directly G symetrized so we consider upper eigenvalues
+        log::info!(" first 3 eigen values {:.2e} {:.2e} {:2e}",lambdas[0], lambdas[1] , lambdas[2]);
         // get info on spectral gap
-        if first_non_zero > 0 {
-            log::info!("\n first non null eigenvalue rank : {} value : {}", first_non_zero, lambdas[first_non_zero]);
-            log::info!("\n next non null eigenvalue rank : {} value : {} \n", first_non_zero-1, lambdas[first_non_zero-1]);
-            let rank_dim = asked_dim.min(first_non_zero);
-            log::info!("\n eigenvalue at asked_dim : {} value : {} \n", first_non_zero-rank_dim, lambdas[first_non_zero-rank_dim]);
-        }
-        if lambdas[0] > 1. {
-            log::error!("highest laplacian eigenvalue value : {}", lambdas[0]);
-        }
-        log::info!("\n highest eigenvalue value : {}", lambdas[0]);
+        log::info!(" last eigenvalue computed rank {} value {:.2e}", lambdas.len()-1, lambdas[lambdas.len()-1]);
         //
-        assert!(first_non_zero +1 >= asked_dim);          // 0 indexation!
-        log::debug!("keeping nb columns : {}", asked_dim);
-        let max_dim = asked_dim.min(first_non_zero + 1); // is in [1..len()]
+        log::debug!("keeping columns from 1 to : {}", asked_dim);
         // We get U at index in range first_non_zero-max_dim..first_non_zero
-        let u = svdapprox.get_u().as_ref().unwrap();
+        let u = svd_res.get_u().as_ref().unwrap();
         log::debug!("u shape : nrows: {} ,  ncols : {} ", u.nrows(), u.ncols());
         // we can get svd from approx range so that nrows and ncols can be number of nodes!
-        let mut embedded = Array2::<F>::zeros((u.nrows(), max_dim));
+        let mut embedded = Array2::<F>::zeros((u.nrows(), asked_dim));
         // according to theory (See Luxburg or Lafon-Keller diffusion maps) we must go back to eigen vectors of rw laplacian.
+        // Appendix A of Coifman-Lafon Diffusion Maps. Applied Comput Harmonical Analysis 2006.
         // moreover we must get back to type F
-        let sum_diag = laplacian.degrees.into_iter().sum::<f32>().sqrt();
-        let j_weights: Vec<f32> = laplacian
-            .degrees
-            .into_iter()
-            .map(|x| x.sqrt() / sum_diag)
-            .collect();
+        let sum_diag = laplacian.degrees.into_iter().sum::<f32>(); 
         for i in 0..u.nrows() {
             let row_i = u.row(i);
+            let weight_i = (laplacian.degrees[i]/sum_diag).sqrt();
             for j in 0..asked_dim {
-                // divide j value by diagonal and convert to F
+                // divide j value by diagonal and convert to F. TODO could take l_{i}^{t} as in dmap?
                 embedded[[i, j]] =
-                    F::from_f32(row_i[first_non_zero - j] / j_weights[i]).unwrap();
+                    F::from_f32(row_i[j+1] / weight_i).unwrap();
             }
         }
         log::trace!("ended get_dmap_initial_embedding");
@@ -277,23 +343,21 @@ where
             // The UMAP formula (p_i+p_j - p_i *p_j) implies taking the non null proba when one proba is null,
             // so UMAP initialization is more packed.
             let mut symgraph = (&transition_proba + &transition_proba.view().t()) * 0.5;
-            // now we go to the symetric laplacian. compute sum of row and renormalize. See Lafon-Keller-Coifman
+            // now we go to the symetric laplacian D^-1/2 * G * D^-1/2 but get rid of the I - ... cf Jostdan
+            //  compute sum of row and renormalize. See Lafon-Keller-Coifman
             // Diffusions Maps appendix B
             // IEEE TRANSACTIONS ON PATTERN ANALYSIS AND MACHINE INTELLIGENCE,VOL. 28, NO. 11,NOVEMBER 2006
             let diag = symgraph.sum_axis(Axis(1));
             for i in 0..nbnodes {
                 let mut row = symgraph.row_mut(i);
                 for j in 0..nbnodes {
-                    row[[j]] /= -(diag[[i]] * diag[[j]]).sqrt();
+                    row[[j]] /= (diag[[i]] * diag[[j]]).sqrt();
                 }
-                row[[i]] += 1.;      // in fact we take the laplacian to get excatly this!
+    //       row[[i]] = 1.;      // in fact we take the laplacian to get excatly this!
             }
             //
             log::trace!("\n allocating full matrix laplacian");            
-            let laplacian = LaplacianGraph {
-                sym_laplacian: MatRepr::from_array2(symgraph),
-                degrees: diag,
-            };
+            let laplacian = LaplacianGraph::new(MatRepr::from_array2(symgraph), diag);
             laplacian
         } else {
             log::debug!("Embedder using csr matrix");
@@ -365,10 +429,7 @@ where
                 values,
             );
             let csr_mat: CsMat<f32> = laplacian.to_csr();
-            let laplacian = LaplacianGraph {
-                sym_laplacian: MatRepr::from_csrmat(csr_mat),
-                degrees: diagonal,
-            };
+            let laplacian = LaplacianGraph::new(MatRepr::from_csrmat(csr_mat),diagonal);
             laplacian
         } // end case CsMat
           //
@@ -429,7 +490,6 @@ where
         // exp(- (first_dist -last_dist)/scale) >= PROBA_MIN
         // TODO do we need some optimization with respect to this 1 ? as we have lambda for high variations
         let mut scale =  1. * mean_rho;
-        assert!(scale > 0.);
         // now we adjust scale so that the ratio of proba of last neighbour to first neighbour do not exceed epsil.
         let first_dist = neighbours[0].weight.to_f32().unwrap();
         let last_dist = neighbours[nbgh - 1].weight.to_f32().unwrap();
@@ -482,7 +542,7 @@ where
     // The initial density makes the embedded graph asymetric as the initial graph.
     // The optimization function thus should try to restore asymetry and local scale as far as possible.
 
-    fn entropy_optimize(&self, b: f32, initial_embedding : &Array2<F>) -> Result<Array2<F>, String> {
+    fn entropy_optimize(&self, b: f64, initial_embedding : &Array2<F>) -> Result<Array2<F>, String> {
         //
         log::info!("in Embedder::entropy_optimize");
         //
@@ -508,6 +568,7 @@ where
             ce_optimization.gradient_iteration(grad_step);
             let cpu_time: Duration = start.elapsed();
             println!(" gradient iteration time {:?}", cpu_time);
+            log::trace!("ce after grad iter {:.2e}", ce_optimization.ce_compute());
         }
         let cpu_time: Duration = start.elapsed();
         println!(" gradient iterations cpu_time {:?}",  cpu_time);
@@ -538,7 +599,7 @@ struct EntropyOptim<F> {
     /// embedded_scales
     embedded_scales : Vec<f32>,
     ///
-    b : f32
+    b : f64
 } // end of EntropyOptim
 
 
@@ -547,7 +608,7 @@ struct EntropyOptim<F> {
 impl <F> EntropyOptim<F> 
     where F: Float +  NumAssign + std::iter::Sum + num_traits::cast::FromPrimitive + Send + Sync {
     //
-    pub fn new(node_params : &NodeParams, b: f32, initial_embed : &Array2<F>) -> Self {
+    pub fn new(node_params : &NodeParams, b: f64, initial_embed : &Array2<F>) -> Self {
         log::info!("entering EntropyOptim::new");
         //
         let nbng = node_params.params[0].edges.len();
@@ -601,9 +662,10 @@ impl <F> EntropyOptim<F>
         for edge in self.edges.iter() {
             let node_i = edge.0;
             let node_j = edge.1.node;
+            assert!(node_i != node_j);
             let weight_ij = edge.1.weight as f64;
             let weight_ij_embed = cauchy_edge_weight(&self.embedded[node_i].read(), 
-                    F::from_f32(self.initial_scales[node_i]).unwrap(), self.b,
+                    F::from_f32(self.embedded_scales[node_i]).unwrap(), self.b,
                     &self.embedded[node_j].read()).to_f64().unwrap();
             if weight_ij_embed > 0. {
                 ce_entropy += -weight_ij * weight_ij_embed.ln();
@@ -714,29 +776,33 @@ impl <F> EntropyOptim<F>
 
 /// computes the weight of an embedded edge.
 /// scale correspond at density observed at initial point in original graph (hence the asymetry)
-fn cauchy_edge_weight<F>(initial_point: &Array1<F>, scale: F, b : f32, other: &Array1<F>) -> F
+fn cauchy_edge_weight<F>(initial_point: &Array1<F>, scale: F, b : f64, other: &Array1<F>) -> F
 where
-    F: Float + std::iter::Sum
+    F: Float + std::iter::Sum + num_traits::FromPrimitive
 {
-    let mut dist = initial_point
+    let dist = initial_point
         .iter()
         .zip(other.iter())
         .map(|(i, f)| (*i - *f) * (*i - *f))
         .sum::<F>();
-    dist = dist / (scale*scale);
-    // ( b^dist = exp(d*log(b) )
-    dist = F::from((b*(dist.to_f32().unwrap()).ln()).exp()).unwrap();
+    let mut dist_f64 = dist.to_f64().unwrap() / (scale*scale).to_f64().unwrap();
+    // ( dist^b = exp(b*log(dist) )
+    dist_f64 = dist_f64.powf(b);
+//    log::trace!("dist_f64 = {:.4e}, scale {:.4e}", dist_f64, scale.to_f64().unwrap());
+    assert!(dist_f64 > 0.);
     //
-    let weight =  F::one() / (F::one() + dist);
-    assert!(weight.is_normal());      
-    return weight;
+    let weight =  1. / (1. + dist_f64);
+    let weight_f = F::from_f64(weight).unwrap();
+    assert!(weight_f < F::one());
+    assert!(weight_f.is_normal());      
+    return weight_f;
 } // end of embedded_edge_weight
 
 
 
 
 // gradient of embedded_edge_weight, fills in gradient to avoid allocation in return
-fn grad_cauchy_edge_weight<F>(initial_point: &Array1<F>, scale: F, b : f32, other: &Array1<F>,
+fn grad_cauchy_edge_weight<F>(initial_point: &Array1<F>, scale: F, b : f64, other: &Array1<F>,
             gradient: &mut Array1<F>,
 ) where
     F: Float + std::iter::Sum + num_traits::cast::FromPrimitive,
@@ -745,7 +811,7 @@ fn grad_cauchy_edge_weight<F>(initial_point: &Array1<F>, scale: F, b : f32, othe
     assert_eq!(gradient.len(), initial_point.len());
     //
     // compute rescaled squared distance as a f32
-    let d_ij = (l2_dist(&initial_point.view(), &other.view())/(scale*scale)).to_f32().unwrap();
+    let d_ij = (l2_dist(&initial_point.view(), &other.view())/(scale*scale)).to_f64().unwrap();
     let cauchy_weight = cauchy_edge_weight(initial_point, scale, b, initial_point);
     //
     let coeff_f = F::from(2. * b * d_ij.pow(b - 1.)).unwrap() * (cauchy_weight * cauchy_weight);
@@ -781,10 +847,16 @@ fn estimate_embedded_scales_from_first_neighbour<F> (node_params : &NodeParams, 
 } // end of estimate_scales_from_first_neighbours
 
 
+
 // in embedded space (in unit ball) the scale is chosen as the scale at corresponding point / divided by mean initial scales.
 fn estimate_embedded_scale_from_initial_scales(initial_scales :&Vec<f32>) -> Vec<f32> {
-    let mean_scale : f32 = initial_scales.iter().sum();
+    let mean_scale : f32 = initial_scales.iter().sum::<f32>() / (initial_scales.len() as f32);
     let embedded_scale : Vec<f32> = initial_scales.iter().map(|x| x/mean_scale).collect();
+    //
+    for i in 0..embedded_scale.len() {
+        log::trace!("embedded scale for node {} : {:.2e}", i , embedded_scale[i]);
+    }
+    //
     embedded_scale
 }  // end of estimate_embedded_scale_from_initial_scales
 
