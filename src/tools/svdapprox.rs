@@ -145,6 +145,24 @@ impl <F> MatRepr<F> where
         };
     } // end of shape 
 
+    /// returns true if we have a row compressed representation
+    pub fn is_csr(&self) -> bool {
+        match &self.data {
+            MatMode::FULL(_) =>  { return false },
+            MatMode::CSR(_) =>  { return true },
+        };
+    } // end of is_csr
+
+
+    /// returns a mutable reference to full matrice if data is given as full matrix, an Error otherwise
+    pub fn get_full_mut(&mut self) -> Result<&mut Array2<F>, usize> {
+        match &mut self.data {
+            MatMode::FULL(mat) => { return Ok(mat) }, 
+            _                  => {return Err(1) }, 
+        };
+    } // end of get_full_mut
+
+
     /// Matrix Vector multiplication. We use raw interface to get Blas.
     pub fn mat_dot_vector(&self, vec : &Array1<F>) -> Array1<F>  {
         match &self.data {
@@ -160,6 +178,7 @@ impl <F> MatRepr<F> where
     } // end of matDotVector
 
 } // end of impl block for MatRepr
+
 
 // I need a function to compute (once and only once in svd) a product B  = tQ*CSR for Q = (m,r) with r small (<=5) and CSR(m,n)
 // The matrix Q comes from range_approx so its rank (columns number) will really be small as recommended in csc_mulacc_dense_colmaj doc
@@ -466,27 +485,15 @@ pub fn check_range_approx_repr<F> (a_mat : &MatRepr<F>, q_mat: &Array2<F>) -> F
 
 //================================ SVD part ===============================
 
-/// Approximated svd.
-/// The first step is to find a range approximation of the matrix.
-/// This step can be done by asking for a required precision or a minimum rank for dense matrices represented by Array2.
-/// For compressed matrices only the precision criterion is possible.
-pub struct SvdApprox<'a, F: Scalar> {
-    /// matrix we want to approximate range of. We s
-    data : &'a MatRepr<F>,
-    s : Option<Array1<F>>,
-    u : Option<Array2<F>>,
-    vt : Option<Array2<F>>
-} // end of struct SvdApprox
+
+pub struct SvdResult<F> {
+  pub   s : Option<Array1<F>>,
+  pub   u : Option<Array2<F>>,
+  pub  vt : Option<Array2<F>>
+} // end of struct SvdResult<F> 
 
 
-impl <'a, F> SvdApprox<'a, F>  
-     where  F : Float + Lapack + Scalar  + ndarray::ScalarOperand + sprs::MulAcc {
-
-    pub fn new(data : &'a MatRepr<F>) -> Self {
-        SvdApprox{data, u : None, s : None, vt :None}
-    }
-
-    /// returns Sigma
+impl <F> SvdResult<F> {
     #[inline]
     pub fn get_sigma(&self) -> &Option<Array1<F>> {
         &self.s
@@ -503,8 +510,29 @@ impl <'a, F> SvdApprox<'a, F>
     pub fn get_vt(&self) -> &Option<Array2<F>> {
         &self.vt
     }
+}  // end of impl SvdResult
+
+
+
+/// Approximated svd.
+/// The first step is to find a range approximation of the matrix.
+/// This step can be done by asking for a required precision or a minimum rank for dense matrices represented by Array2.
+/// For compressed matrices only the precision criterion is possible.
+pub struct SvdApprox<'a, F: Scalar> {
+    /// matrix we want to approximate range of. We s
+    data : &'a MatRepr<F>,
+} // end of struct SvdApprox
+
+
+impl <'a, F> SvdApprox<'a, F>  
+     where  F : Float + Lapack + Scalar  + ndarray::ScalarOperand + sprs::MulAcc {
+
+    pub fn new(data : &'a MatRepr<F>) -> Self {
+        SvdApprox{data}
+    }
+
     // direct svd from Algo 5.1 of Halko-Tropp
-    pub fn direct_svd(&mut self, parameters : RangeApproxMode) -> Result<usize, String> {
+    pub fn direct_svd(&mut self, parameters : RangeApproxMode) -> Result<SvdResult<F>, String> {
         let ra = RangeApprox::new(self.data, parameters);
         let q;
         // match self.data {
@@ -551,17 +579,24 @@ impl <'a, F> SvdApprox<'a, F>
         let n = b.shape()[1];
         // must convert from Real to Float ...
         let s : Array1<F> = res_svd_b.s.iter().map(|x| F::from(*x).unwrap()).collect::<Array1<F>>();
-        self.s = Some(s);
         //
+        let s_u : Option<Array2<F>>;
         if let Some(u_vec) = res_svd_b.u {
             let u_1 = Array::from_shape_vec((m, r), u_vec).unwrap();
-            self.u = Some(q.dot(&u_1));
+            s_u = Some(q.dot(&u_1));
         }
+        else {
+            s_u = None;
+        }
+        let s_vt : Option<Array2<F>>;
         if let Some(vt_vec) = res_svd_b.vt {
-            self.vt = Some(Array::from_shape_vec((r, n), vt_vec).unwrap());
+            s_vt = Some(Array::from_shape_vec((r, n), vt_vec).unwrap());
+        }
+        else {
+            s_vt = None;
         }
         //
-        Ok(1)
+        Ok(SvdResult{s : Some(s), u : s_u, vt : s_vt})
     } // end of do_svd
 
 } // end of block impl for SvdApprox
@@ -725,12 +760,10 @@ fn test_svd_wiki_rank () {
     let matrepr = MatRepr::from_array2(mat);
     let mut svdapprox = SvdApprox::new(&matrepr);
     let svdmode = RangeApproxMode::RANK(RangeRank{rank:4, nbiter:5});
-    let res = svdapprox.direct_svd(svdmode);
-    assert!(res.is_ok());
-    assert!(svdapprox.get_sigma().is_some());
+    let svd_res = svdapprox.direct_svd(svdmode).unwrap();
     //
     let sigma = ndarray::arr1(&[ 3., (5f64).sqrt() , 2., 0.]);
-    if let Some(computed_s) = svdapprox.get_sigma() {
+    if let Some(computed_s) = svd_res.get_sigma() {
         assert!(computed_s.len() <= sigma.len());
         assert!(computed_s.len() >= 3);
         for i in 0..computed_s.len() {
@@ -788,12 +821,10 @@ fn test_svd_wiki_csr_epsil () {
     let matrepr = MatRepr::from_csrmat(csr_mat);
     let mut svdapprox = SvdApprox::new(&matrepr);
     let svdmode = RangeApproxMode::EPSIL(RangePrecision{epsil:0.1 , step:5, max_rank : 10});
-    let res = svdapprox.direct_svd(svdmode);
-    assert!(res.is_ok());
-    assert!(svdapprox.get_sigma().is_some());
+    let svd_res = svdapprox.direct_svd(svdmode).unwrap();
     //
     let sigma = ndarray::arr1(&[ 3., (5f32).sqrt() , 2., 0.]);
-    if let Some(computed_s) = svdapprox.get_sigma() {
+    if let Some(computed_s) = svd_res.get_sigma() {
         log::trace!{ "computed spectrum size {}", computed_s.len()};
         assert!(computed_s.len() <= sigma.len());
         assert!(computed_s.len() >= 3);
@@ -832,12 +863,10 @@ fn test_svd_wiki_full_epsil () {
     let matrepr = MatRepr::from_array2(mat);
     let mut svdapprox = SvdApprox::new(&matrepr);
     let svdmode = RangeApproxMode::EPSIL(RangePrecision{epsil:0.1 , step:5, max_rank : 4});
-    let res = svdapprox.direct_svd(svdmode);
-    assert!(res.is_ok());
-    assert!(svdapprox.get_sigma().is_some());
+    let svd_res = svdapprox.direct_svd(svdmode).unwrap();
     //
     let sigma = ndarray::arr1(&[ 3., (5f64).sqrt() , 2., 0.]);
-    if let Some(computed_s) = svdapprox.get_sigma() {
+    if let Some(computed_s) = svd_res.get_sigma() {
         assert!(computed_s.len() >= 3);
         assert!(sigma.len() >= computed_s.len());
         for i in 0..computed_s.len() {
