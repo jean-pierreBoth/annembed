@@ -10,6 +10,8 @@ use ndarray::{Array1, Array2, ArrayView1, Axis, Array};
 use ndarray_linalg::{Lapack, Scalar};
 use sprs::{CsMat, TriMatBase};
 
+use lax::{layout::MatrixLayout, UVTFlag, SVDDC_};
+
 // threading needs
 use rayon::prelude::*;
 use parking_lot::{RwLock};
@@ -29,7 +31,7 @@ const PROBA_MIN: f32 = 1.0E-5;
 // We need this structure to compute entropy od neighbour distribution
 /// This structure stores gathers parameters of a node:
 ///  - its local scale
-///  - list of edges. The f32 field constains distance or directed proba of edge going out of each node
+///  - list of edges. The f32 field constains distance (increasing order) or directed (decreasing) proba of edge going out of each node
 ///    (distance and proba) to its nearest neighbours as referenced in field neighbours of KGraph.
 ///
 /// Identity of neighbour node must be fetched in KGraph structure to spare memory
@@ -76,7 +78,6 @@ struct LaplacianGraph {
     u : Option<Array2<f32>>
 }
 
-use lax::{layout::MatrixLayout, UVTFlag, SVDDC_};
 
 impl LaplacianGraph {
 
@@ -561,7 +562,7 @@ where
         //
         log::debug!("in Embedder::entropy_optimize  ... gradient iterations");
         let start = ProcessTime::now();
-        for iter in 1..=10 {
+        for iter in 1..=100 {
             // loop on edges
             let grad_step = grad_step_init/iter as f64;
             let start = ProcessTime::now();
@@ -665,7 +666,7 @@ impl <F> EntropyOptim<F>
             assert!(node_i != node_j);
             let weight_ij = edge.1.weight as f64;
             let weight_ij_embed = cauchy_edge_weight(&self.embedded[node_i].read(), 
-                    F::from_f32(self.embedded_scales[node_i]).unwrap(), self.b,
+                    self.embedded_scales[node_i] as f64, self.b,
                     &self.embedded[node_j].read()).to_f64().unwrap();
             if weight_ij_embed > 0. {
                 ce_entropy += -weight_ij * weight_ij_embed.ln();
@@ -694,7 +695,7 @@ impl <F> EntropyOptim<F>
                     let node_j = edge.1.node;
                     let weight_ij = edge.1.weight as f64;
                     let weight_ij_embed = cauchy_edge_weight(&self.embedded[node_i].read(), 
-                            F::from_f32(self.initial_scales[node_i]).unwrap(), self.b,
+                            self.initial_scales[node_i] as f64, self.b,
                             &self.embedded[node_j].read()).to_f64().unwrap();
                     let mut term = 0.;
                     if weight_ij_embed > 0. {
@@ -727,16 +728,20 @@ impl <F> EntropyOptim<F>
         assert!(node_i != node_j);
         let weight = edge_out.1.weight;
         assert!(weight <= 1.);
-        let scale = self.initial_scales[node_i] as f64;
+        let scale = self.embedded_scales[node_i] as f64;
         { // get read lock 
             let y_i = self.embedded[node_i].read();
             let y_j = self.embedded[node_j].read();
             // compute l2 norm of y_j - y_i
             let d_ij : f64 = y_i.iter().zip(y_j.iter()).map(|(vi,vj)| (*vi-*vj)*(*vi-*vj)).sum::<F>().to_f64().unwrap();
+            let d_ij_scaled = d_ij/(scale*scale);
+            let cauchy_weight = 1./ (1. + d_ij_scaled.powf(self.b));
+            let coeff = 2. * self.b * cauchy_weight * d_ij_scaled.powf(self.b - 1.)/ (scale*scale);
             // taking into account P and 1.-P 
-            let mut coeff_ij = (- weight as f64 / (scale + d_ij)) + 
-                ( 1. - weight as f64) / ( (0.001 + d_ij) * (1. + d_ij / scale)  );
-            coeff_ij *= 2.;
+            let mut coeff_ij = (- weight as f64) + 
+                ( 1. - weight as f64) /  (0.01 + d_ij_scaled.powf(self.b) );
+            coeff_ij *= coeff;
+//            log::trace!("coeff grad : {:.3e}", coeff_ij);
             for k in 0..y_i.len() {
                 gradient[k] = (y_j[k] - y_i[k]) * F::from_f64(coeff_ij).unwrap();
             }
@@ -746,8 +751,8 @@ impl <F> EntropyOptim<F>
         let mut y_j = self.embedded[node_j].write();
         // update positions
         for k in 0..y_i.len() {
-            y_i[k] += gradient[k] * F::from_f64(grad_step).unwrap();
-            y_j[k] -= gradient[k] * F::from_f64(grad_step).unwrap();
+            y_i[k] -= gradient[k] * F::from_f64(grad_step).unwrap();
+            y_j[k] += gradient[k] * F::from_f64(grad_step).unwrap();
         }
     } // end of ce_optim_from_point
 
@@ -776,7 +781,7 @@ impl <F> EntropyOptim<F>
 
 /// computes the weight of an embedded edge.
 /// scale correspond at density observed at initial point in original graph (hence the asymetry)
-fn cauchy_edge_weight<F>(initial_point: &Array1<F>, scale: F, b : f64, other: &Array1<F>) -> F
+fn cauchy_edge_weight<F>(initial_point: &Array1<F>, scale: f64, b : f64, other: &Array1<F>) -> F
 where
     F: Float + std::iter::Sum + num_traits::FromPrimitive
 {
@@ -785,8 +790,8 @@ where
         .zip(other.iter())
         .map(|(i, f)| (*i - *f) * (*i - *f))
         .sum::<F>();
-    let mut dist_f64 = dist.to_f64().unwrap() / (scale*scale).to_f64().unwrap();
-    // ( dist^b = exp(b*log(dist) )
+    let mut dist_f64 = dist.to_f64().unwrap() / (scale*scale);
+    //
     dist_f64 = dist_f64.powf(b);
 //    log::trace!("dist_f64 = {:.4e}, scale {:.4e}", dist_f64, scale.to_f64().unwrap());
     assert!(dist_f64 > 0.);
@@ -800,25 +805,6 @@ where
 
 
 
-
-// gradient of embedded_edge_weight, fills in gradient to avoid allocation in return
-fn grad_cauchy_edge_weight<F>(initial_point: &Array1<F>, scale: F, b : f64, other: &Array1<F>,
-            gradient: &mut Array1<F>,
-) where
-    F: Float + std::iter::Sum + num_traits::cast::FromPrimitive,
-{
-    //
-    assert_eq!(gradient.len(), initial_point.len());
-    //
-    // compute rescaled squared distance as a f32
-    let d_ij = (l2_dist(&initial_point.view(), &other.view())/(scale*scale)).to_f64().unwrap();
-    let cauchy_weight = cauchy_edge_weight(initial_point, scale, b, initial_point);
-    //
-    let coeff_f = F::from(2. * b * d_ij.pow(b - 1.)).unwrap() * (cauchy_weight * cauchy_weight);
-    for i in 0..gradient.len() {
-        gradient[i] = coeff_f * (other[i] - initial_point[i]);
-    }
-} // end of grad_embedded_weight
 
 
 
