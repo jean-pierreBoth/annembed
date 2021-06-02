@@ -17,6 +17,8 @@ use rayon::prelude::*;
 use parking_lot::{RwLock};
 use std::sync::Arc;
 
+use rand::{Rng, thread_rng};
+
 use std::time::Duration;
 use cpu_time::ProcessTime;
 
@@ -45,6 +47,13 @@ impl NodeParam {
     pub fn new(scale: f32, edges: Vec<OutEdge<f32>>) -> Self {
         NodeParam { scale, edges }
     }
+
+    /// for a given node index return corresponding edge if it is in neighbours, None else 
+    pub fn get_edge(&self, i : NodeIdx) -> Option<&OutEdge<f32>> {
+        self.edges.iter().find( |&&edge| edge.node == i)
+    }  // end of is_around
+
+
 } // end of NodeParam
 
 /// We maintain NodeParam for each node as it enables scaling in the embedded space and cross entropy minimization.
@@ -558,13 +567,13 @@ where
         let cpu_time: Duration = start.elapsed();
         println!(" initial cross entropy value {:.2e},  in time {:?}", initial_ce, cpu_time);
         // We manage some iterations on gradient computing
-        let grad_step_init = 0.1;
+        let grad_step_init = 1.;
         //
         log::debug!("in Embedder::entropy_optimize  ... gradient iterations");
         let start = ProcessTime::now();
-        for iter in 1..=100 {
+        for iter in 1..=10 {
             // loop on edges
-            let grad_step = grad_step_init/iter as f64;
+            let grad_step = grad_step_init/(iter as f64).sqrt();
             let start = ProcessTime::now();
             ce_optimization.gradient_iteration(grad_step);
             let cpu_time: Duration = start.elapsed();
@@ -711,6 +720,9 @@ impl <F> EntropyOptim<F>
     }
 
 
+
+
+
     // TODO : pass functions corresponding to edge_weight and grad_edge_weight as arguments to test others weight function
     /// This function optimize cross entropy for Shannon cross entropy
     fn ce_optim_edge_shannon(&self, edge_idx : usize, grad_step : f64)
@@ -720,7 +732,8 @@ impl <F> EntropyOptim<F>
         // get coordinate of node
         let node_i = self.edges[edge_idx].0;
         // we locks once and directly a write lock as conflicts should be small, many edges, some threads. see Recht Hogwild!
-        let y_i_len = self.embedded[node_i].read().len();
+        let mut y_i = self.embedded[node_i].write();
+        let y_i_len = y_i.len();
         let mut gradient = Array1::<F>::zeros(y_i_len);
         //
         let edge_out = self.edges[edge_idx];
@@ -730,29 +743,43 @@ impl <F> EntropyOptim<F>
         assert!(weight <= 1.);
         let scale = self.embedded_scales[node_i] as f64;
         { // get read lock 
-            let y_i = self.embedded[node_i].read();
-            let y_j = self.embedded[node_j].read();
+            let mut y_j = self.embedded[node_j].write();
             // compute l2 norm of y_j - y_i
             let d_ij : f64 = y_i.iter().zip(y_j.iter()).map(|(vi,vj)| (*vi-*vj)*(*vi-*vj)).sum::<F>().to_f64().unwrap();
             let d_ij_scaled = d_ij/(scale*scale);
             let cauchy_weight = 1./ (1. + d_ij_scaled.powf(self.b));
+            // this coeff is common for P and 1.-P part
             let coeff = 2. * self.b * cauchy_weight * d_ij_scaled.powf(self.b - 1.)/ (scale*scale);
             // taking into account P and 1.-P 
-            let mut coeff_ij = (- weight as f64) + 
-                ( 1. - weight as f64) /  (0.01 + d_ij_scaled.powf(self.b) );
-            coeff_ij *= coeff;
+            let coeff_ij = (- weight as f64) * coeff;
 //            log::trace!("coeff grad : {:.3e}", coeff_ij);
             for k in 0..y_i.len() {
                 gradient[k] = (y_j[k] - y_i[k]) * F::from_f64(coeff_ij).unwrap();
+                y_i[k] -= gradient[k] * F::from_f64(grad_step).unwrap();
+                y_j[k] += gradient[k] * F::from_f64(grad_step).unwrap();
             }
-        }
-        // update gradient, we need a awrite lock
-        let mut y_i = self.embedded[node_i].write();
-        let mut y_j = self.embedded[node_j].write();
-        // update positions
-        for k in 0..y_i.len() {
-            y_i[k] -= gradient[k] * F::from_f64(grad_step).unwrap();
-            y_j[k] += gradient[k] * F::from_f64(grad_step).unwrap();
+            log::trace!("norm attracting coeff {:.2e} gradient {:.2e}", coeff_ij, l2_norm(&gradient.view()).to_f64().unwrap());
+            // now we loop on negative sampling filtering out nodes that are either node_i or are in node_i neighbours.
+            let mut neg_node : NodeIdx;
+            let nb_neg = 10;
+            for _k in 0..nb_neg {
+                neg_node = thread_rng().gen_range(0..self.embedded_scales.len());
+                if neg_node != node_i && neg_node != node_j {
+                    let y_k = self.embedded[neg_node].read();
+                    let d_ik : f64 = y_i.iter().zip(y_k.iter()).map(|(vi,vj)| (*vi-*vj)*(*vi-*vj)).sum::<F>().to_f64().unwrap();
+                    let d_ik_scaled = d_ik/(scale*scale);
+                    let cauchy_weight = 1./ (1. + d_ik_scaled.powf(self.b));
+                    // this coeff is common for P and 1.-P part
+                    let coeff = 2. * self.b * cauchy_weight / (0.01 + d_ik * d_ik);
+                    let weight = 0.;   // assume weight is 0 else check if k is in neighbourhood of i, but this happens with proba nb_ng/nbnodes
+                    let coeff_ik = (coeff * ( 1. - weight as f64)).min(4.);
+                    for l in 0..y_i.len() {
+                        gradient[l] = (y_k[l] - y_i[l]) * F::from_f64(coeff_ik).unwrap();
+                        y_i[l] -= gradient[l] * F::from_f64(grad_step).unwrap();
+                    }
+                    log::trace!("norm repulsive gradient coeff {:.2e} {:.2e}", coeff_ik , l2_norm(&gradient.view()).to_f64().unwrap());
+                }
+            }  // end of neg sampling
         }
     } // end of ce_optim_from_point
 
@@ -797,11 +824,15 @@ where
     assert!(dist_f64 > 0.);
     //
     let weight =  1. / (1. + dist_f64);
-    let weight_f = F::from_f64(weight).unwrap();
+    let mut weight_f = F::from_f64(weight).unwrap();
+    if !(weight_f < F::one()) {
+        weight_f = F::one() - F::epsilon();
+        log::trace!("cauchy_edge_weight fixing dist_f64 {:2.e}", dist_f64);
+    }
     assert!(weight_f < F::one());
     assert!(weight_f.is_normal());      
     return weight_f;
-} // end of embedded_edge_weight
+} // end of cauchy_edge_weight
 
 
 
@@ -813,6 +844,15 @@ where F :  Float + std::iter::Sum + num_traits::cast::FromPrimitive {
     //
     y1.iter().zip(y2.iter()).map(|(v1,v2)| (*v1 - *v2) * (*v1- *v2)).sum()
 }  // end of l2_dist
+
+
+
+
+fn l2_norm<F>(v: &ArrayView1<'_, F>) -> F 
+where F :  Float + std::iter::Sum + num_traits::cast::FromPrimitive {
+    //
+    v.iter().map(|x| (*x) * (*x)).sum::<F>().sqrt()
+}  // end of l2_norm
 
 
 
@@ -919,7 +959,6 @@ mod tests {
 
 
     use rand::distributions::{Uniform};
-    use rand::prelude::*;
 
 
     // have a warning with and error without ?
