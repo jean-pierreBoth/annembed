@@ -18,6 +18,7 @@ use parking_lot::{RwLock};
 use std::sync::Arc;
 
 use rand::{Rng, thread_rng};
+use rand::distributions::{Uniform};
 
 use std::time::Duration;
 use cpu_time::ProcessTime;
@@ -53,7 +54,11 @@ impl NodeParam {
         self.edges.iter().find( |&&edge| edge.node == i)
     }  // end of is_around
 
-
+    /// perplexity. Hill number cf Leinster
+    pub fn get_perplexity(&self) -> f32 {
+        let h : f32 = self.edges.iter().map(|&x| -x.weight * x.weight.ln()).sum();
+        h.exp()
+    }
 } // end of NodeParam
 
 /// We maintain NodeParam for each node as it enables scaling in the embedded space and cross entropy minimization.
@@ -222,8 +227,12 @@ where
 
     /// do the embedding
     pub fn embed(&mut self) -> Result<usize, usize> {
+        // construction of initial neighbourhood
+        self.initial_space = Some(NodeParams{params : self.construct_initial_space()});
+        // we can initialize embedding with diffusion maps or pure random.
         // initial embedding via diffusion maps
-        let initial_embedding = self.get_dmap_initial_embedding(self.asked_dimension);
+//        let initial_embedding = self.get_dmap_initial_embedding(self.asked_dimension);
+        let initial_embedding = self.get_random_init(10.);
         // we nedd to construct field initial_space has been contructed in get_laplacian 
         // cross entropy optimization
         let b : f64 = 1.;
@@ -255,6 +264,42 @@ where
      pub fn get_initial_embedding(&self) -> Option<&Array2<F>> {
         return self.initial_embedding.as_ref();
     }   
+
+    /// get random initialization in a square of side size
+    fn get_random_init(&mut self, size:f32) -> Array2<F> {
+        log::trace!("Embedder get_random_init with size {:.2e}", size);
+        //
+        let nb_nodes = self.kgraph.get_nb_nodes();
+        let mut initial_embedding = Array2::<F>::zeros((nb_nodes, self.asked_dimension));
+        let unif = Uniform::<f32>::new(-size/2. , size/2.);
+        let mut rng = thread_rng();
+        for i in 0..nb_nodes {
+            for j in 0..self.asked_dimension {
+                initial_embedding[[i,j]] = F::from(rng.sample(unif)).unwrap();
+            }
+        }
+        //
+        initial_embedding
+    }  // end of get_random_init
+
+
+    /// construct node params for later optimization
+    fn construct_initial_space(&self) -> Vec::<NodeParam> {
+        let nbnodes = self.kgraph.get_nb_nodes();
+        // get stats
+        let mut node_params = Vec::<NodeParam>::with_capacity(nbnodes);
+        // TODO can be // with rayon taking care of indexation
+        let neighbour_hood = self.kgraph.get_neighbours();
+        for i in 0..neighbour_hood.len() {
+            let node_param = self.get_scale_from_proba_normalisation(&neighbour_hood[i]);
+            log::trace!(" perplexity node {}  : {:.2e}", i , node_param.get_perplexity());
+            assert_eq!(node_param.edges.len(), neighbour_hood[i].len());
+            node_params.push(node_param);
+        }
+        node_params
+    }  // end of construction of node params
+
+
 
     // this function initialize and returns embedding by a svd (or else?)
     // We are intersested in first eigenvalues (excpeting 1.) of transition probability matrix
@@ -302,7 +347,7 @@ where
         }
         log::trace!("ended get_dmap_initial_embedding");
         return embedded;
-    } // end of get_initial_embedding
+    } // end of get_dmap_initial_embedding
 
 
 
@@ -325,30 +370,25 @@ where
         let nbnodes = self.kgraph.get_nb_nodes();
         // get stats
         let max_nbng = self.kgraph.get_max_nbng();
-        let mut node_params = Vec::<NodeParam>::with_capacity(nbnodes);
+        let node_params = self.initial_space.as_ref().unwrap();
         // TODO define a threshold for dense/sparse representation
         if nbnodes <= 300 {
             log::debug!("Embedder using full matrix");
             let mut transition_proba = Array2::<f32>::zeros((nbnodes, nbnodes));
             // we loop on all nodes, for each we want nearest neighbours, and get scale of distances around it
-            // TODO can be // with rayon taking care of indexation
-            let neighbour_hood = self.kgraph.get_neighbours();
-            for i in 0..neighbour_hood.len() {
+            for i in 0..node_params.params.len() {
                 // remind to index each request
                 log::trace!(" scaling node {}", i);
-                let node_param = self.get_scale_from_proba_normalisation(&neighbour_hood[i]);
-                assert_eq!(node_param.edges.len(), neighbour_hood[i].len());
+                let node_param = node_params.get_node_param(i);
+                log::trace!(" perplexity node {}  : {:.2e}", i , node_param.get_perplexity());
                 // CAVEAT diagonal transition 0. or 1. ? Choose 0. as in t-sne umap LargeVis
                 transition_proba[[i, i]] = 0.;
                 for j in 0..node_param.edges.len() {
                     let edge = node_param.edges[j];
                     transition_proba[[i, edge.node]] = edge.weight;
                 } // end of for j
-                node_params.push(node_param);
             } // end for i
             log::trace!("scaling of nodes done");            
-             // do not forget to store this representation of initial space as we need it for entropy optimization
-            self.initial_space = Some(NodeParams{params:node_params});
             // now we symetrize the graph by taking mean
             // The UMAP formula (p_i+p_j - p_i *p_j) implies taking the non null proba when one proba is null,
             // so UMAP initialization is more packed.
@@ -374,20 +414,14 @@ where
             self.approximated_svd = true;
             // now we must construct a CsrMat to store the symetrized graph transition probablity to go svd.
             // and initialize field initial_space with some NodeParams
-            let neighbour_hood = self.kgraph.get_neighbours();
-            // TODO This can be made // with a chashmap
             let mut edge_list = HashMap::<(usize, usize), f32>::with_capacity(nbnodes * max_nbng);
-            for i in 0..neighbour_hood.len() {
-                let node_param = self.get_scale_from_proba_normalisation(&neighbour_hood[i]);
-                assert_eq!(node_param.edges.len(), neighbour_hood[i].len());
-                for j in 0..neighbour_hood[i].len() {
-                    let edge = neighbour_hood[i][j];
+            for i in 0..node_params.params.len() {
+                let node_param = node_params.get_node_param(i);
+                for j in 0..node_param.edges.len() {
+                    let edge = node_param.edges[j];
                     edge_list.insert((i, edge.node), node_param.edges[j].weight);
                 } // end of for j
-                node_params.push(node_param);
             }
-            // do not forget to store this representation of initial space as we need it for entropy optimization
-            self.initial_space = Some(NodeParams{params:node_params});
             // now we iter on the hasmap symetrize the graph, and insert in triplets transition_proba
             let mut diagonal = Array1::<f32>::zeros(nbnodes);
             let mut rows = Vec::<usize>::with_capacity(nbnodes * 2 * max_nbng);
@@ -499,7 +533,7 @@ where
         // we set scale so that transition proba do not vary more than PROBA_MIN between first and last neighbour
         // exp(- (first_dist -last_dist)/scale) >= PROBA_MIN
         // TODO do we need some optimization with respect to this 1 ? as we have lambda for high variations
-        let mut scale =  1. * mean_rho;
+        let mut scale =  2. * mean_rho;
         // now we adjust scale so that the ratio of proba of last neighbour to first neighbour do not exceed epsil.
         let first_dist = neighbours[0].weight.to_f32().unwrap();
         let last_dist = neighbours[nbgh - 1].weight.to_f32().unwrap();
@@ -578,7 +612,7 @@ where
             ce_optimization.gradient_iteration(grad_step);
             let cpu_time: Duration = start.elapsed();
             println!(" gradient iteration time {:?}", cpu_time);
-            log::trace!("ce after grad iter {:.2e}", ce_optimization.ce_compute());
+            log::debug!("ce after grad iter {:.2e}", ce_optimization.ce_compute());
         }
         let cpu_time: Duration = start.elapsed();
         println!(" gradient iterations cpu_time {:?}",  cpu_time);
@@ -640,7 +674,7 @@ impl <F> EntropyOptim<F>
         }
         // compute embedded scales
 //        let embedded_scales = estimate_embedded_scales_from_first_neighbour(node_params, b, initial_embed);
-        let embedded_scales = estimate_embedded_scale_from_initial_scales(&initial_scales);
+        let embedded_scales = estimate_embedded_scales_from_first_neighbour(node_params, b, initial_embed);
         //
         EntropyOptim { edges, initial_scales, embedded, embedded_scales, b}
         // construct field embedded
@@ -777,7 +811,7 @@ impl <F> EntropyOptim<F>
                         gradient[l] = (y_k[l] - y_i[l]) * F::from_f64(coeff_ik).unwrap();
                         y_i[l] -= gradient[l] * F::from_f64(grad_step).unwrap();
                     }
-                    log::trace!("norm repulsive gradient coeff {:.2e} {:.2e}", coeff_ik , l2_norm(&gradient.view()).to_f64().unwrap());
+                    log::trace!("norm repulsive  coeff gradient {:.2e} {:.2e}", coeff_ik , l2_norm(&gradient.view()).to_f64().unwrap());
                 }
             }  // end of neg sampling
         }
@@ -858,16 +892,19 @@ where F :  Float + std::iter::Sum + num_traits::cast::FromPrimitive {
 
 // in this function we compute scale in embedded space so a point is not pushed with respect to what corresponds to
 // its first neighbour in original space. what sense
-fn estimate_embedded_scales_from_first_neighbour<F> (node_params : &NodeParams, b : f32, initial_embed : &Array2<F>) -> Vec<f32> 
+fn estimate_embedded_scales_from_first_neighbour<F> (node_params : &NodeParams, b : f64, initial_embed : &Array2<F>) -> Vec<f32> 
     where F :  Float + std::iter::Sum + num_traits::cast::FromPrimitive {
     let nbnodes = node_params.params.len();
     let mut embedded_scales = Vec::<f32>::with_capacity(nbnodes);
     for i in 0..nbnodes {
-        let first_edge = node_params.params[i].edges[0];
-        let p1 = first_edge.weight;
+        let index = node_params.params[i].edges.len()-1;
+        let first_edge = node_params.params[i].edges[index];
+        let p1 = first_edge.weight as f64;
         let n1 = first_edge.node;
-        let new_scale = (p1/(1.- p1)).pow(1./b) * l2_dist(&initial_embed.row(i), &initial_embed.row(n1)).to_f32().unwrap();
-        embedded_scales.push(new_scale);
+        let dist = l2_dist(&initial_embed.row(i), &initial_embed.row(n1)).to_f64().unwrap().sqrt();
+        let new_scale = (p1/(1.- p1)).pow(0.5/b) * dist;
+        log::trace!("embedded scale for node {} : {:.2e}", i , new_scale);
+        embedded_scales.push(new_scale as f32);
     }
     embedded_scales
 } // end of estimate_scales_from_first_neighbours
