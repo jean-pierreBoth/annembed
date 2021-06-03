@@ -70,6 +70,10 @@ impl NodeParams {
     pub fn get_node_param(&self, node: NodeIdx) -> &NodeParam {
         return &self.params[node];
     }
+
+    pub fn get_nb_nodes(&self) -> usize {
+        self.params.len()
+    }
 } // end of NodeParams
 
 
@@ -227,12 +231,16 @@ where
 
     /// do the embedding
     pub fn embed(&mut self) -> Result<usize, usize> {
-        // construction of initial neighbourhood
+        // construction of initial neighbourhood, scales and weight of edges from distances.
         self.initial_space = Some(NodeParams{params : self.construct_initial_space()});
         // we can initialize embedding with diffusion maps or pure random.
         // initial embedding via diffusion maps
 //        let initial_embedding = self.get_dmap_initial_embedding(self.asked_dimension);
-        let initial_embedding = self.get_random_init(10.);
+        // if we use random initialization we must have a coherent box size.
+        let kgraph_stats = self.kgraph.get_kraph_stats();
+        // choose box_size so to have distance between points on the scale of box_size.
+        let box_size = kgraph_stats.get_radius_at_quantile(0.5).sqrt();
+        let initial_embedding = self.get_random_init(2. * box_size);
         // we nedd to construct field initial_space has been contructed in get_laplacian 
         // cross entropy optimization
         let b : f64 = 1.;
@@ -269,7 +277,7 @@ where
     fn get_random_init(&mut self, size:f32) -> Array2<F> {
         log::trace!("Embedder get_random_init with size {:.2e}", size);
         //
-        let nb_nodes = self.kgraph.get_nb_nodes();
+        let nb_nodes = self.initial_space.as_ref().unwrap().get_nb_nodes();
         let mut initial_embedding = Array2::<F>::zeros((nb_nodes, self.asked_dimension));
         let unif = Uniform::<f32>::new(-size/2. , size/2.);
         let mut rng = thread_rng();
@@ -283,7 +291,9 @@ where
     }  // end of get_random_init
 
 
-    /// construct node params for later optimization
+    /// determines scales in initial space and proba of edges.
+    /// Construct node params for later optimization
+    // after this function we do not need field kgraph anymore!
     fn construct_initial_space(&self) -> Vec::<NodeParam> {
         let nbnodes = self.kgraph.get_nb_nodes();
         // get stats
@@ -533,7 +543,7 @@ where
         // we set scale so that transition proba do not vary more than PROBA_MIN between first and last neighbour
         // exp(- (first_dist -last_dist)/scale) >= PROBA_MIN
         // TODO do we need some optimization with respect to this 1 ? as we have lambda for high variations
-        let mut scale =  2. * mean_rho;
+        let mut scale =  1. * mean_rho;
         // now we adjust scale so that the ratio of proba of last neighbour to first neighbour do not exceed epsil.
         let first_dist = neighbours[0].weight.to_f32().unwrap();
         let last_dist = neighbours[nbgh - 1].weight.to_f32().unwrap();
@@ -552,11 +562,6 @@ where
                 .map(|n| OutEdge::<f32>::new(n.node, (-n.weight.to_f32().unwrap() / scale).exp()))
                 .collect::<Vec<OutEdge<f32>>>();
             //
-            // if probas_edge[probas_edge.len() - 1].weight / probas_edge[0].weight > PROBA_MIN {
-            //     for i in 0..probas_edge.len() {
-            //         println!("edge {} , proba : {} ", neighbours[i].weight.to_f32().unwrap(), probas_edge[i].weight);
-            //     }
-            // }
             log::trace!("scale : {:.2e} proba gap {:.2e}", scale, probas_edge[probas_edge.len() - 1].weight / probas_edge[0].weight);
             assert!(probas_edge[probas_edge.len() - 1].weight / probas_edge[0].weight >= PROBA_MIN);
             let sum = probas_edge.iter().map(|e| e.weight).sum::<f32>();
@@ -611,7 +616,7 @@ where
             let start = ProcessTime::now();
             ce_optimization.gradient_iteration(grad_step);
             let cpu_time: Duration = start.elapsed();
-            println!(" gradient iteration time {:?}", cpu_time);
+            println!(" gradient iteration time {:?} {:.2e} ", cpu_time, ce_optimization.ce_compute());
             log::debug!("ce after grad iter {:.2e}", ce_optimization.ce_compute());
         }
         let cpu_time: Duration = start.elapsed();
@@ -633,8 +638,9 @@ where
 /// All we need to optimize entropy discrepancy
 /// A list of edge with its weight, an array of scale for each origin node of an edge, proba (weight) of each edge
 /// and coordinates in embedded_space with lock protection for //
-struct EntropyOptim<F> {
-    /// for each edge , initial node, end node, proba (weight of edge) 24 bytes
+struct EntropyOptim<'a, F> {
+    /// initial space by neighbourhood of each node
+    node_params: &'a NodeParams,    /// for each edge , initial node, end node, proba (weight of edge) 24 bytes
     edges : Vec<(NodeIdx, OutEdge<f32>)>,
     /// scale for each node
     initial_scales : Vec<f32>,
@@ -649,14 +655,14 @@ struct EntropyOptim<F> {
 
 
 
-impl <F> EntropyOptim<F> 
+impl <'a, F> EntropyOptim<'a,F> 
     where F: Float +  NumAssign + std::iter::Sum + num_traits::cast::FromPrimitive + Send + Sync {
     //
-    pub fn new(node_params : &NodeParams, b: f64, initial_embed : &Array2<F>) -> Self {
+    pub fn new(node_params : &'a NodeParams, b: f64, initial_embed : &Array2<F>) -> Self {
         log::info!("entering EntropyOptim::new");
-        //
+        // TODO what if not the same number of neighbours!!
         let nbng = node_params.params[0].edges.len();
-        let nbnodes = node_params.params.len();
+        let nbnodes = node_params.get_nb_nodes();
         let mut edges = Vec::<(NodeIdx, OutEdge<f32>)>::with_capacity(nbnodes*nbng);
         let mut initial_scales =  Vec::<f32>::with_capacity(nbnodes);
         // construct field edges
@@ -674,9 +680,9 @@ impl <F> EntropyOptim<F>
         }
         // compute embedded scales
 //        let embedded_scales = estimate_embedded_scales_from_first_neighbour(node_params, b, initial_embed);
-        let embedded_scales = estimate_embedded_scales_from_first_neighbour(node_params, b, initial_embed);
+        let embedded_scales = estimate_embedded_scales_from_first_neighbour(node_params, b, &initial_scales);
         //
-        EntropyOptim { edges, initial_scales, embedded, embedded_scales, b}
+        EntropyOptim { node_params,  edges, initial_scales, embedded, embedded_scales, b}
         // construct field embedded
     }  // end of new 
 
@@ -799,6 +805,10 @@ impl <F> EntropyOptim<F>
             for _k in 0..nb_neg {
                 neg_node = thread_rng().gen_range(0..self.embedded_scales.len());
                 if neg_node != node_i && neg_node != node_j {
+                    if self.node_params.get_node_param(node_i).get_edge(neg_node).is_some() {
+                        log::trace!("neg node is around node i");
+                        continue;
+                    }
                     let y_k = self.embedded[neg_node].read();
                     let d_ik : f64 = y_i.iter().zip(y_k.iter()).map(|(vi,vj)| (*vi-*vj)*(*vi-*vj)).sum::<F>().to_f64().unwrap();
                     let d_ik_scaled = d_ik/(scale*scale);
@@ -892,17 +902,15 @@ where F :  Float + std::iter::Sum + num_traits::cast::FromPrimitive {
 
 // in this function we compute scale in embedded space so a point is not pushed with respect to what corresponds to
 // its first neighbour in original space. what sense
-fn estimate_embedded_scales_from_first_neighbour<F> (node_params : &NodeParams, b : f64, initial_embed : &Array2<F>) -> Vec<f32> 
-    where F :  Float + std::iter::Sum + num_traits::cast::FromPrimitive {
+fn estimate_embedded_scales_from_first_neighbour(node_params : &NodeParams, b : f64, initial_scales : &Vec<f32>) -> Vec<f32> {
     let nbnodes = node_params.params.len();
     let mut embedded_scales = Vec::<f32>::with_capacity(nbnodes);
     for i in 0..nbnodes {
         let index = node_params.params[i].edges.len()-1;
-        let first_edge = node_params.params[i].edges[index];
-        let p1 = first_edge.weight as f64;
-        let n1 = first_edge.node;
-        let dist = l2_dist(&initial_embed.row(i), &initial_embed.row(n1)).to_f64().unwrap().sqrt();
-        let new_scale = (p1/(1.- p1)).pow(0.5/b) * dist;
+        let ref_edge = node_params.params[i].edges[index];
+        let p1 = ref_edge.weight as f64;
+        let dist = initial_scales[i];
+        let new_scale = (p1/(1.- p1)).pow(0.5/b) * dist as f64;
         log::trace!("embedded scale for node {} : {:.2e}", i , new_scale);
         embedded_scales.push(new_scale as f32);
     }
