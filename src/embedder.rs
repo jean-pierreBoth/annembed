@@ -207,11 +207,17 @@ impl LaplacianGraph {
 /// main parameters driving Embeding
 #[derive(Clone, Copy)]
 pub struct EmbedderParams {
+    /// embedding dimension : default to 2
     pub asked_dim : usize,
     pub b : f64,
+    /// scale factor
     pub scale_rho : f64,
+    /// initial gradient step , default to 0.05
     pub grad_step : f64,
-    pub max_grad_iter : usize,
+    /// nb iter sampling default = 5
+    pub nb_sampling_by_edge : usize,
+    /// number of gradient batch
+    pub nb_grad_batch : usize,
 } // end of EmbedderParams
 
 
@@ -220,11 +226,20 @@ impl EmbedderParams {
         let asked_dim = 2;
         let b = 1.;
         let grad_step = 0.05;
+        let nb_sampling_by_edge = 5;
         let scale_rho = 1.;
-        let max_grad_iter = 100;
-        EmbedderParams{asked_dim, b, scale_rho, grad_step, max_grad_iter}
+        let nb_grad_batch = 100;
+        EmbedderParams{asked_dim, b, scale_rho, grad_step, nb_sampling_by_edge , nb_grad_batch}
     }
 
+    pub fn log(&self) {
+        log::info!("EmbedderParams");
+        log::info!("\t gradient step : {}", self.grad_step);
+        log::info!("\t nb sampling by edge : {}", self.nb_sampling_by_edge);
+        log::info!("\t scale factor : {}", self.scale_rho);
+        log::info!("\t number of gradient batch : {}", self.nb_grad_batch);
+
+    }
 } // end of impl EmbedderParams
 
 
@@ -273,14 +288,16 @@ where
         self.parameters.grad_step
     }
 
-    pub fn get_max_grad_iter(&self) -> usize {
-        self.parameters.max_grad_iter
+    pub fn get_nb_grad_batch(&self) -> usize {
+        self.parameters.nb_grad_batch
     }
 
     /// do the embedding
     pub fn embed(&mut self) -> Result<usize, usize> {
         //
         let kgraph_stats = self.kgraph.get_kraph_stats();
+        //
+        self.parameters.log();
         // construction of initial neighbourhood, scales and weight of edges from distances.
         self.initial_space = Some(NodeParams{params : self.construct_initial_space()});
         // we can initialize embedding with diffusion maps or pure random.
@@ -291,7 +308,7 @@ where
         let initial_embedding = self.get_random_init(1.);
         // we nedd to construct field initial_space has been contructed in get_laplacian 
         // cross entropy optimization
-        let embedding_res = self.entropy_optimize(self.get_b(), self.get_grad_step(), &initial_embedding);
+        let embedding_res = self.entropy_optimize(&self.parameters, &initial_embedding);
         // optional store dump initial embedding
         self.initial_embedding = Some(initial_embedding);
         //
@@ -445,7 +462,7 @@ where
         let max_nbng = self.kgraph.get_max_nbng();
         let node_params = self.initial_space.as_ref().unwrap();
         // TODO define a threshold for dense/sparse representation
-        if nbnodes <= 300 {
+        if nbnodes <= 5000 {
             log::debug!("Embedder using full matrix");
             let mut transition_proba = Array2::<f32>::zeros((nbnodes, nbnodes));
             // we loop on all nodes, for each we want nearest neighbours, and get scale of distances around it
@@ -657,7 +674,7 @@ where
     // The initial density makes the embedded graph asymetric as the initial graph.
     // The optimization function thus should try to restore asymetry and local scale as far as possible.
 
-    fn entropy_optimize(&self, b: f64, grad_step : f64, initial_embedding : &Array2<F>) -> Result<Array2<F>, String> {
+    fn entropy_optimize(&self, params : &EmbedderParams, initial_embedding : &Array2<F>) -> Result<Array2<F>, String> {
         //
         log::info!("in Embedder::entropy_optimize");
         //
@@ -665,39 +682,30 @@ where
             log::error!("Embedder::entropy_optimize : initial_space not constructed, exiting");
             return Err(String::from(" initial_space not constructed, no NodeParams"));
         }
-        let ce_optimization = EntropyOptim::new(self.initial_space.as_ref().unwrap(), b, grad_step, initial_embedding);
+        let ce_optimization = EntropyOptim::new(self.initial_space.as_ref().unwrap(), params, initial_embedding);
         // compute initial value of objective function
         let start = ProcessTime::now();
         let initial_ce = ce_optimization.ce_compute();
         let cpu_time: Duration = start.elapsed();
         println!(" initial cross entropy value {:.2e},  in time {:?}", initial_ce, cpu_time);
         // We manage some iterations on gradient computing
-        let grad_step_init = grad_step;
+        let grad_step_init = params.grad_step;
         log::info!("grad_step_init : {:.2e}", grad_step_init);
         //
         log::debug!("in Embedder::entropy_optimize  ... gradient iterations");
-        let nb_sample_by_iter : usize;
         let nb_nodes = self.get_nb_nodes();
-        if nb_nodes < 10000 {
-            nb_sample_by_iter = 1000;
-        }
-        else if nb_nodes > 1000000 {
-            nb_sample_by_iter = nb_nodes/100;
-        }
-        else {
-            nb_sample_by_iter = (nb_nodes/100000) * 1000;
-        }
+        let nb_sample_by_iter = params.nb_sampling_by_edge * nb_nodes* 10;
         //
-        log::info!(" optimizing embedding , nb iteration : {}  sampling size {} ", self.get_max_grad_iter(), nb_sample_by_iter);
+        log::info!(" optimizing embedding , nb iteration : {}  sampling size {} ", self.get_nb_grad_batch(), nb_sample_by_iter);
         let start = ProcessTime::now();
-        for iter in 1..=self.get_max_grad_iter() {
+        for iter in 1..=self.get_nb_grad_batch() {
             // loop on edges
-            let grad_step = grad_step_init * (1.- iter as f64/self.get_max_grad_iter() as f64).sqrt();
+            let grad_step = grad_step_init * (1.- iter as f64/self.get_nb_grad_batch() as f64).sqrt();
 //            let grad_step = grad_step_init;
             let start = ProcessTime::now();
             ce_optimization.gradient_iteration(nb_sample_by_iter, grad_step);
             let cpu_time: Duration = start.elapsed();
-            println!("ce after grad iteration time {:?} grad iter {:.2e}",  cpu_time, ce_optimization.ce_compute());
+//            println!("ce after grad iteration time {:?} grad iter {:.2e}",  cpu_time, ce_optimization.ce_compute());
             log::debug!("ce after grad iteration time {:?} grad iter {:.2e}",  cpu_time, ce_optimization.ce_compute());
         }
         let cpu_time: Duration = start.elapsed();
@@ -733,10 +741,8 @@ struct EntropyOptim<'a, F> {
     pos_edge_distribution : WeightedAliasIndex<f32>,
     /// mutex protected rand generator for edge sampling.
     rng: Arc<Mutex<Xoshiro256PlusPlus>>,
-    ///
-    b : f64,
-    ///
-    grad_step : f64,
+    /// embedding parameters
+    params : &'a EmbedderParams,
 } // end of EntropyOptim
 
 
@@ -745,7 +751,7 @@ struct EntropyOptim<'a, F> {
 impl <'a, F> EntropyOptim<'a,F> 
     where F: Float +  NumAssign + std::iter::Sum + num_traits::cast::FromPrimitive + Send + Sync {
     //
-    pub fn new(node_params : &'a NodeParams, b: f64, grad_step : f64, initial_embed : &Array2<F>) -> Self {
+    pub fn new(node_params : &'a NodeParams, params: &'a EmbedderParams, initial_embed : &Array2<F>) -> Self {
         log::info!("entering EntropyOptim::new");
         // TODO what if not the same number of neighbours!!
         let nbng = node_params.params[0].edges.len();
@@ -787,7 +793,7 @@ impl <'a, F> EntropyOptim<'a,F>
         //
         EntropyOptim { node_params,  edges, initial_scales, embedded, embedded_scales, 
                             pos_edge_distribution : pos_edge_sampler, rng : Arc::new(Mutex::new(rng)),
-                            b, grad_step}
+                            params : params}
         // construct field embedded
     }  // end of new 
 
@@ -814,13 +820,15 @@ impl <'a, F> EntropyOptim<'a,F>
         log::trace!("\n entering EntropyOptim::ce_compute");
         //
         let mut ce_entropy = 0.;
+        let b : f64 = self.params.b;
+
         for edge in self.edges.iter() {
             let node_i = edge.0;
             let node_j = edge.1.node;
             assert!(node_i != node_j);
             let weight_ij = edge.1.weight as f64;
             let weight_ij_embed = cauchy_edge_weight(&self.embedded[node_i].read(), 
-                    self.embedded_scales[node_i] as f64, self.b,
+                    self.embedded_scales[node_i] as f64, b,
                     &self.embedded[node_j].read()).to_f64().unwrap();
             if weight_ij_embed > 0. {
                 ce_entropy += -weight_ij * weight_ij_embed.ln();
@@ -843,13 +851,14 @@ impl <'a, F> EntropyOptim<'a,F>
     fn ce_compute_threaded(&self) -> f64 {
         log::trace!("\n entering EntropyOptim::ce_compute_threaded");
         //
+        let b : f64 = self.params.b;
         let ce_entropy = self.edges.par_iter()
             .fold( || 0.0f64, | entropy : f64, edge| entropy + {
                 let node_i = edge.0;
                 let node_j = edge.1.node;
                 let weight_ij = edge.1.weight as f64;
                 let weight_ij_embed = cauchy_edge_weight(&self.embedded[node_i].read(), 
-                        self.initial_scales[node_i] as f64, self.b,
+                        self.initial_scales[node_i] as f64, b,
                         &self.embedded[node_j].read()).to_f64().unwrap();
                 let mut term = 0.;
                 if weight_ij_embed > 0. {
@@ -890,19 +899,20 @@ impl <'a, F> EntropyOptim<'a,F>
         let weight = edge_out.1.weight as f64;
         assert!(weight <= 1.);
         let scale = self.embedded_scales[node_i] as f64;
+        let b : f64 = self.params.b;
         { // get read lock 
             let mut y_j = self.embedded[node_j].write();
             // compute l2 norm of y_j - y_i
             let d_ij : f64 = y_i.iter().zip(y_j.iter()).map(|(vi,vj)| (*vi-*vj)*(*vi-*vj)).sum::<F>().to_f64().unwrap();
             let d_ij_scaled = d_ij/(scale*scale);
-            let cauchy_weight = 1./ (1. + d_ij_scaled.powf(self.b));
+            let cauchy_weight = 1./ (1. + d_ij_scaled.powf(b));
             // this coeff is common for P and 1.-P part
             let coeff : f64;
-            if self.b != 1. { 
-                coeff =  2. * self.b * cauchy_weight * d_ij_scaled.powf(self.b - 1.)/ (scale*scale);
+            if b != 1. { 
+                coeff =  2. * b * cauchy_weight * d_ij_scaled.powf(b - 1.)/ (scale*scale);
             }
             else {
-                coeff =  2. * self.b * cauchy_weight / (scale*scale);
+                coeff =  2. * b * cauchy_weight / (scale*scale);
             }
             let coeff_repulsion : f64;
             if d_ij_scaled > 0. {
@@ -943,13 +953,13 @@ impl <'a, F> EntropyOptim<'a,F>
                     // compute the common part of coeff as in function grad_common_coeff
                     let d_ik : f64 = y_i.iter().zip(y_k.iter()).map(|(vi,vj)| (*vi-*vj)*(*vi-*vj)).sum::<F>().to_f64().unwrap();
                     let d_ik_scaled = d_ik/(scale*scale);
-                    let cauchy_weight = 1./ (1. + d_ik_scaled.powf(self.b));
+                    let cauchy_weight = 1./ (1. + d_ik_scaled.powf(b));
                     let coeff : f64;
-                    if self.b != 1. {
-                        coeff = 2. * self.b * cauchy_weight * d_ik_scaled.powf(self.b - 1.)/ (scale*scale);
+                    if b != 1. {
+                        coeff = 2. * b * cauchy_weight * d_ik_scaled.powf(b - 1.)/ (scale*scale);
                     }
                     else {
-                        coeff = 2. * self.b * cauchy_weight/ (scale*scale);
+                        coeff = 2. * b * cauchy_weight/ (scale*scale);
                     }
                     // use the same clipping as attractive/repulsion case
                     let alfa = 1./100.;
@@ -958,7 +968,7 @@ impl <'a, F> EntropyOptim<'a,F>
                         coeff_repulsion = 1. /(d_ik_scaled * d_ik_scaled).max(alfa);  // !!
                     } else {
                         log::trace!("repulsion null dist random push");
-                        coeff_repulsion =  2. * self.b;
+                        coeff_repulsion =  2. * b;
                     }
                     let weight = 0.;   // assume weight is 0 else check if k is in neighbourhood of i, but this happens with proba nb_ng/nbnodes
                     let coeff_ik =  coeff * coeff_repulsion * ( 1. - weight as f64);
