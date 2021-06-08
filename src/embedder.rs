@@ -16,11 +16,15 @@ use quantiles::{ckms::CKMS};     // we could use also greenwald_khanna
 
 // threading needs
 use rayon::prelude::*;
-use parking_lot::{RwLock};
+use parking_lot::{RwLock, Mutex};
 use std::sync::Arc;
 
 use rand::{Rng, thread_rng};
 use rand::distributions::{Uniform};
+use rand_distr::{WeightedAliasIndex};
+use rand_xoshiro::Xoshiro256PlusPlus;
+use rand_xoshiro::rand_core::SeedableRng;
+
 
 use std::time::Duration;
 use cpu_time::ProcessTime;
@@ -215,7 +219,7 @@ impl EmbedderParams {
     pub fn new()  -> Self {
         let asked_dim = 2;
         let b = 1.;
-        let grad_step = 0.1;
+        let grad_step = 0.05;
         let scale_rho = 1.;
         let max_grad_iter = 100;
         EmbedderParams{asked_dim, b, scale_rho, grad_step, max_grad_iter}
@@ -271,7 +275,6 @@ where
 
     pub fn get_max_grad_iter(&self) -> usize {
         self.parameters.max_grad_iter
-
     }
 
     /// do the embedding
@@ -281,10 +284,10 @@ where
         // construction of initial neighbourhood, scales and weight of edges from distances.
         self.initial_space = Some(NodeParams{params : self.construct_initial_space()});
         // we can initialize embedding with diffusion maps or pure random.
-        // initial embedding via diffusion maps
+        // initial embedding via diffusion maps, in this case we have to have a coherent box normalization with random case
 //        let initial_embedding = self.get_dmap_initial_embedding(self.asked_dimension);
-        // if we use random initialization we must have a coherent box size, so we use quantile on scales
 
+        // if we use random initialization we must have a box size coherent with renormalizes scales, so box size is 1!
         let initial_embedding = self.get_random_init(1.);
         // we nedd to construct field initial_space has been contructed in get_laplacian 
         // cross entropy optimization
@@ -350,7 +353,7 @@ where
             let node_param = self.get_scale_from_proba_normalisation(&neighbour_hood[i]);
             scale_q.insert(node_param.scale);
             perplexity_q.insert(node_param.get_perplexity());
-//            log::trace!(" perplexity node {}  : {:.2e}", i , node_param.get_perplexity());
+            log::debug!(" perplexity node {}  : {:.2e}", i , node_param.get_perplexity());
             assert_eq!(node_param.edges.len(), neighbour_hood[i].len());
             node_params.push(node_param);
         }
@@ -645,6 +648,10 @@ where
         self.embedding.as_ref().unwrap().row(node)
     }
 
+    pub fn get_nb_nodes(&self) -> usize {
+        self.initial_space.as_ref().unwrap().get_nb_nodes()
+    }
+
     // minimize divergence between embedded and initial distribution probability
     // We use cross entropy as in Umap. The edge weight function must take into acccount an initial density estimate and a scale.
     // The initial density makes the embedded graph asymetric as the initial graph.
@@ -669,13 +676,26 @@ where
         log::info!("grad_step_init : {:.2e}", grad_step_init);
         //
         log::debug!("in Embedder::entropy_optimize  ... gradient iterations");
+        let nb_sample_by_iter : usize;
+        let nb_nodes = self.get_nb_nodes();
+        if nb_nodes < 10000 {
+            nb_sample_by_iter = 1000;
+        }
+        else if nb_nodes > 1000000 {
+            nb_sample_by_iter = nb_nodes/100;
+        }
+        else {
+            nb_sample_by_iter = (nb_nodes/100000) * 1000;
+        }
+        //
+        log::info!(" optimizing embedding , nb iteration : {}  sampling size {} ", self.get_max_grad_iter(), nb_sample_by_iter);
         let start = ProcessTime::now();
         for iter in 1..=self.get_max_grad_iter() {
             // loop on edges
-//            let grad_step = grad_step_init/(iter as f64).sqrt();
-            let grad_step = grad_step_init;
+            let grad_step = grad_step_init * (1.- iter as f64/self.get_max_grad_iter() as f64).sqrt();
+//            let grad_step = grad_step_init;
             let start = ProcessTime::now();
-            ce_optimization.gradient_iteration(grad_step);
+            ce_optimization.gradient_iteration(nb_sample_by_iter, grad_step);
             let cpu_time: Duration = start.elapsed();
             println!("ce after grad iteration time {:?} grad iter {:.2e}",  cpu_time, ce_optimization.ce_compute());
             log::debug!("ce after grad iteration time {:?} grad iter {:.2e}",  cpu_time, ce_optimization.ce_compute());
@@ -709,6 +729,10 @@ struct EntropyOptim<'a, F> {
     embedded : Vec<Arc<RwLock<Array1<F>>>>,
     /// embedded_scales
     embedded_scales : Vec<f32>,
+    /// weighted array for sampling positive edges
+    pos_edge_distribution : WeightedAliasIndex<f32>,
+    /// mutex protected rand generator for edge sampling.
+    rng: Arc<Mutex<Xoshiro256PlusPlus>>,
     ///
     b : f64,
     ///
@@ -727,14 +751,21 @@ impl <'a, F> EntropyOptim<'a,F>
         let nbng = node_params.params[0].edges.len();
         let nbnodes = node_params.get_nb_nodes();
         let mut edges = Vec::<(NodeIdx, OutEdge<f32>)>::with_capacity(nbnodes*nbng);
+        let mut edges_weight = Vec::<f32>::with_capacity(nbnodes*nbng);
         let mut initial_scales =  Vec::<f32>::with_capacity(nbnodes);
         // construct field edges
         for i in 0..nbnodes {
             initial_scales.push(node_params.params[i].scale);
             for j in 0..node_params.params[i].edges.len() {
                 edges.push((i, node_params.params[i].edges[j]));
+                edges_weight.push(node_params.params[i].edges[j].weight);
             }
         }
+        log::info!("construction alias table for sampling edges..");
+        let start = ProcessTime::now();
+        let pos_edge_sampler = WeightedAliasIndex::new(edges_weight).unwrap();
+        let cpu_time: Duration = start.elapsed();
+        log::info!("constructied alias table for sampling edges.. , time : {:?}", cpu_time);
         // construct embedded, initial embed can be droped now
         let mut embedded = Vec::<Arc<RwLock<Array1<F>>>>::new();
         let nbrow  = initial_embed.nrows();
@@ -742,8 +773,7 @@ impl <'a, F> EntropyOptim<'a,F>
             embedded.push(Arc::new(RwLock::new(initial_embed.row(i).to_owned())));
         }
         // compute embedded scales
-//        let embedded_scales = estimate_embedded_scales_from_first_neighbour(node_params, b, initial_embed);
-        let embedded_scales = estimate_embedded_scales_from_initial_scales(&initial_scales, 2);
+        let embedded_scales = estimate_embedded_scales_from_initial_scales(&initial_scales);
         // get qunatile on embedded scales
         let mut scales_q = CKMS::<f32>::new(0.001);
         for s in &embedded_scales {
@@ -752,9 +782,12 @@ impl <'a, F> EntropyOptim<'a,F>
         println!("\n\n embedded scales quantiles at 0.05 : {:.2e} , 0.5 :  {:.2e}, 0.95 : {:.2e}, 0.99 : {:.2e}", 
         scales_q.query(0.05).unwrap().1, scales_q.query(0.5).unwrap().1, 
         scales_q.query(0.95).unwrap().1, scales_q.query(0.99).unwrap().1);
-        println!("");    
+        println!("");  
+        let rng = Xoshiro256PlusPlus::seed_from_u64(45678);
         //
-        EntropyOptim { node_params,  edges, initial_scales, embedded, embedded_scales, b, grad_step}
+        EntropyOptim { node_params,  edges, initial_scales, embedded, embedded_scales, 
+                            pos_edge_distribution : pos_edge_sampler, rng : Arc::new(Mutex::new(rng)),
+                            b, grad_step}
         // construct field embedded
     }  // end of new 
 
@@ -831,7 +864,10 @@ impl <'a, F> EntropyOptim<'a,F>
         return ce_entropy;
     }
 
-
+    // sample a positive edge accoring to its weight. To be threaded with a Mutex
+    fn sample_positive_edge(&self) -> usize {
+        self.rng.lock().sample(&self.pos_edge_distribution)
+    } // end of sample_positive_edge
 
 
 
@@ -870,23 +906,23 @@ impl <'a, F> EntropyOptim<'a,F>
             }
             let coeff_repulsion : f64;
             if d_ij_scaled > 0. {
-                // repulsion annhinilate  attraction if P<= alfa / (alfa + 1)
+                // repulsion annhinilate  attraction if P<= 1. / (alfa + 1)
                 let alfa = 100.;
                 coeff_repulsion = 1. / (d_ij_scaled*d_ij_scaled).max(alfa);
-//                coeff_repulsion =   0.;
+   //             coeff_repulsion =   0.;
             } else { // keep a small repulsive force to detach points.
                 log::trace!("attraction : null dist random push");
                 coeff_repulsion =   1. / (scale * scale);
             }
             let coeff_ij = coeff * (- weight + (1.-weight) * coeff_repulsion);
             for k in 0..y_i.len() {
-                // clipping makes data statistically staying in box!
+                // clipping makes each point i or j making at most half way to the other
                 if d_ij_scaled > 0. {
-                    gradient[k] = (y_j[k] - y_i[k]) * clip(F::from_f64(coeff_ij).unwrap(), 1.);
+                    gradient[k] = (y_j[k] - y_i[k]) * clip(F::from_f64(coeff_ij).unwrap(), 0.5);
                 }
                 else { // this is a problem if weight is not 1
                     let xsi = 2 * (thread_rng().gen::<u32>() % 2) - 1;   // CAVEAT to // mutex...
-                    let push = (xsi  as f64) * weight * scale;
+                    let push = (xsi  as f64) * ((1.-weight) + 0.001) * scale;
                     gradient[k] = F::from(push).unwrap();
                 }
                 y_i[k] -= gradient[k] * F::from_f64(grad_step).unwrap();
@@ -895,7 +931,7 @@ impl <'a, F> EntropyOptim<'a,F>
             log::trace!("norm attracting coeff {:.2e} gradient {:.2e}", coeff_ij, l2_norm(&gradient.view()).to_f64().unwrap());
             // now we loop on negative sampling filtering out nodes that are either node_i or are in node_i neighbours.
             let mut neg_node : NodeIdx;
-            let nb_neg = 3;
+            let nb_neg = 5;
             for _k in 0..nb_neg {
                 neg_node = thread_rng().gen_range(0..self.embedded_scales.len());
                 if neg_node != node_i && neg_node != node_j {
@@ -916,7 +952,7 @@ impl <'a, F> EntropyOptim<'a,F>
                         coeff = 2. * self.b * cauchy_weight/ (scale*scale);
                     }
                     // use the same clipping as attractive/repulsion case
-                    let alfa = 1./10000.;
+                    let alfa = 1./100.;
                     let coeff_repulsion : f64;
                     if d_ik > 0. {
                         coeff_repulsion = 1. /(d_ik_scaled * d_ik_scaled).max(alfa);  // !!
@@ -928,7 +964,7 @@ impl <'a, F> EntropyOptim<'a,F>
                     let coeff_ik =  coeff * coeff_repulsion * ( 1. - weight as f64);
                     for l in 0..y_i.len() {
                         if d_ik_scaled > 0. {
-                            gradient[l] = (y_k[l] - y_i[l]) * clip(F::from_f64(coeff_ik).unwrap(),4.);
+                            gradient[l] = clip((y_k[l] - y_i[l]) * F::from_f64(coeff_ik).unwrap(),5.);
                         }
                         else {
                             let xsi = 2 * (thread_rng().gen::<u32>() % 2) - 1;   // CAVEAT to // mutex...
@@ -946,9 +982,9 @@ impl <'a, F> EntropyOptim<'a,F>
 
 
     // TODO to be called in // all was done for
-    fn gradient_iteration(&self, grad_step : f64) {
-        for i in 0..self.edges.len() {
-            self.ce_optim_edge_shannon(i, grad_step);
+    fn gradient_iteration(&self, nb_sample : usize, grad_step : f64) {
+        for _ in 0..nb_sample {
+            self.ce_optim_edge_shannon(self.sample_positive_edge(), grad_step);
         }
     } // end of gradient_iteration
 
@@ -1032,68 +1068,20 @@ where F :  Float + std::iter::Sum + num_traits::cast::FromPrimitive {
 
 
 
-// in this function we compute scale in embedded space as a mean of ratio appearing in determination of sign of gradient.
-// in fact likelyhood ratio. So p/(1-p) should be equilibrated. typically p1 > 0.5 for the first points of node neighbours.
-// This is ensured by scale in initial space.
-fn estimate_embedded_scales_from_first_neighbour<F> (node_params : &NodeParams, b : f64, embed : &Array2<F>) -> Vec<f32> 
-    where  F : Float + std::iter::Sum + num_traits::cast::FromPrimitive {
-    log::debug!("estimate_embedded_scales_from_first_neighbour");
-    let nbnodes = node_params.params.len();
-    let mut embedded_scales = Vec::<f32>::with_capacity(nbnodes);
-    for i in 0..nbnodes {
-        let node_param = node_params.get_node_param(i);
-        let mut num = 0.;
-        let mut den = 0.;
-        let mut new_scale : f64;
-        let index = node_param.edges.len() - 1;
-            let ref_edge = node_param.edges[index];
-            let p1 = ref_edge.weight as f64;
-//            new_scale = p1 / (1.- p1);
-            new_scale = node_param.scale.sqrt() as f64;
-            embedded_scales.push(new_scale as f32);
-            log::debug!("embedded scale for node {} : {:.2e}", i , new_scale);
-    }
-    embedded_scales
-} // end of estimate_scales_from_first_neighbours
 
 
 
-
-fn update_embedded_scales_from_first_neighbour<F> (node_params : &NodeParams, b : f64, embedded : &Vec<Arc<RwLock<Array1<F>>>>,
-) -> Vec<f32> 
-where  F : Float + std::iter::Sum + num_traits::cast::FromPrimitive {
-    log::debug!("update_embedded_scales_from_first_neighbour");
-    let nbnodes = node_params.params.len();
-    let mut embedded_scales = Vec::<f32>::with_capacity(nbnodes);
-    for i in 0..nbnodes {
-        let node_param = node_params.get_node_param(i);
-        let mut num = 0.;
-        let mut den = 0.;
-        let new_scale : f64;
-        let index = node_param.edges.len() - 1;
-            let ref_edge = node_param.edges[index];
-            let p1 = ref_edge.weight as f64;
-            let y_i = embedded[i].read();
-            let y_j = embedded[ref_edge.node].read();
-            new_scale = (p1 / (1.- p1)).powf(0.5/b) * (l2_dist(&y_i.view(), &y_j.view()).to_f64().unwrap().sqrt());
-        log::debug!("embedded scale for node {} : {:.2e}", i , new_scale);
-        embedded_scales.push(1. as f32);
-    }
-    embedded_scales
-}  // end of update_embedded_scales_from_first_neighbour
-
-
-
-
-
-// in embedded space (in unit ball) the scale is chosen as the scale at corresponding point / divided by mean initial scales.
-fn estimate_embedded_scales_from_initial_scales(initial_scales :&Vec<f32>, d : usize) -> Vec<f32> {
+// in embedded space (in unit ball or unit box) the scale is chosen as the scale at corresponding point / divided by mean initial scales.
+fn estimate_embedded_scales_from_initial_scales(initial_scales :&Vec<f32>) -> Vec<f32> {
     log::trace!("estimate_embedded_scale_from_initial_scales");
     let mean_scale : f32 = initial_scales.iter().sum::<f32>() / (initial_scales.len() as f32);
-    let embedded_scale : Vec<f32> = initial_scales.iter().map(|&x| ((d as f32)/3.) * x/mean_scale).collect();
+    let scale_sup = 2.0f32.sqrt();
+    let scale_inf = 1./scale_sup;
+    // We want embedded scae impact between 0.5 and 2 (amplitude 4) , we take into account the square in cauchy weight
+    let embedded_scale : Vec<f32> = initial_scales.iter().map(|&x| (x/mean_scale).min(scale_sup).max(scale_inf)).collect();
     //
     for i in 0..embedded_scale.len() {
-        log::trace!("embedded scale for node {} : {:.2e}", i , embedded_scale[i]);
+        log::debug!("embedded scale for node {} : {:.2e}", i , embedded_scale[i]);
     }
     //
     embedded_scale
