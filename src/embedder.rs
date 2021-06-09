@@ -1015,13 +1015,13 @@ impl <'a, F> EntropyOptim<'a,F>
                         coeff_repulsion = 1. /(d_ik_scaled * d_ik_scaled).max(alfa);  // !!
                     } else {
                         log::trace!("repulsion null dist random push");
-                        coeff_repulsion =  2. * b;
+                        coeff_repulsion =  1.;
                     }
                     let weight = 0.;   // assume weight is 0 else check if k is in neighbourhood of i, but this happens with proba nb_ng/nbnodes
                     let coeff_ik =  coeff * coeff_repulsion * ( 1. - weight as f64);
                     for l in 0..y_i.len() {
                         if d_ik_scaled > 0. {
-                            gradient[l] = clip((y_k[l] - y_i[l]) * F::from_f64(coeff_ik).unwrap(),5.);
+                            gradient[l] = (y_k[l] - y_i[l]) * clip(F::from_f64(coeff_ik).unwrap(),5.);
                         }
                         else {
                             let xsi = 2 * (thread_rng().gen::<u32>() % 2) - 1;   // CAVEAT to // mutex...
@@ -1132,7 +1132,7 @@ where F :  Float + std::iter::Sum + num_traits::cast::FromPrimitive {
 fn estimate_embedded_scales_from_initial_scales(initial_scales :&Vec<f32>) -> Vec<f32> {
     log::trace!("estimate_embedded_scale_from_initial_scales");
     let mean_scale : f32 = initial_scales.iter().sum::<f32>() / (initial_scales.len() as f32);
-    let scale_sup = 2.0f32.sqrt();
+    let scale_sup = 2.0;  // CAVEAT seems we can go up to 4.
     let scale_inf = 1./scale_sup;
     // We want embedded scae impact between 0.5 and 2 (amplitude 4) , we take into account the square in cauchy weight
     let embedded_scale : Vec<f32> = initial_scales.iter().map(|&x| (x/mean_scale).min(scale_sup).max(scale_inf)).collect();
