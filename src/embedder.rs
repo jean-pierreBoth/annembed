@@ -365,6 +365,7 @@ where
         let nbnodes = self.kgraph.get_nb_nodes();
         let mut perplexity_q : CKMS<f32> = CKMS::<f32>::new(0.001);
         let mut scale_q : CKMS<f32> = CKMS::<f32>::new(0.001);
+        let mut weight_q :  CKMS<f32> = CKMS::<f32>::new(0.001);
         // get stats
         let mut node_params = Vec::<NodeParam>::with_capacity(nbnodes);
         // TODO can be // with rayon taking care of indexation
@@ -373,18 +374,25 @@ where
             let node_param = self.get_scale_from_proba_normalisation(&neighbour_hood[i]);
             scale_q.insert(node_param.scale);
             perplexity_q.insert(node_param.get_perplexity());
-            log::debug!(" perplexity node {}  : {:.2e}", i , node_param.get_perplexity());
+            // coose random edge to audit
+            let j = thread_rng().gen_range(0..node_param.edges.len());
+            weight_q.insert(node_param.edges[j].weight);
             assert_eq!(node_param.edges.len(), neighbour_hood[i].len());
             node_params.push(node_param);
         }
         // dump info on quantiles
         println!("\n constructed initial space");
-        println!("\n\n scales quantile at 0.05 : {:.2e} , 0.5 :  {:.2e}, 0.95 : {:.2e}, 0.99 : {:.2e}", 
+        println!("\n scales quantile at 0.05 : {:.2e} , 0.5 :  {:.2e}, 0.95 : {:.2e}, 0.99 : {:.2e}", 
         scale_q.query(0.05).unwrap().1, scale_q.query(0.5).unwrap().1, 
         scale_q.query(0.95).unwrap().1, scale_q.query(0.99).unwrap().1);
         println!("");
         //
-        println!("\n\n perplexity quantile at 0.05 : {:.2e} , 0.5 :  {:.2e}, 0.95 : {:.2e}, 0.99 : {:.2e}", 
+        println!("\n edge weight quantile at 0.05 : {:.2e} , 0.5 :  {:.2e}, 0.95 : {:.2e}, 0.99 : {:.2e}", 
+        weight_q.query(0.05).unwrap().1, weight_q.query(0.5).unwrap().1, 
+        weight_q.query(0.95).unwrap().1, weight_q.query(0.99).unwrap().1);
+        println!("");        
+        //
+        println!("\n perplexity quantile at 0.05 : {:.2e} , 0.5 :  {:.2e}, 0.95 : {:.2e}, 0.99 : {:.2e}", 
         perplexity_q.query(0.05).unwrap().1, perplexity_q.query(0.5).unwrap().1, 
         perplexity_q.query(0.95).unwrap().1, perplexity_q.query(0.99).unwrap().1);
         println!("");    
