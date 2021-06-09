@@ -17,7 +17,7 @@ use quantiles::{ckms::CKMS};     // we could use also greenwald_khanna
 
 
 use hnsw_rs::prelude::*;
-use hnsw_rs::hnsw::Neighbour;
+use hnsw_rs::hnsw::{Neighbour, DataId};
 
 
 
@@ -201,6 +201,24 @@ impl <F> KGraph<F>
         &self.neighbours[node]
     }
 
+    /// As data can come from hnsw with arbitrary data id not on [0..nb_data] we reindex
+    /// them for array computation. At the end we must provide a way to get back to
+    /// original labels of data
+    /// We when we get embedded data as an Array2<F> row i of data corresponds to
+    /// the original data with label get_data_id_from_idx(i)
+    pub fn get_data_id_from_idx(&self, index:usize) -> Option<&DataId> {
+        return self.node_set.get_index(index)
+    }
+
+    ///
+    pub fn get_idx_from_dataid(&self, data_id: &DataId) -> Option<usize> {
+        return self.node_set.get_index_of(data_id)
+    }
+
+    /// necessary after embedding to get back to original indexes.
+    pub(crate) fn get_indexset(&self) -> &IndexSet<DataId> {
+        &self.node_set
+    }
 
     /// Fills in KGraphStat from KGraphStat
     pub fn get_kraph_stats(&self) -> KGraphStat<F> {
@@ -308,6 +326,7 @@ impl <F> KGraph<F>
                 for j in 0..neighbours_hnsw[i].len() {
                     // remap id. nodeset enforce reindexation from 0 too nbnodes whatever the number of node will be
                     let (neighbour_idx, _already) = self.node_set.insert_full(neighbours_hnsw[i][j].get_origin_id());
+                    assert!(index != neighbour_idx);
                     vec_tmp.push(OutEdge::<F>{ node : neighbour_idx, weight : F::from_f32(neighbours_hnsw[i][j].distance).unwrap()});
                 }
             }

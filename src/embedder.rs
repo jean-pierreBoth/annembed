@@ -25,10 +25,13 @@ use rand_distr::{WeightedAliasIndex};
 use rand_xoshiro::Xoshiro256PlusPlus;
 use rand_xoshiro::rand_core::SeedableRng;
 
+use indexmap::set::*;
+
 
 use std::time::Duration;
 use cpu_time::ProcessTime;
 
+use hnsw_rs::prelude::*;
 use crate::fromhnsw::*;
 use crate::tools::svdapprox::*;
 
@@ -658,11 +661,25 @@ where
         }
     } // end of get_scale_from_proba_normalisation
 
+    /// As data can come from hnsw with arbitrary data id not on [0..nb_data] we reindex
+    /// them for array computation. At the end we must provide a way to get back to
+    /// original labels of data
+    /// **When we get embedded data as an Array2<F>, row i of data corresponds to the original data with label get_data_id_from_idx(i)**
+    pub fn get_data_id_from_idx(&self, index:usize) -> Option<&DataId> {
+        return self.kgraph.get_data_id_from_idx(index)
+    }
 
-
-    /// get embedding of a given node
+    /// **get embedding of a given node index after reindexation by the embedding to index in [0..nb_nodes]**
     pub fn get_node_embedding(&self, node : NodeIdx) -> ArrayView1<F> {
         self.embedding.as_ref().unwrap().row(node)
+    }
+
+    /// **return the embedded vector corresponding to original data vector corresponding to data_id**
+    /// This methods fails if data_id do not exist. Use KGraph.get_data_id_from_idx to check before if necessary.
+    pub fn get_data_embedding(&self, data_id : &DataId) -> ArrayView1<F> {
+        // we must get data index as stored in IndexSet
+        let data_idx = self.kgraph.get_idx_from_dataid(data_id).unwrap();
+        self.embedding.as_ref().unwrap().row(data_idx)
     }
 
     pub fn get_nb_nodes(&self) -> usize {
@@ -673,7 +690,7 @@ where
     // We use cross entropy as in Umap. The edge weight function must take into acccount an initial density estimate and a scale.
     // The initial density makes the embedded graph asymetric as the initial graph.
     // The optimization function thus should try to restore asymetry and local scale as far as possible.
-
+    // returns the embedded data after restauration of the original indexation/identification of datas! (time consuming bug)
     fn entropy_optimize(&self, params : &EmbedderParams, initial_embedding : &Array2<F>) -> Result<Array2<F>, String> {
         //
         log::info!("in Embedder::entropy_optimize");
@@ -713,7 +730,7 @@ where
         let final_ce = ce_optimization.ce_compute();
         println!(" final cross entropy value {:.2e}", final_ce);
         //
-        Ok(ce_optimization.get_embedded())
+        Ok(ce_optimization.get_embedded_reindexed(self.kgraph.get_indexset()))
         //
     } // end of entropy_optimize
 
@@ -798,12 +815,14 @@ impl <'a, F> EntropyOptim<'a,F>
     }  // end of new 
 
 
-    // return result as an Array2<F> cloning data to return result to struct Embedder
-    fn get_embedded(& self) -> Array2<F> {
+    // return result as an Array2<F> cloning data to result to struct Embedder
+    // We return data in rows as (re)indexed in graph construction after hnsw!!
+    fn get_embedded_raw(& self) -> Array2<F> {
         let nbrow = self.embedded.len();
         let nbcol = self.embedded[0].read().len();
         let mut embedding_res = Array2::<F>::zeros((nbrow, nbcol));
         // TODO version 0.15 provides move_into and push_row
+        // 
         for i in 0..nbrow {
             let row = self.embedded[i].read();
             for j in 0..nbcol {
@@ -813,6 +832,26 @@ impl <'a, F> EntropyOptim<'a,F>
         return embedding_res;
     }
 
+
+    // return result as an Array2<F> cloning data to return result to struct Embedder
+    // Here we reindex data according to their original order. DataId must be contiguous and fill [0..nb_data]
+    // for this method not to panic!
+    fn get_embedded_reindexed(& self, indexset: &IndexSet<NodeIdx>) -> Array2<F> {
+        let nbrow = self.embedded.len();
+        let nbcol = self.embedded[0].read().len();
+        let mut embedding_res = Array2::<F>::zeros((nbrow, nbcol));
+        // TODO version 0.15 provides move_into and push_row
+        // Here we must not forget that to interpret results we must go
+        // back from indexset to original points (use One week bug!
+        for i in 0..nbrow {
+            let row = self.embedded[i].read();
+            let origin_id = indexset.get_index(i).unwrap();
+            for j in 0..nbcol {
+                embedding_res[[*origin_id,j]] = row[j];
+            }
+        }
+        return embedding_res;
+    }
 
     // computes croos entropy between initial space and embedded distribution. 
     // necessary to monitor optimization
@@ -928,7 +967,7 @@ impl <'a, F> EntropyOptim<'a,F>
             for k in 0..y_i.len() {
                 // clipping makes each point i or j making at most half way to the other
                 if d_ij_scaled > 0. {
-                    gradient[k] = (y_j[k] - y_i[k]) * clip(F::from_f64(coeff_ij).unwrap(), 0.5);
+                    gradient[k] = clip((y_j[k] - y_i[k]) * F::from_f64(coeff_ij).unwrap(), 5.);
                 }
                 else { // this is a problem if weight is not 1
                     let xsi = 2 * (thread_rng().gen::<u32>() % 2) - 1;   // CAVEAT to // mutex...
