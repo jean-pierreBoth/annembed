@@ -728,7 +728,7 @@ where
             let grad_step = grad_step_init * (1.- iter as f64/self.get_nb_grad_batch() as f64).sqrt();
 //            let grad_step = grad_step_init;
             let start = ProcessTime::now();
-            ce_optimization.gradient_iteration(nb_sample_by_iter, grad_step);
+            ce_optimization.gradient_iteration_threaded(nb_sample_by_iter, grad_step);
             let cpu_time: Duration = start.elapsed();
 //            println!("ce after grad iteration time {:?} grad iter {:.2e}",  cpu_time, ce_optimization.ce_compute());
             log::debug!("ce after grad iteration time {:?} grad iter {:.2e}",  cpu_time, ce_optimization.ce_compute());
@@ -947,7 +947,7 @@ impl <'a, F> EntropyOptim<'a,F>
         assert!(weight <= 1.);
         let scale = self.embedded_scales[node_i] as f64;
         let b : f64 = self.params.b;
-        { // get read lock 
+        { // get write lock on end point of edge
             let mut y_j = self.embedded[node_j].write();
             // compute l2 norm of y_j - y_i
             let d_ij : f64 = y_i.iter().zip(y_j.iter()).map(|(vi,vj)| (*vi-*vj)*(*vi-*vj)).sum::<F>().to_f64().unwrap();
@@ -975,7 +975,7 @@ impl <'a, F> EntropyOptim<'a,F>
             for k in 0..y_i.len() {
                 // clipping makes each point i or j making at most half way to the other
                 if d_ij_scaled > 0. {
-                    gradient[k] = clip((y_j[k] - y_i[k]) * F::from_f64(coeff_ij).unwrap(), 5.);
+                    gradient[k] = (y_j[k] - y_i[k]) * clip(F::from_f64(coeff_ij).unwrap(), 0.49);
                 }
                 else { // this is a problem if weight is not 1
                     let xsi = 2 * (thread_rng().gen::<u32>() % 2) - 1;   // CAVEAT to // mutex...
@@ -986,54 +986,55 @@ impl <'a, F> EntropyOptim<'a,F>
                 y_j[k] += gradient[k] * F::from_f64(grad_step).unwrap();
             }
             log::trace!("norm attracting coeff {:.2e} gradient {:.2e}", coeff_ij, l2_norm(&gradient.view()).to_f64().unwrap());
-            // now we loop on negative sampling filtering out nodes that are either node_i or are in node_i neighbours.
-            let mut neg_node : NodeIdx;
-            let nb_neg = 5;
-            for _k in 0..nb_neg {
-                neg_node = thread_rng().gen_range(0..self.embedded_scales.len());
-                if neg_node != node_i && neg_node != node_j {
-                    if self.node_params.get_node_param(node_i).get_edge(neg_node).is_some() {
-                        log::trace!("neg node is around node i");
-                        continue;
-                    }
-                    let y_k = self.embedded[neg_node].read();
-                    // compute the common part of coeff as in function grad_common_coeff
-                    let d_ik : f64 = y_i.iter().zip(y_k.iter()).map(|(vi,vj)| (*vi-*vj)*(*vi-*vj)).sum::<F>().to_f64().unwrap();
-                    let d_ik_scaled = d_ik/(scale*scale);
-                    let cauchy_weight = 1./ (1. + d_ik_scaled.powf(b));
-                    let coeff : f64;
-                    if b != 1. {
-                        coeff = 2. * b * cauchy_weight * d_ik_scaled.powf(b - 1.)/ (scale*scale);
+        }  // end of lock on y_j
+        // now we loop on negative sampling filtering out nodes that are either node_i or are in node_i neighbours.
+        let mut neg_node : NodeIdx;
+        let nb_neg = 5;
+        for _k in 0..nb_neg {
+            neg_node = thread_rng().gen_range(0..self.embedded_scales.len());
+            if neg_node != node_i && neg_node != node_j {
+                if self.node_params.get_node_param(node_i).get_edge(neg_node).is_some() {
+                    log::trace!("neg node is around node i");
+                    continue;
+                }
+                // get a read lock
+                let y_k = self.embedded[neg_node].read();
+                // compute the common part of coeff as in function grad_common_coeff
+                let d_ik : f64 = y_i.iter().zip(y_k.iter()).map(|(vi,vj)| (*vi-*vj)*(*vi-*vj)).sum::<F>().to_f64().unwrap();
+                let d_ik_scaled = d_ik/(scale*scale);
+                let cauchy_weight = 1./ (1. + d_ik_scaled.powf(b));
+                let coeff : f64;
+                if b != 1. {
+                    coeff = 2. * b * cauchy_weight * d_ik_scaled.powf(b - 1.)/ (scale*scale);
+                }
+                else {
+                    coeff = 2. * b * cauchy_weight/ (scale*scale);
+                }
+                // use the same clipping as attractive/repulsion case
+                let alfa = 1./100.;
+                let coeff_repulsion : f64;
+                if d_ik > 0. {
+                    coeff_repulsion = 1. /(d_ik_scaled * d_ik_scaled).max(alfa);  // !!
+                } else {
+                    log::trace!("repulsion null dist random push");
+                    coeff_repulsion =  1.;
+                }
+                let weight = 0.;   // assume weight is 0 else check if k is in neighbourhood of i, but this happens with proba nb_ng/nbnodes
+                let coeff_ik =  coeff * coeff_repulsion * ( 1. - weight as f64);
+                for l in 0..y_i.len() {
+                    if d_ik_scaled > 0. {
+                        gradient[l] = (y_k[l] - y_i[l]) * clip(F::from_f64(coeff_ik).unwrap(),5.);
                     }
                     else {
-                        coeff = 2. * b * cauchy_weight/ (scale*scale);
+                        let xsi = 2 * (thread_rng().gen::<u32>() % 2) - 1;   // CAVEAT to // mutex...
+                        let push = (xsi  as f64) * (1. - weight) * scale;
+                        gradient[l] = F::from(push).unwrap();                            
                     }
-                    // use the same clipping as attractive/repulsion case
-                    let alfa = 1./100.;
-                    let coeff_repulsion : f64;
-                    if d_ik > 0. {
-                        coeff_repulsion = 1. /(d_ik_scaled * d_ik_scaled).max(alfa);  // !!
-                    } else {
-                        log::trace!("repulsion null dist random push");
-                        coeff_repulsion =  1.;
-                    }
-                    let weight = 0.;   // assume weight is 0 else check if k is in neighbourhood of i, but this happens with proba nb_ng/nbnodes
-                    let coeff_ik =  coeff * coeff_repulsion * ( 1. - weight as f64);
-                    for l in 0..y_i.len() {
-                        if d_ik_scaled > 0. {
-                            gradient[l] = (y_k[l] - y_i[l]) * clip(F::from_f64(coeff_ik).unwrap(),5.);
-                        }
-                        else {
-                            let xsi = 2 * (thread_rng().gen::<u32>() % 2) - 1;   // CAVEAT to // mutex...
-                            let push = (xsi  as f64) * (1. - weight) * scale;
-                            gradient[l] = F::from(push).unwrap();                            
-                        }
-                        y_i[l] -= gradient[l] * F::from_f64(grad_step).unwrap();
-                    }
-                    log::trace!("norm repulsive  coeff gradient {:.2e} {:.2e}", coeff_ik , l2_norm(&gradient.view()).to_f64().unwrap());
+                    y_i[l] -= gradient[l] * F::from_f64(grad_step).unwrap();
                 }
-            }  // end of neg sampling
-        }
+                log::trace!("norm repulsive  coeff gradient {:.2e} {:.2e}", coeff_ik , l2_norm(&gradient.view()).to_f64().unwrap());
+            }
+        }  // end of neg sampling
     } // end of ce_optim_from_point
 
 
@@ -1047,8 +1048,8 @@ impl <'a, F> EntropyOptim<'a,F>
 
 
 
-    fn gradient_iteration_threaded(&self, grad_step : f64) {
-        (0..self.edges.len()).into_par_iter().for_each( |i| self.ce_optim_edge_shannon(i, grad_step));
+    fn gradient_iteration_threaded(&self, nb_sample : usize, grad_step : f64) {
+        (0..nb_sample).into_par_iter().for_each( |_| self.ce_optim_edge_shannon(self.sample_positive_edge(), grad_step));
     } // end of gradient_iteration_threaded
     
     
