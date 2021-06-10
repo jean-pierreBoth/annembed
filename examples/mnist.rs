@@ -170,19 +170,22 @@ pub fn main() {
     }  // drop mnist_data
     //
     let ef_c = 50;
-    let max_nb_connection = 50;
+    let max_nb_connection = 100;
     let nbimages = images_as_v.len();
     let nb_layer = 16.min((nbimages as f32).ln().trunc() as usize);
     let hnsw = Hnsw::<f32, DistL1>::new(max_nb_connection, nbimages, nb_layer, ef_c, DistL1{});
     // we must pay fortran indexation once!. transform image to a vector
-    let data_with_id = images_as_v.iter().zip(0..images_as_v.len()).collect();
-    hnsw.parallel_insert(&data_with_id);
+    let data_with_id : Vec<(&Vec<f32>, usize)>= images_as_v.iter().zip(0..images_as_v.len()).collect();
+//    hnsw.parallel_insert(&data_with_id);
+    for i in 0..2000 {
+        hnsw.insert(data_with_id[i]);
+    }
     // images as vectors of f32 and send to hnsw
     hnsw.dump_layer_info();
     //
     let mut kgraph = KGraph::<f32>::new();
     log::info!("calling kgraph.init_from_hnsw_all");
-    let knbn = 20;
+    let knbn = 10;
     let res = kgraph.init_from_hnsw_all(&hnsw, knbn);
     if res.is_err() {
         panic!("init_from_hnsw_all  failed");
@@ -197,8 +200,11 @@ pub fn main() {
     log::info!("minimum number of neighbours {}", kgraph.get_max_nbng());
     // 
     let _kgraph_stats = kgraph.get_kraph_stats();
-    let embed_dim = 2;
-    let mut embedder = Embedder::new(&kgraph, embed_dim);
+    let mut embed_params = EmbedderParams::new();
+    embed_params.nb_grad_batch = 200;
+    embed_params.scale_rho = 0.5;
+    embed_params.grad_step = 1.;
+    let mut embedder = Embedder::new(&kgraph, embed_params);
     let embed_res = embedder.embed();
     assert!(embed_res.is_ok()); 
     assert!(embedder.get_emmbedded().is_some());
