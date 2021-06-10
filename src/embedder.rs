@@ -16,8 +16,9 @@ use quantiles::{ckms::CKMS};     // we could use also greenwald_khanna
 
 // threading needs
 use rayon::prelude::*;
-use parking_lot::{RwLock, Mutex};
+//use parking_lot::{RwLock, Mutex};
 use std::sync::Arc;
+use std::sync::{RwLock, Mutex};
 
 use rand::{Rng, thread_rng};
 use rand::distributions::{Uniform};
@@ -726,9 +727,8 @@ where
         for iter in 1..=self.get_nb_grad_batch() {
             // loop on edges
             let grad_step = grad_step_init * (1.- iter as f64/self.get_nb_grad_batch() as f64).sqrt();
-//            let grad_step = grad_step_init;
             let start = ProcessTime::now();
-            ce_optimization.gradient_iteration_threaded(nb_sample_by_iter, grad_step);
+            ce_optimization.gradient_iteration(nb_sample_by_iter, grad_step);
             let cpu_time: Duration = start.elapsed();
 //            println!("ce after grad iteration time {:?} grad iter {:.2e}",  cpu_time, ce_optimization.ce_compute());
             log::debug!("ce after grad iteration time {:?} grad iter {:.2e}",  cpu_time, ce_optimization.ce_compute());
@@ -827,12 +827,12 @@ impl <'a, F> EntropyOptim<'a,F>
     // We return data in rows as (re)indexed in graph construction after hnsw!!
     fn get_embedded_raw(& self) -> Array2<F> {
         let nbrow = self.embedded.len();
-        let nbcol = self.embedded[0].read().len();
+        let nbcol = self.embedded[0].read().unwrap().len();
         let mut embedding_res = Array2::<F>::zeros((nbrow, nbcol));
         // TODO version 0.15 provides move_into and push_row
         // 
         for i in 0..nbrow {
-            let row = self.embedded[i].read();
+            let row = self.embedded[i].read().unwrap();
             for j in 0..nbcol {
                 embedding_res[[i,j]] = row[j];
             }
@@ -846,13 +846,13 @@ impl <'a, F> EntropyOptim<'a,F>
     // for this method not to panic!
     fn get_embedded_reindexed(& self, indexset: &IndexSet<NodeIdx>) -> Array2<F> {
         let nbrow = self.embedded.len();
-        let nbcol = self.embedded[0].read().len();
+        let nbcol = self.embedded[0].read().unwrap().len();
         let mut embedding_res = Array2::<F>::zeros((nbrow, nbcol));
         // TODO version 0.15 provides move_into and push_row
         // Here we must not forget that to interpret results we must go
         // back from indexset to original points (use One week bug!
         for i in 0..nbrow {
-            let row = self.embedded[i].read();
+            let row = self.embedded[i].read().unwrap();
             let origin_id = indexset.get_index(i).unwrap();
             for j in 0..nbcol {
                 embedding_res[[*origin_id,j]] = row[j];
@@ -860,6 +860,12 @@ impl <'a, F> EntropyOptim<'a,F>
         }
         return embedding_res;
     }
+
+
+    fn get_embedded_data(&self, row : usize) -> Arc<RwLock<Array1<F>>> {
+        Arc::clone(&self.embedded[row])
+    }
+
 
     // computes croos entropy between initial space and embedded distribution. 
     // necessary to monitor optimization
@@ -874,9 +880,9 @@ impl <'a, F> EntropyOptim<'a,F>
             let node_j = edge.1.node;
             assert!(node_i != node_j);
             let weight_ij = edge.1.weight as f64;
-            let weight_ij_embed = cauchy_edge_weight(&self.embedded[node_i].read(), 
+            let weight_ij_embed = cauchy_edge_weight(&self.embedded[node_i].read().unwrap(), 
                     self.embedded_scales[node_i] as f64, b,
-                    &self.embedded[node_j].read()).to_f64().unwrap();
+                    &self.embedded[node_j].read().unwrap()).to_f64().unwrap();
             if weight_ij_embed > 0. {
                 ce_entropy += -weight_ij * weight_ij_embed.ln();
             }
@@ -904,9 +910,9 @@ impl <'a, F> EntropyOptim<'a,F>
                 let node_i = edge.0;
                 let node_j = edge.1.node;
                 let weight_ij = edge.1.weight as f64;
-                let weight_ij_embed = cauchy_edge_weight(&self.embedded[node_i].read(), 
+                let weight_ij_embed = cauchy_edge_weight(&self.embedded[node_i].read().unwrap(), 
                         self.initial_scales[node_i] as f64, b,
-                        &self.embedded[node_j].read()).to_f64().unwrap();
+                        &self.embedded[node_j].read().unwrap()).to_f64().unwrap();
                 let mut term = 0.;
                 if weight_ij_embed > 0. {
                     term += -weight_ij * weight_ij_embed.ln();
@@ -922,7 +928,8 @@ impl <'a, F> EntropyOptim<'a,F>
 
     // sample a positive edge accoring to its weight. To be threaded with a Mutex
     fn sample_positive_edge(&self) -> usize {
-        self.rng.lock().sample(&self.pos_edge_distribution)
+        self.rng.lock().unwrap().sample(&self.pos_edge_distribution)
+//          thread_rng().sample(&self.pos_edge_distribution)
     } // end of sample_positive_edge
 
 
@@ -936,7 +943,10 @@ impl <'a, F> EntropyOptim<'a,F>
         // get coordinate of node
         let node_i = self.edges[edge_idx].0;
         // we locks once and directly a write lock as conflicts should be small, many edges, some threads. see Recht Hogwild!
-        let mut y_i = self.embedded[node_i].write();
+        let y_i_lock = self.get_embedded_data(node_i);
+        log::debug!("trying y_i");
+        let mut y_i = y_i_lock.try_write().unwrap();
+        log::debug!("got y_i");
         let y_i_len = y_i.len();
         let mut gradient = Array1::<F>::zeros(y_i_len);
         //
@@ -948,7 +958,10 @@ impl <'a, F> EntropyOptim<'a,F>
         let scale = self.embedded_scales[node_i] as f64;
         let b : f64 = self.params.b;
         { // get write lock on end point of edge
-            let mut y_j = self.embedded[node_j].write();
+            let y_j_lock = self.get_embedded_data(node_j);
+            log::debug!("trying y_j");
+            let mut y_j = y_j_lock.try_write().unwrap();
+            log::debug!("got y_j");
             // compute l2 norm of y_j - y_i
             let d_ij : f64 = y_i.iter().zip(y_j.iter()).map(|(vi,vj)| (*vi-*vj)*(*vi-*vj)).sum::<F>().to_f64().unwrap();
             let d_ij_scaled = d_ij/(scale*scale);
@@ -985,6 +998,7 @@ impl <'a, F> EntropyOptim<'a,F>
                 y_i[k] -= gradient[k] * F::from_f64(grad_step).unwrap();
                 y_j[k] += gradient[k] * F::from_f64(grad_step).unwrap();
             }
+            drop(y_j);
             log::trace!("norm attracting coeff {:.2e} gradient {:.2e}", coeff_ij, l2_norm(&gradient.view()).to_f64().unwrap());
         }  // end of lock on y_j
         // now we loop on negative sampling filtering out nodes that are either node_i or are in node_i neighbours.
@@ -992,13 +1006,12 @@ impl <'a, F> EntropyOptim<'a,F>
         let nb_neg = 5;
         for _k in 0..nb_neg {
             neg_node = thread_rng().gen_range(0..self.embedded_scales.len());
-            if neg_node != node_i && neg_node != node_j {
-                if self.node_params.get_node_param(node_i).get_edge(neg_node).is_some() {
-                    log::trace!("neg node is around node i");
-                    continue;
-                }
+            if neg_node != node_i && neg_node != node_j && self.node_params.get_node_param(node_i).get_edge(neg_node).is_none() {
                 // get a read lock
-                let y_k = self.embedded[neg_node].read();
+                let y_k_lock = self.get_embedded_data(neg_node);
+                log::debug!("trying y_k");
+                let y_k = y_k_lock.try_read().unwrap();
+                log::debug!("got y_k");
                 // compute the common part of coeff as in function grad_common_coeff
                 let d_ik : f64 = y_i.iter().zip(y_k.iter()).map(|(vi,vj)| (*vi-*vj)*(*vi-*vj)).sum::<F>().to_f64().unwrap();
                 let d_ik_scaled = d_ik/(scale*scale);
@@ -1032,9 +1045,10 @@ impl <'a, F> EntropyOptim<'a,F>
                     }
                     y_i[l] -= gradient[l] * F::from_f64(grad_step).unwrap();
                 }
+                drop(y_k);
                 log::trace!("norm repulsive  coeff gradient {:.2e} {:.2e}", coeff_ik , l2_norm(&gradient.view()).to_f64().unwrap());
-            }
-        }  // end of neg sampling
+            } // end node_neg is accepted
+        }  // end of loop on neg sampling
     } // end of ce_optim_from_point
 
 
