@@ -730,7 +730,7 @@ where
             let start = ProcessTime::now();
             ce_optimization.gradient_iteration_threaded(nb_sample_by_iter, grad_step);
             let cpu_time: Duration = start.elapsed();
-//            println!("ce after grad iteration time {:?} grad iter {:.2e}",  cpu_time, ce_optimization.ce_compute());
+            println!("ce after grad iteration time {:?} grad iter {:.2e}",  cpu_time, ce_optimization.ce_compute());
             log::debug!("ce after grad iteration time {:?} grad iter {:.2e}",  cpu_time, ce_optimization.ce_compute());
         }
         let cpu_time: Duration = start.elapsed();
@@ -958,7 +958,7 @@ impl <'a, F> EntropyOptim<'a,F>
 
     // TODO : pass functions corresponding to edge_weight and grad_edge_weight as arguments to test others weight function
     /// This function optimize cross entropy for Shannon cross entropy
-    fn ce_optim_edge_shannon(&self, grad_step : f64)
+    fn ce_optim_edge_shannon(&self, threaded : bool, grad_step : f64)
     where
         F: Float + NumAssign + std::iter::Sum + num_traits::cast::FromPrimitive + ndarray::ScalarOperand
     {
@@ -968,7 +968,8 @@ impl <'a, F> EntropyOptim<'a,F>
         let mut edge_idx_sampled : usize;
         let mut y_i_lock;
         let mut y_j_lock;
-        let res = loop {
+        let res = if threaded {
+            loop {
             edge_idx_sampled = rng_guard.sample(&self.pos_edge_distribution);
             let node_i = self.edges[edge_idx_sampled].0; 
             y_i_lock = self.get_embedded_data(node_i);
@@ -985,7 +986,16 @@ impl <'a, F> EntropyOptim<'a,F>
                     // but we could also just sample another edge from this node.
                     continue;
                 }
-            }        
+            } 
+        }
+        }
+        else {
+            edge_idx_sampled = rng_guard.sample(&self.pos_edge_distribution);
+            let node_i = self.edges[edge_idx_sampled].0; 
+            y_i_lock = self.get_embedded_data(node_i);
+            let node_j = self.edges[edge_idx_sampled].1.node;
+            y_j_lock = self.get_embedded_data(node_j); 
+            (node_i, node_j, y_i_lock.write(), y_j_lock.write())
         };
         let node_i = res.0;
         let node_j = res.1;
@@ -1086,14 +1096,14 @@ impl <'a, F> EntropyOptim<'a,F>
     // TODO to be called in // all was done for
     fn gradient_iteration(&self, nb_sample : usize, grad_step : f64) {
         for _ in 0..nb_sample {
-            self.ce_optim_edge_shannon(grad_step);
+            self.ce_optim_edge_shannon(false, grad_step);
         }
     } // end of gradient_iteration
 
 
 
     fn gradient_iteration_threaded(&self, nb_sample : usize, grad_step : f64) {
-        (0..nb_sample).into_par_iter().for_each( |_| self.ce_optim_edge_shannon( grad_step));
+        (0..nb_sample).into_par_iter().for_each( |_| self.ce_optim_edge_shannon(true, grad_step));
     } // end of gradient_iteration_threaded
     
     
