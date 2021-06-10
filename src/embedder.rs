@@ -16,7 +16,7 @@ use quantiles::{ckms::CKMS};     // we could use also greenwald_khanna
 
 // threading needs
 use rayon::prelude::*;
-use parking_lot::{RwLock, Mutex};
+use parking_lot::{RwLock, Mutex, RwLockWriteGuard};
 use std::sync::Arc;
 //use std::sync::{RwLock, Mutex};
 
@@ -933,35 +933,77 @@ impl <'a, F> EntropyOptim<'a,F>
     } // end of sample_positive_edge
 
 
+    // sample a positive edge 
+    // we must sample as long we get the locks on start of edge
+    // This will guarantee that the method ce_optim_edge_shannon we not deadlock !
+    // The method returns the a WriteGuard on head of edge
+    // fn sample_positive_edge_threaded(&self) -> (usize, Arc<RwLockWriteGuard<Array1<F>>>) {
+    //     // get a lock on random generator, this will enforce unicity of access to WeightedAliasIndex
+    //     let mut rng_guard =  self.rng.lock();
+    //     let mut got_edge = false;
+    //     let mut edge_idx;
+    //     let res = loop {
+    //         edge_idx = rng_guard.sample(&self.pos_edge_distribution);
+    //         // try to get a lock on 
+    //         let node_i = self.edges[edge_idx].0; 
+    //         let y_i_lock = self.get_embedded_data(node_i);
+    //         let res = y_i_lock.try_write();
+    //         if res.is_some() {
+    //             break (node_i, Arc::new(res.unwrap()));
+    //         }
+    //     };   // end while 
+        
+    // }  // end of sample_positive_edge_threaded
+
 
     // TODO : pass functions corresponding to edge_weight and grad_edge_weight as arguments to test others weight function
     /// This function optimize cross entropy for Shannon cross entropy
-    fn ce_optim_edge_shannon(&self, edge_idx : usize, grad_step : f64)
+    fn ce_optim_edge_shannon(&self, grad_step : f64)
     where
         F: Float + NumAssign + std::iter::Sum + num_traits::cast::FromPrimitive + ndarray::ScalarOperand
     {
+        // 
+
+        let mut rng_guard =  self.rng.lock();
+        let mut edge_idx_sampled : usize;
+        let mut y_i_lock;
+        let mut y_j_lock;
+        let res = loop {
+            edge_idx_sampled = rng_guard.sample(&self.pos_edge_distribution);
+            let node_i = self.edges[edge_idx_sampled].0; 
+            y_i_lock = self.get_embedded_data(node_i);
+            let res_i = y_i_lock.try_write();
+            if res_i.is_some() {
+                let node_j = self.edges[edge_idx_sampled].1.node;
+                y_j_lock = self.get_embedded_data(node_j); 
+                let res_j = y_j_lock.try_write();
+                if res_j.is_some() {
+                    // we have both locks, we return node_i node_j , and both RwWriteLockGuard
+                    break (node_i, node_j, res_i.unwrap(), res_j.unwrap());
+                }
+                else {
+                    // but we could also just sample another edge from this node.
+                    continue;
+                }
+            }        
+        };
+        let node_i = res.0;
+        let node_j = res.1;
+        let mut y_i = res.2;
+        let mut y_j = res.3;
+
+
         // get coordinate of node
-        let node_i = self.edges[edge_idx].0;
         // we locks once and directly a write lock as conflicts should be small, many edges, some threads. see Recht Hogwild!
-        let y_i_lock = self.get_embedded_data(node_i);
-        log::debug!("trying y_i");
-        let mut y_i = y_i_lock.write();
-        log::debug!("got y_i");
         let dim = self.params.asked_dim;
         let mut gradient = Array1::<F>::zeros(dim);
         //
-        let edge_out = self.edges[edge_idx];
-        let node_j = edge_out.1.node;
         assert!(node_i != node_j);
-        let weight = edge_out.1.weight as f64;
+        let weight = self.edges[edge_idx_sampled].1.weight as f64;
         assert!(weight <= 1.);
         let scale = self.embedded_scales[node_i] as f64;
         let b : f64 = self.params.b;
         { // get write lock on end point of edge
-            let y_j_lock = self.get_embedded_data(node_j);
-            log::debug!("trying y_j");
-            let mut y_j = y_j_lock.write();
-            log::debug!("got y_j");
             // compute l2 norm of y_j - y_i
             let d_ij : f64 = y_i.iter().zip(y_j.iter()).map(|(vi,vj)| (*vi-*vj)*(*vi-*vj)).sum::<F>().to_f64().unwrap();
             let d_ij_scaled = d_ij/(scale*scale);
@@ -1044,14 +1086,14 @@ impl <'a, F> EntropyOptim<'a,F>
     // TODO to be called in // all was done for
     fn gradient_iteration(&self, nb_sample : usize, grad_step : f64) {
         for _ in 0..nb_sample {
-            self.ce_optim_edge_shannon(self.sample_positive_edge(), grad_step);
+            self.ce_optim_edge_shannon(grad_step);
         }
     } // end of gradient_iteration
 
 
 
     fn gradient_iteration_threaded(&self, nb_sample : usize, grad_step : f64) {
-        (0..nb_sample).into_par_iter().for_each( |_| self.ce_optim_edge_shannon(self.sample_positive_edge(), grad_step));
+        (0..nb_sample).into_par_iter().for_each( |_| self.ce_optim_edge_shannon( grad_step));
     } // end of gradient_iteration_threaded
     
     
