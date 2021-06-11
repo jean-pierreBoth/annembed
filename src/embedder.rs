@@ -938,28 +938,6 @@ impl <'a, F> EntropyOptim<'a,F>
     } // end of sample_positive_edge
 
 
-    // sample a positive edge 
-    // we must sample as long we get the locks on start of edge
-    // This will guarantee that the method ce_optim_edge_shannon we not deadlock !
-    // The method returns the a WriteGuard on head of edge
-    // fn sample_positive_edge_threaded(&self) -> (usize, Arc<RwLockWriteGuard<Array1<F>>>) {
-    //     // get a lock on random generator, this will enforce unicity of access to WeightedAliasIndex
-    //     let mut rng_guard =  self.rng.lock();
-    //     let mut got_edge = false;
-    //     let mut edge_idx;
-    //     let res = loop {
-    //         edge_idx = rng_guard.sample(&self.pos_edge_distribution);
-    //         // try to get a lock on 
-    //         let node_i = self.edges[edge_idx].0; 
-    //         let y_i_lock = self.get_embedded_data(node_i);
-    //         let res = y_i_lock.try_write();
-    //         if res.is_some() {
-    //             break (node_i, Arc::new(res.unwrap()));
-    //         }
-    //     };   // end while 
-        
-    // }  // end of sample_positive_edge_threaded
-
 
     // TODO : pass functions corresponding to edge_weight and grad_edge_weight as arguments to test others weight function
     /// This function optimize cross entropy for Shannon cross entropy
@@ -969,17 +947,17 @@ impl <'a, F> EntropyOptim<'a,F>
     {
         // 
 
-        let mut edge_idx_sampled : usize;
+        let edge_idx_sampled : usize;
         let mut y_i;
         let mut y_j;
-        let mut node_j;
+        let node_j;
         let node_i;
         if threaded {
-                edge_idx_sampled = thread_rng().sample(&self.pos_edge_distribution);
-                node_i = self.edges[edge_idx_sampled].0; 
-                node_j = self.edges[edge_idx_sampled].1.node;
-                y_i = self.get_embedded_data(node_i).read().to_owned();
-                y_j = self.get_embedded_data(node_j).read().to_owned();
+            edge_idx_sampled = thread_rng().sample(&self.pos_edge_distribution);
+            node_i = self.edges[edge_idx_sampled].0; 
+            node_j = self.edges[edge_idx_sampled].1.node;
+            y_i = self.get_embedded_data(node_i).read().to_owned();
+            y_j = self.get_embedded_data(node_j).read().to_owned();
         } // end threaded
         else {
             edge_idx_sampled = thread_rng().sample(&self.pos_edge_distribution);
@@ -998,38 +976,40 @@ impl <'a, F> EntropyOptim<'a,F>
         assert!(weight <= 1.);
         let scale = self.embedded_scales[node_i] as f64;
         let b : f64 = self.params.b;
-        // get write lock on end point of edge
-            // compute l2 norm of y_j - y_i
-            let d_ij : f64 = y_i.iter().zip(y_j.iter()).map(|(vi,vj)| (*vi-*vj)*(*vi-*vj)).sum::<F>().to_f64().unwrap();
-            let d_ij_scaled = d_ij/(scale*scale);
-            let cauchy_weight = 1./ (1. + d_ij_scaled.powf(b));
-            // this coeff is common for P and 1.-P part
-            let coeff : f64;
-            if b != 1. { 
-                coeff =  2. * b * cauchy_weight * d_ij_scaled.powf(b - 1.)/ (scale*scale);
-            }
-            else {
-                coeff =  2. * b * cauchy_weight / (scale*scale);
-            }
-            if d_ij_scaled > 0. {
-                // repulsion annhinilate  attraction if P<= 1. / (alfa + 1)
-                let alfa = 100.;
-                let coeff_repulsion = 1. / (d_ij_scaled*d_ij_scaled).max(alfa);
-                let coeff_ij = grad_step * coeff * (- weight + (1.-weight) * coeff_repulsion);
-                // clipping makes each point i or j making at most half way to the other
-                gradient = (&y_j - &y_i) *  clip(F::from_f64(coeff_ij).unwrap(), 0.49);
-                log::trace!("norm attracting coeff {:.2e} gradient {:.2e}", coeff_ij, l2_norm(&gradient.view()).to_f64().unwrap());
-            } else { // keep a small repulsive force to detach points.
-                log::trace!("attraction : null dist random push");
-                for k in 0..dim {
-                    let xsi = 2 * (thread_rng().gen::<u32>() % 2) - 1;   // CAVEAT to // mutex...
-                    let push = grad_step * (xsi  as f64) * ((1.-weight) * 0.01) * scale;
-                    gradient[k] = F::from(push).unwrap();
-                }                
-            }
-            y_i -= &gradient;
-            y_j += &gradient;
-            *(self.get_embedded_data(node_j).write()) = y_j;
+        // compute l2 norm of y_j - y_i
+        let d_ij : f64 = y_i.iter().zip(y_j.iter()).map(|(vi,vj)| (*vi-*vj)*(*vi-*vj)).sum::<F>().to_f64().unwrap();
+        let d_ij_scaled = d_ij/(scale*scale);
+        let cauchy_weight = 1./ (1. + d_ij_scaled.powf(b));
+        // this coeff is common for P and 1.-P part
+        let coeff : f64;
+        if b != 1. { 
+            coeff =  2. * b * cauchy_weight * d_ij_scaled.powf(b - 1.)/ (scale*scale);
+        }
+        else {
+            coeff =  2. * b * cauchy_weight / (scale*scale);
+        }
+        if d_ij_scaled > 0. {
+            // repulsion annhinilate  attraction if P<= 1. / (alfa + 1)
+            let alfa = 100.;
+            let coeff_repulsion = 1. / (d_ij_scaled*d_ij_scaled).max(alfa);
+            let coeff_ij = grad_step * coeff * (- weight + (1.-weight) * coeff_repulsion);
+            // clipping makes each point i or j making at most half way to the other
+            gradient = (&y_j - &y_i) *  clip(F::from_f64(coeff_ij).unwrap(), 0.49);
+            // for l in  0..gradient.len() {
+            //     gradient[l] = (y_j[l] - y_i[l]) *  clip(F::from_f64(coeff_ij).unwrap(), 0.49);
+            // }
+            log::trace!("norm attracting coeff {:.2e} gradient {:.2e}", coeff_ij, l2_norm(&gradient.view()).to_f64().unwrap());
+        } else { // keep a small repulsive force to detach points.
+            log::trace!("attraction : null dist random push");
+            for l in 0..dim {
+                let xsi = 2 * (thread_rng().gen::<u32>() % 2) - 1;   // CAVEAT to // mutex...
+                let push = grad_step * (xsi  as f64) * ((1.-weight) * 0.01) * scale;
+                gradient[l] = F::from(push).unwrap();
+            }                
+        }
+        y_i -= &gradient;
+        y_j += &gradient;
+        *(self.get_embedded_data(node_j).write()) = y_j;
         // now we loop on negative sampling filtering out nodes that are either node_i or are in node_i neighbours.
         let asked_nb_neg = 5;
         let mut nb_neg_done = 0;
