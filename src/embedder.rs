@@ -16,9 +16,8 @@ use quantiles::{ckms::CKMS};     // we could use also greenwald_khanna
 
 // threading needs
 use rayon::prelude::*;
-use parking_lot::{RwLock, Mutex, RwLockWriteGuard};
+use parking_lot::{RwLock, Mutex};
 use std::sync::Arc;
-//use std::sync::{RwLock, Mutex};
 
 use rand::{Rng, thread_rng};
 use rand::distributions::{Uniform};
@@ -301,6 +300,7 @@ where
         self.parameters.nb_grad_batch
     }
 
+
     /// do the embedding
     pub fn embed(&mut self) -> Result<usize, usize> {
         //
@@ -391,12 +391,10 @@ where
         println!("\n scales quantile at 0.05 : {:.2e} , 0.5 :  {:.2e}, 0.95 : {:.2e}, 0.99 : {:.2e}", 
         scale_q.query(0.05).unwrap().1, scale_q.query(0.5).unwrap().1, 
         scale_q.query(0.95).unwrap().1, scale_q.query(0.99).unwrap().1);
-        println!("");
         //
         println!("\n edge weight quantile at 0.05 : {:.2e} , 0.5 :  {:.2e}, 0.95 : {:.2e}, 0.99 : {:.2e}", 
         weight_q.query(0.05).unwrap().1, weight_q.query(0.5).unwrap().1, 
         weight_q.query(0.95).unwrap().1, weight_q.query(0.99).unwrap().1);
-        println!("");        
         //
         println!("\n perplexity quantile at 0.05 : {:.2e} , 0.5 :  {:.2e}, 0.95 : {:.2e}, 0.99 : {:.2e}", 
         perplexity_q.query(0.05).unwrap().1, perplexity_q.query(0.5).unwrap().1, 
@@ -724,10 +722,11 @@ where
         log::info!("grad_step_init : {:.2e}", grad_step_init);
         //
         log::debug!("in Embedder::entropy_optimize  ... gradient iterations");
-        let nb_nodes = self.get_nb_nodes();
-        let nb_sample_by_iter = params.nb_sampling_by_edge * nb_nodes* 10;
+        let nb_sample_by_iter = params.nb_sampling_by_edge * ce_optimization.get_nb_edges();
         //
-        log::info!(" optimizing embedding , nb iteration : {}  sampling size {} ", self.get_nb_grad_batch(), nb_sample_by_iter);
+        log::info!("\n optimizing embedding");
+        log::info!(" nb edges {} , number of edge sampling by grad iteration {}", ce_optimization.get_nb_edges(), nb_sample_by_iter);
+        log::info!(" nb iteration : {}  sampling size {} ", self.get_nb_grad_batch(), nb_sample_by_iter);
         let start = ProcessTime::now();
         for iter in 1..=self.get_nb_grad_batch() {
             // loop on edges
@@ -736,7 +735,7 @@ where
             ce_optimization.gradient_iteration_threaded(nb_sample_by_iter, grad_step);
             let cpu_time: Duration = start.elapsed();
 //            println!("ce after grad iteration time {:?} grad iter {:.2e}",  cpu_time, ce_optimization.ce_compute_threaded());
-            log::debug!("ce after grad iteration time {:?} grad iter {:.2e}",  cpu_time, ce_optimization.ce_compute());
+            log::debug!("ce after grad iteration time {:?} grad iter {:.2e}",  cpu_time, ce_optimization.ce_compute_threaded());
         }
         let cpu_time: Duration = start.elapsed();
         println!(" gradient iterations cpu_time {:?}",  cpu_time);
@@ -827,6 +826,9 @@ impl <'a, F> EntropyOptim<'a,F>
         // construct field embedded
     }  // end of new 
 
+    pub fn get_nb_edges(&self) -> usize {
+        self.edges.len()
+    } // end of get_nb_edges
 
     // return result as an Array2<F> cloning data to result to struct Embedder
     // We return data in rows as (re)indexed in graph construction after hnsw!!
@@ -931,11 +933,7 @@ impl <'a, F> EntropyOptim<'a,F>
         return ce_entropy;
     }
 
-    // sample a positive edge accoring to its weight. To be threaded with a Mutex
-    fn sample_positive_edge(&self) -> usize {
-        self.rng.lock().sample(&self.pos_edge_distribution)
-//          thread_rng().sample(&self.pos_edge_distribution)
-    } // end of sample_positive_edge
+
 
 
 
@@ -946,7 +944,6 @@ impl <'a, F> EntropyOptim<'a,F>
         F: Float + NumAssign + std::iter::Sum + num_traits::cast::FromPrimitive + ndarray::ScalarOperand
     {
         // 
-
         let edge_idx_sampled : usize;
         let mut y_i;
         let mut y_j;
@@ -979,13 +976,14 @@ impl <'a, F> EntropyOptim<'a,F>
         // compute l2 norm of y_j - y_i
         let d_ij : f64 = y_i.iter().zip(y_j.iter()).map(|(vi,vj)| (*vi-*vj)*(*vi-*vj)).sum::<F>().to_f64().unwrap();
         let d_ij_scaled = d_ij/(scale*scale);
-        let cauchy_weight = 1./ (1. + d_ij_scaled.powf(b));
         // this coeff is common for P and 1.-P part
         let coeff : f64;
         if b != 1. { 
+            let cauchy_weight = 1./ (1. + d_ij_scaled.powf(b));
             coeff =  2. * b * cauchy_weight * d_ij_scaled.powf(b - 1.)/ (scale*scale);
         }
         else {
+            let cauchy_weight = 1./ (1. + d_ij_scaled);
             coeff =  2. * b * cauchy_weight / (scale*scale);
         }
         if d_ij_scaled > 0. {
@@ -995,25 +993,14 @@ impl <'a, F> EntropyOptim<'a,F>
             let coeff_ij = grad_step * coeff * (- weight + (1.-weight) * coeff_repulsion);
             // clipping makes each point i or j making at most half way to the other
             gradient = (&y_j - &y_i) *  clip(F::from_f64(coeff_ij).unwrap(), 0.49);
-            // for l in  0..gradient.len() {
-            //     gradient[l] = (y_j[l] - y_i[l]) *  clip(F::from_f64(coeff_ij).unwrap(), 0.49);
-            // }
             log::trace!("norm attracting coeff {:.2e} gradient {:.2e}", coeff_ij, l2_norm(&gradient.view()).to_f64().unwrap());
-        } else { // keep a small repulsive force to detach points.
-            log::trace!("attraction : null dist random push");
-            for l in 0..dim {
-                let xsi = 2 * (thread_rng().gen::<u32>() % 2) - 1;   // CAVEAT to // mutex...
-                let push = grad_step * (xsi  as f64) * ((1.-weight) * 0.01) * scale;
-                gradient[l] = F::from(push).unwrap();
-            }                
         }
         y_i -= &gradient;
         y_j += &gradient;
         *(self.get_embedded_data(node_j).write()) = y_j;
         // now we loop on negative sampling filtering out nodes that are either node_i or are in node_i neighbours.
         let asked_nb_neg = 5;
-        let mut nb_neg_done = 0;
-        while  nb_neg_done < asked_nb_neg {
+        for _neg in 0..asked_nb_neg {
             let neg_node : NodeIdx = thread_rng().gen_range(0..self.embedded_scales.len());
             if neg_node != node_i && neg_node != node_j && self.node_params.get_node_param(node_i).get_edge(neg_node).is_none() {
                 // get a read lock, as neg_node is not the locked nodes node_i and node_j
@@ -1022,12 +1009,13 @@ impl <'a, F> EntropyOptim<'a,F>
                 // compute the common part of coeff as in function grad_common_coeff
                 let d_ik : f64 = y_i.iter().zip(y_k.iter()).map(|(vi,vj)| (*vi-*vj)*(*vi-*vj)).sum::<F>().to_f64().unwrap();
                 let d_ik_scaled = d_ik/(scale*scale);
-                let cauchy_weight = 1./ (1. + d_ik_scaled.powf(b));
                 let coeff : f64;
                 if b != 1. {
+                    let cauchy_weight = 1./ (1. + d_ik_scaled.powf(b));
                     coeff = 2. * b * cauchy_weight * d_ik_scaled.powf(b - 1.)/ (scale*scale);
                 }
                 else {
+                    let cauchy_weight = 1./ (1. + d_ik_scaled);
                     coeff = 2. * b * cauchy_weight/ (scale*scale);
                 }
                 // use the same clipping as attractive/repulsion case
@@ -1037,16 +1025,8 @@ impl <'a, F> EntropyOptim<'a,F>
                     let coeff_ik =  grad_step * coeff * coeff_repulsion;    // weight attraction is 0!
                     gradient = (&y_k - &y_i) *  clip(F::from_f64(coeff_ik).unwrap(), 5.);
                     log::trace!("norm repulsive  coeff gradient {:.2e} {:.2e}", coeff_ik , l2_norm(&gradient.view()).to_f64().unwrap());
-                } else {
-                    log::trace!("repulsion null dist random push");
-                    for l in 0..dim {
-                        let xsi = 2 * (thread_rng().gen::<u32>() % 2) - 1;   // CAVEAT to // mutex...
-                        let push = (xsi  as f64) * (1. - weight) * scale;
-                        gradient[l] = F::from(push).unwrap();                            
-                    }
                 }
                 y_i -= &gradient;
-                nb_neg_done+=1
             } // end node_neg is accepted
         }  // end of loop on neg sampling
         // final update of node_i
