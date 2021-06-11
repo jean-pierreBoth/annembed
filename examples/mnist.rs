@@ -135,6 +135,9 @@ pub fn read_label_file(io_in: &mut dyn Read) -> Array1<u8>{
 use csv::*;
 
 
+use std::time::{Duration, SystemTime};
+use cpu_time::ProcessTime;
+
 pub fn main() {
     //
     let _ = env_logger::builder().is_test(true).try_init();
@@ -173,14 +176,19 @@ pub fn main() {
     let max_nb_connection = 100;
     let nbimages = images_as_v.len();
     let nb_layer = 16.min((nbimages as f32).ln().trunc() as usize);
+    let cpu_start = ProcessTime::now();
+    let sys_now = SystemTime::now();
     let hnsw = Hnsw::<f32, DistL1>::new(max_nb_connection, nbimages, nb_layer, ef_c, DistL1{});
     // we must pay fortran indexation once!. transform image to a vector
     let data_with_id : Vec<(&Vec<f32>, usize)>= images_as_v.iter().zip(0..images_as_v.len()).collect();
-//    hnsw.parallel_insert(&data_with_id);
-    for i in 0..2000 {
-        hnsw.insert(data_with_id[i]);
-    }
+    hnsw.parallel_insert(&data_with_id);
+    // for i in 0..2000 {
+    //     hnsw.insert(data_with_id[i]);
+    // }
     // images as vectors of f32 and send to hnsw
+    let cpu_time: Duration = cpu_start.elapsed();
+    println!(" ann construction sys time {:?} cpu time {:?}", sys_now.elapsed().unwrap().as_secs(), cpu_time);
+
     hnsw.dump_layer_info();
     //
     let mut kgraph = KGraph::<f32>::new();
@@ -201,9 +209,10 @@ pub fn main() {
     // 
     let _kgraph_stats = kgraph.get_kraph_stats();
     let mut embed_params = EmbedderParams::new();
-    embed_params.nb_grad_batch = 200;
-    embed_params.scale_rho = 0.5;
+    embed_params.nb_grad_batch = 20;
+    embed_params.scale_rho = 1.;
     embed_params.grad_step = 1.;
+    embed_params.nb_sampling_by_edge = 20;
     let mut embedder = Embedder::new(&kgraph, embed_params);
     let embed_res = embedder.embed();
     assert!(embed_res.is_ok()); 
