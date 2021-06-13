@@ -1,7 +1,12 @@
-//! umap-like embedding from GrapK
+//! umap-like embedding from GraphK
+//! The embedding is based on the graph provided by hnsw.
+//! Edges out a given point are given an exponential weight scaled with the distance to nearest neighbour
+//! point in the vicinity of the point. This scale can be modulated by the scale_rho parameter.
+//! 
+
+
 
 #![allow(dead_code)]
-// #![recursion_limit="256"]
 
 use num_traits::{Float, NumAssign};
 use std::collections::HashMap;
@@ -28,11 +33,12 @@ use rand_xoshiro::rand_core::SeedableRng;
 use indexmap::set::*;
 
 
-use std::time::Duration;
+use std::time::{Duration,SystemTime};
 use cpu_time::ProcessTime;
 
 use hnsw_rs::prelude::*;
 use crate::fromhnsw::*;
+use crate::embedparams::*;
 use crate::tools::svdapprox::*;
 
 
@@ -212,44 +218,6 @@ impl LaplacianGraph {
 //=====================================================================================
 
 
-/// main parameters driving Embeding
-#[derive(Clone, Copy)]
-pub struct EmbedderParams {
-    /// embedding dimension : default to 2
-    pub asked_dim : usize,
-    pub b : f64,
-    /// scale factor
-    pub scale_rho : f64,
-    /// initial gradient step , default to 0.05
-    pub grad_step : f64,
-    /// nb iter sampling default = 5
-    pub nb_sampling_by_edge : usize,
-    /// number of gradient batch
-    pub nb_grad_batch : usize,
-} // end of EmbedderParams
-
-
-impl EmbedderParams {
-    pub fn new()  -> Self {
-        let asked_dim = 2;
-        let b = 1.;
-        let grad_step = 0.05;
-        let nb_sampling_by_edge = 5;
-        let scale_rho = 1.;
-        let nb_grad_batch = 100;
-        EmbedderParams{asked_dim, b, scale_rho, grad_step, nb_sampling_by_edge , nb_grad_batch}
-    }
-
-    pub fn log(&self) {
-        log::info!("EmbedderParams");
-        log::info!("\t gradient step : {}", self.grad_step);
-        log::info!("\t nb sampling by edge : {}", self.nb_sampling_by_edge);
-        log::info!("\t scale factor : {}", self.scale_rho);
-        log::info!("\t number of gradient batch : {}", self.nb_grad_batch);
-
-    }
-} // end of impl EmbedderParams
-
 
 /// The structure corresponding to the embedding process
 /// It must be initiamized by the graph extracted from Hnsw according to the choosen strategy
@@ -310,11 +278,19 @@ where
         // construction of initial neighbourhood, scales and weight of edges from distances.
         self.initial_space = Some(NodeParams{params : self.construct_initial_space()});
         // we can initialize embedding with diffusion maps or pure random.
-        // initial embedding via diffusion maps, in this case we have to have a coherent box normalization with random case
-//        let initial_embedding = self.get_dmap_initial_embedding(self.asked_dimension);
-
+        let mut initial_embedding;
+        if self.parameters.dmap_init {
+            // initial embedding via diffusion maps, in this case we have to have a coherent box normalization with random case
+            let cpu_start = ProcessTime::now();
+            let sys_start = SystemTime::now();
+            initial_embedding = self.get_dmap_initial_embedding(self.parameters.get_dimension());
+            println!(" dmap initialization sys time(ms) {:.2e} cpu time(ms) {:.2e}", sys_start.elapsed().unwrap().as_millis(), cpu_start.elapsed().as_millis());
+            set_data_box(&mut initial_embedding);
+        }
+        else {
         // if we use random initialization we must have a box size coherent with renormalizes scales, so box size is 1!
-        let initial_embedding = self.get_random_init(1.);
+            initial_embedding = self.get_random_init(1.);
+        }
         // we nedd to construct field initial_space has been contructed in get_laplacian 
         // cross entropy optimization
         let embedding_res = self.entropy_optimize(&self.parameters, &initial_embedding);
@@ -498,7 +474,7 @@ where
             // The UMAP formula (p_i+p_j - p_i *p_j) implies taking the non null proba when one proba is null,
             // so UMAP initialization is more packed.
             let mut symgraph = (&transition_proba + &transition_proba.view().t()) * 0.5;
-            // now we go to the symetric laplacian D^-1/2 * G * D^-1/2 but get rid of the I - ... cf Jostdan
+            // now we go to the symetric laplacian D^-1/2 * G * D^-1/2 but get rid of the I - ... cf Jordan
             //  compute sum of row and renormalize. See Lafon-Keller-Coifman
             // Diffusions Maps appendix B
             // IEEE TRANSACTIONS ON PATTERN ANALYSIS AND MACHINE INTELLIGENCE,VOL. 28, NO. 11,NOVEMBER 2006
@@ -540,7 +516,6 @@ where
                 } else {
                     sym_val = *val;
                 }
-                diagonal[*i] += sym_val;
                 rows.push(*i);
                 cols.push(*j);
                 values.push(sym_val);
@@ -552,20 +527,12 @@ where
                 diagonal[*j] += sym_val;
             }
             // now we push terms (i,i) in csr
-            for i in 0..nbnodes {
-                rows.push(i);
-                cols.push(i);
-                values.push(0.);
-            }
-            // Now we reset non diagonal terms to I-D^-1/2 G D^-1/2  i.e 1. - val[i,j]/(D[i]*D[j])^1/2
+            // Now we reset non diagonal terms to D^-1/2 G D^-1/2  i.e  val[i,j]/(D[i]*D[j])^1/2
             for i in 0..rows.len() {
                 let row = rows[i];
                 let col = cols[i];
-                if row == col {
-                    values[i] = 1. - values[i] / (diagonal[row] * diagonal[col]).sqrt();
-                }
-                else {
-                    values[i] = - values[i] / (diagonal[row] * diagonal[col]).sqrt();
+                if row != col {
+                    values[i] = values[i] / (diagonal[row] * diagonal[col]).sqrt();
                 }
             }
             // 
@@ -1132,7 +1099,7 @@ fn estimate_embedded_scales_from_initial_scales(initial_scales :&Vec<f32>) -> Ve
     let scale_sup = 2.0;  // CAVEAT seems we can go up to 4.
     let scale_inf = 1./scale_sup;
     // We want embedded scae impact between 0.5 and 2 (amplitude 4) , we take into account the square in cauchy weight
-    let embedded_scale : Vec<f32> = initial_scales.iter().map(|&x| (x/mean_scale).min(scale_sup).max(scale_inf)).collect();
+    let embedded_scale : Vec<f32> = initial_scales.iter().map(|&x| 0.2 * (x/mean_scale).min(scale_sup).max(scale_inf)).collect();
     //
     for i in 0..embedded_scale.len() {
         log::debug!("embedded scale for node {} : {:.2e}", i , embedded_scale[i]);
@@ -1140,6 +1107,35 @@ fn estimate_embedded_scales_from_initial_scales(initial_scales :&Vec<f32>) -> Ve
     //
     embedded_scale
 }  // end of estimate_embedded_scale_from_initial_scales
+
+
+// renormalize data (center and enclose in unit box) before optimization of cross entropy
+fn set_data_box<F>(data : &mut Array2<F>) 
+    where  F: Float +  NumAssign + std::iter::Sum<F> + num_traits::cast::FromPrimitive + Send + Sync + ndarray::ScalarOperand  {
+    let nbdata = data.nrows();
+    let dim = data.ncols();
+    //
+    let mut means = Array1::<F>::zeros(dim);
+    let mut max_max = F::zero();
+    //
+    for j in 0..dim  {
+        for i in 0..nbdata {
+            means[j] += data[[i,j]];
+        }
+    }
+    for j in 0..dim  {
+        means[j] /= F::from(nbdata).unwrap();
+        for i in 0..nbdata {
+            data[[i,j]] = data[[i,j]] - means[j];
+            max_max = max_max.max(data[[i,j]].abs());          
+        }
+    }    
+    for f in data.iter_mut()  {
+        *f = (*f)/max_max;
+        assert!(*f <= F::one());
+    }    
+}  // end of set_data_box
+
 
 
 
