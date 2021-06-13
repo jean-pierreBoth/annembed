@@ -62,4 +62,9 @@ impl EmbedderParams {
     pub fn set_nb_edge_sampling(&mut self, nb_sample_by_edge: usize) {
         self.nb_sampling_by_edge = nb_sample_by_edge;
     }
+
+    ///
+    pub fn get_dimension(&self) -> usize {
+        self.asked_dim
+    }
 } // end of impl EmbedderParams
