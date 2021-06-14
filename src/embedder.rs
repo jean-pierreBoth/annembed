@@ -6,7 +6,7 @@
 
 
 
-#![allow(dead_code)]
+//#![allow(dead_code)]
 
 use num_traits::{Float, NumAssign};
 use std::collections::HashMap;
@@ -21,14 +21,12 @@ use quantiles::{ckms::CKMS};     // we could use also greenwald_khanna
 
 // threading needs
 use rayon::prelude::*;
-use parking_lot::{RwLock, Mutex};
+use parking_lot::{RwLock};
 use std::sync::Arc;
 
 use rand::{Rng, thread_rng};
 use rand::distributions::{Uniform};
 use rand_distr::{WeightedAliasIndex};
-use rand_xoshiro::Xoshiro256PlusPlus;
-use rand_xoshiro::rand_core::SeedableRng;
 
 use indexmap::set::*;
 
@@ -76,6 +74,7 @@ impl NodeParam {
     }
 
     /// get number of out edges
+#[allow(unused)]
     pub fn  get_nb_edges(&self) -> usize {
         self.edges.len()
     }
@@ -111,9 +110,9 @@ struct LaplacianGraph {
     // the vector giving D of the symtrized graph
     degrees: Array1<f32>,
     // 
-    s : Option<Array1<f32>>,
+    _s : Option<Array1<f32>>,
     //
-    u : Option<Array2<f32>>
+    _u : Option<Array2<f32>>
 }
 
 
@@ -121,7 +120,7 @@ impl LaplacianGraph {
 
 
     pub fn new(sym_laplacian: MatRepr<f32>, degrees: Array1<f32>) -> Self {
-        LaplacianGraph{sym_laplacian, degrees, s : None, u: None}
+        LaplacianGraph{sym_laplacian, degrees, _s : None, _u: None}
     } // end of new for LaplacianGraph
 
 
@@ -272,7 +271,7 @@ where
     /// do the embedding
     pub fn embed(&mut self) -> Result<usize, usize> {
         //
-        let kgraph_stats = self.kgraph.get_kraph_stats();
+//        let kgraph_stats = self.kgraph.get_kraph_stats();
         //
         self.parameters.log();
         // construction of initial neighbourhood, scales and weight of edges from distances.
@@ -307,8 +306,6 @@ where
                 return Err(1);
             }        
         }
-
-        //
     } /// end embed
 
 
@@ -461,7 +458,6 @@ where
                 // remind to index each request
                 log::trace!(" scaling node {}", i);
                 let node_param = node_params.get_node_param(i);
-//                log::trace!(" perplexity node {}  : {:.2e}", i , node_param.get_perplexity());
                 // CAVEAT diagonal transition 0. or 1. ? Choose 0. as in t-sne umap LargeVis
                 transition_proba[[i, i]] = 0.;
                 for j in 0..node_param.edges.len() {
@@ -548,13 +544,14 @@ where
             laplacian
         } // end case CsMat
           //
-    } // end of into_matrepr_for_svd
+    } // end of get_laplacian
 
 
     // given neighbours of a node we choose scale to satisfy a normalization constraint.
     // p_i = exp[- beta * (d(x,y_i) - d(x, y_1)/ local_scale ]
     // We return beta/local_scale
     // as function is monotonic with respect to scale, we use dichotomy.
+    #[allow(unused)]
     fn get_scale_from_umap(&self, norm: f64, neighbours: &Vec<OutEdge<F>>) -> (f32, Vec<f32>) {
         // p_i = exp[- beta * (d(x,y_i)/ local_scale) ]
         let nbgh = neighbours.len();
@@ -571,7 +568,6 @@ where
         // f is decreasing
         // TODO we could also normalize as usual?
         let beta = dichotomy_solver(false, f, 0f32, f32::MAX, norm as f32);
-        // TODO get quantile info on beta or corresponding entropy ? β should be not far from 1?
         // reuse rho_y_s to return proba of edge
         for i in 0..nbgh {
             dist[i] = (-(dist[i] - rho_x) * beta).exp();
@@ -735,8 +731,6 @@ struct EntropyOptim<'a, F> {
     embedded_scales : Vec<f32>,
     /// weighted array for sampling positive edges
     pos_edge_distribution : WeightedAliasIndex<f32>,
-    /// mutex protected rand generator for edge sampling.
-    rng: Arc<Mutex<Xoshiro256PlusPlus>>,
     /// embedding parameters
     params : &'a EmbedderParams,
 } // end of EntropyOptim
@@ -785,10 +779,9 @@ impl <'a, F> EntropyOptim<'a,F>
         scales_q.query(0.05).unwrap().1, scales_q.query(0.5).unwrap().1, 
         scales_q.query(0.95).unwrap().1, scales_q.query(0.99).unwrap().1);
         println!("");  
-        let rng = Xoshiro256PlusPlus::seed_from_u64(45678);
         //
         EntropyOptim { node_params,  edges, initial_scales, embedded, embedded_scales, 
-                            pos_edge_distribution : pos_edge_sampler, rng : Arc::new(Mutex::new(rng)),
+                            pos_edge_distribution : pos_edge_sampler,
                             params : params}
         // construct field embedded
     }  // end of new 
@@ -799,6 +792,7 @@ impl <'a, F> EntropyOptim<'a,F>
 
     // return result as an Array2<F> cloning data to result to struct Embedder
     // We return data in rows as (re)indexed in graph construction after hnsw!!
+    #[allow(unused)]
     fn get_embedded_raw(& self) -> Array2<F> {
         let nbrow = self.embedded.len();
         let nbcol = self.params.asked_dim;
@@ -1002,7 +996,7 @@ impl <'a, F> EntropyOptim<'a,F>
 
 
 
-    // TODO to be called in // all was done for
+#[allow(unused)]
     fn gradient_iteration(&self, nb_sample : usize, grad_step : f64) {
         for _ in 0..nb_sample {
             self.ce_optim_edge_shannon(false, grad_step);
@@ -1071,7 +1065,7 @@ where
 
 
 
-
+#[allow(unused)]
 fn l2_dist<F>(y1: &ArrayView1<'_, F> , y2 : &ArrayView1<'_, F>) -> F 
 where F :  Float + std::iter::Sum + num_traits::cast::FromPrimitive {
     //
@@ -1122,9 +1116,9 @@ fn set_data_box<F>(data : &mut Array2<F>)
         for i in 0..nbdata {
             means[j] += data[[i,j]];
         }
+        means[j] /= F::from(nbdata).unwrap();
     }
     for j in 0..dim  {
-        means[j] /= F::from(nbdata).unwrap();
         for i in 0..nbdata {
             data[[i,j]] = data[[i,j]] - means[j];
             max_max = max_max.max(data[[i,j]].abs());          
@@ -1132,13 +1126,13 @@ fn set_data_box<F>(data : &mut Array2<F>)
     }    
     for f in data.iter_mut()  {
         *f = (*f)/max_max;
-        assert!(*f <= F::one());
+        assert!((*f).abs() <= F::one());
     }    
 }  // end of set_data_box
 
 
 
-
+#[allow(unused)]
 /// search a root for f(x) = target between lower_r and upper_r. The flag increasing specifies the variation of f. true means increasing
 fn dichotomy_solver<F>(increasing: bool, f: F, lower_r: f32, upper_r: f32, target: f32) -> f32
 where
