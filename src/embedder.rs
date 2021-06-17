@@ -43,6 +43,10 @@ use crate::tools::svdapprox::*;
 /// do not consider probabilities under PROBA_MIN, thresolded!!
 const PROBA_MIN: f32 = 1.0E-5;
 
+const FULL_SVD_SIZE_LIMIT : usize = 2000;
+const FULL_MAT_REPR : usize = 5000;
+
+
 
 // We need this structure to compute entropy od neighbour distribution
 /// This structure stores gathers parameters of a node:
@@ -182,7 +186,7 @@ impl LaplacianGraph {
         //
         //  switch to full or partial svd depending on csr representation and size
         // csr implies approx svd.
-        log::debug!("got laplacian, going to approximated svd ... asked_dim :  {}", asked_dim);
+        log::info!("got laplacian, going to approximated svd ... asked_dim :  {}", asked_dim);
         let mut svdapprox = SvdApprox::new(&self.sym_laplacian);
         // TODO adjust epsil ?
         // we need one dim more beccause we get rid of first eigen vector as in dmap
@@ -199,7 +203,7 @@ impl LaplacianGraph {
 
 
     fn do_svd(&mut self, asked_dim : usize) -> Result<SvdResult<f32>, String> {
-        if !self.is_csr() && self.get_nbrow() <= 300 {  // try direct svd
+        if !self.is_csr() && self.get_nbrow() <= FULL_SVD_SIZE_LIMIT {  // try direct svd
             self.do_full_svd()
         }
         else {
@@ -218,9 +222,9 @@ impl LaplacianGraph {
 
 
 
-/// The structure corresponding to the embedding process
-/// It must be initiamized by the graph extracted from Hnsw according to the choosen strategy
-/// and the asked dimension for embedding
+/// The structure corresponding to the embedding process. 
+/// It must be initialized by the graph extracted from Hnsw according to the choosen strategy
+/// and the asked dimension for embedding.
 pub struct Embedder<'a,F> {
     /// graph constrcuted with fromhnsw module
     kgraph: &'a KGraph<F>,
@@ -284,10 +288,10 @@ where
             let sys_start = SystemTime::now();
             initial_embedding = self.get_dmap_initial_embedding(self.parameters.get_dimension());
             println!(" dmap initialization sys time(ms) {:.2e} cpu time(ms) {:.2e}", sys_start.elapsed().unwrap().as_millis(), cpu_start.elapsed().as_millis());
-            set_data_box(&mut initial_embedding);
+            set_data_box(&mut initial_embedding, 1.);
         }
         else {
-        // if we use random initialization we must have a box size coherent with renormalizes scales, so box size is 1!
+        // if we use random initialization we must have a box size coherent with renormalizes scales, so box size is 1.
             initial_embedding = self.get_random_init(1.);
         }
         // we nedd to construct field initial_space has been contructed in get_laplacian 
@@ -306,11 +310,11 @@ where
                 return Err(1);
             }        
         }
-    } /// end embed
+    } // end embed
 
 
-    /// returns the embedded data
-    pub fn get_emmbedded(&self) -> Option<&Array2<F>> {
+    /// At the end returns the embedded data
+    pub fn get_embedded(&self) -> Option<&Array2<F>> {
         return self.embedding.as_ref();
     }
 
@@ -413,14 +417,16 @@ where
         // according to theory (See Luxburg or Lafon-Keller diffusion maps) we must go back to eigen vectors of rw laplacian.
         // Appendix A of Coifman-Lafon Diffusion Maps. Applied Comput Harmonical Analysis 2006.
         // moreover we must get back to type F
+        let normalized_lambdas = lambdas/(*lambdas)[0];
+        let time = 5.0f32.min(0.9f32.ln()/ (normalized_lambdas[2]/normalized_lambdas[1]).ln());
+        log::info!("get_dmap_initial_embedding applying dmap time {:.2e}", time);
         let sum_diag = laplacian.degrees.into_iter().sum::<f32>(); 
         for i in 0..u.nrows() {
             let row_i = u.row(i);
             let weight_i = (laplacian.degrees[i]/sum_diag).sqrt();
             for j in 0..asked_dim {
                 // divide j value by diagonal and convert to F. TODO could take l_{i}^{t} as in dmap?
-                embedded[[i, j]] =
-                    F::from_f32(row_i[j+1] / weight_i).unwrap();
+                embedded[[i, j]] = F::from_f32(normalized_lambdas[j+1].pow(time) * row_i[j+1] / weight_i).unwrap();
             }
         }
         log::trace!("ended get_dmap_initial_embedding");
@@ -450,13 +456,12 @@ where
         let max_nbng = self.kgraph.get_max_nbng();
         let node_params = self.initial_space.as_ref().unwrap();
         // TODO define a threshold for dense/sparse representation
-        if nbnodes <= 5000 {
+        if nbnodes <= FULL_MAT_REPR {
             log::debug!("Embedder using full matrix");
             let mut transition_proba = Array2::<f32>::zeros((nbnodes, nbnodes));
             // we loop on all nodes, for each we want nearest neighbours, and get scale of distances around it
             for i in 0..node_params.params.len() {
                 // remind to index each request
-                log::trace!(" scaling node {}", i);
                 let node_param = node_params.get_node_param(i);
                 // CAVEAT diagonal transition 0. or 1. ? Choose 0. as in t-sne umap LargeVis
                 transition_proba[[i, i]] = 0.;
@@ -606,6 +611,7 @@ where
         let last_dist = neighbours[nbgh - 1].weight.to_f32().unwrap();
         assert!(first_dist > 0. && last_dist > 0.);
         assert!(last_dist >= first_dist);
+        let beta : f32 = self.parameters.beta as f32;
         //
         if last_dist > first_dist {
             let lambda = (last_dist - first_dist) / (scale * (-PROBA_MIN.ln()));
@@ -614,9 +620,10 @@ where
                 // we rescale mean_rho to avoid too large range of probabilities in neighbours.
                 scale = scale * lambda;
             }
+            let remap_weight = | w : F , scale : f32 | (w.to_f32().unwrap() - scale).max(0.)/ scale;
             let mut probas_edge = neighbours
                 .iter()
-                .map(|n| OutEdge::<f32>::new(n.node, (-n.weight.to_f32().unwrap() / scale).exp()))
+                .map(|n| OutEdge::<f32>::new(n.node, (-remap_weight(n.weight, mean_rho).pow(beta)).exp()))
                 .collect::<Vec<OutEdge<f32>>>();
             //
             log::trace!("scale : {:.2e} proba gap {:.2e}", scale, probas_edge[probas_edge.len() - 1].weight / probas_edge[0].weight);
@@ -951,9 +958,9 @@ impl <'a, F> EntropyOptim<'a,F>
             // repulsion annhinilate  attraction if P<= 1. / (alfa + 1)
             let alfa = 100.;
             let coeff_repulsion = 1. / (d_ij_scaled*d_ij_scaled).max(alfa);
-            let coeff_ij = grad_step * coeff * (- weight + (1.-weight) * coeff_repulsion);
-            // clipping makes each point i or j making at most half way to the other
-            gradient = (&y_j - &y_i) *  clip(F::from_f64(coeff_ij).unwrap(), 0.49);
+            // clipping makes each point i or j making at most half way to the other in case of attraction
+            let coeff_ij = (grad_step * coeff * (- weight + (1.-weight) * coeff_repulsion)).max(-0.49);
+            gradient = (&y_j - &y_i) * F::from(coeff_ij).unwrap();
             log::trace!("norm attracting coeff {:.2e} gradient {:.2e}", coeff_ij, l2_norm(&gradient.view()).to_f64().unwrap());
         }
         y_i -= &gradient;
@@ -961,12 +968,23 @@ impl <'a, F> EntropyOptim<'a,F>
         *(self.get_embedded_data(node_j).write()) = y_j;
         // now we loop on negative sampling filtering out nodes that are either node_i or are in node_i neighbours.
         let asked_nb_neg = 5;
-        for _neg in 0..asked_nb_neg {
+        let mut got_nb_neg = 0;
+        let mut _nb_failed = 0;
+        while got_nb_neg < asked_nb_neg {
             let neg_node : NodeIdx = thread_rng().gen_range(0..self.embedded_scales.len());
             if neg_node != node_i && neg_node != node_j && self.node_params.get_node_param(node_i).get_edge(neg_node).is_none() {
                 // get a read lock, as neg_node is not the locked nodes node_i and node_j
-                let y_k = self.get_embedded_data(neg_node).read().to_owned();
-                log::debug!("got neg edge {}", neg_node);
+                let neg_data = self.get_embedded_data(neg_node);
+                let y_k;
+                if let Some(lock_read) = neg_data.try_read() {
+                    y_k = lock_read.to_owned();
+                    got_nb_neg += 1;
+                }
+                else {  // to cover contention case... not seen
+                    log::trace!("neg lock failed");
+                    _nb_failed += 1;
+                    continue;
+                }
                 // compute the common part of coeff as in function grad_common_coeff
                 let d_ik : f64 = y_i.iter().zip(y_k.iter()).map(|(vi,vj)| (*vi-*vj)*(*vi-*vj)).sum::<F>().to_f64().unwrap();
                 let d_ik_scaled = d_ik/(scale*scale);
@@ -983,8 +1001,8 @@ impl <'a, F> EntropyOptim<'a,F>
                 let alfa = 1./100.;
                 if d_ik > 0. {
                     let coeff_repulsion = 1. /(d_ik_scaled * d_ik_scaled).max(alfa);  // !!
-                    let coeff_ik =  grad_step * coeff * coeff_repulsion;    // weight attraction is 0!
-                    gradient = (&y_k - &y_i) *  clip(F::from_f64(coeff_ik).unwrap(), 5.);
+                    let coeff_ik =  (grad_step * coeff * coeff_repulsion).min(2.);    // clip to 2.
+                    gradient = (&y_k - &y_i) * F::from_f64(coeff_ik).unwrap();
                     log::trace!("norm repulsive  coeff gradient {:.2e} {:.2e}", coeff_ik , l2_norm(&gradient.view()).to_f64().unwrap());
                 }
                 y_i -= &gradient;
@@ -1017,9 +1035,10 @@ impl <'a, F> EntropyOptim<'a,F>
 
 
 // restrain value
-fn clip<F>(f : F, max : f32) -> F 
+#[allow(unused)]
+fn clip<F>(f : F, max : f64) -> F 
     where     F: Float + num_traits::FromPrimitive  {
-    let f_r = f.to_f32().unwrap();
+    let f_r = f.to_f64().unwrap();
     let truncated = if f_r > max {
         log::trace!("truncated >");
         max
@@ -1096,15 +1115,15 @@ fn estimate_embedded_scales_from_initial_scales(initial_scales :&Vec<f32>) -> Ve
     let embedded_scale : Vec<f32> = initial_scales.iter().map(|&x| 0.2 * (x/mean_scale).min(scale_sup).max(scale_inf)).collect();
     //
     for i in 0..embedded_scale.len() {
-        log::debug!("embedded scale for node {} : {:.2e}", i , embedded_scale[i]);
+        log::trace!("embedded scale for node {} : {:.2e}", i , embedded_scale[i]);
     }
     //
     embedded_scale
 }  // end of estimate_embedded_scale_from_initial_scales
 
 
-// renormalize data (center and enclose in unit box) before optimization of cross entropy
-fn set_data_box<F>(data : &mut Array2<F>) 
+// renormalize data (center and enclose in a box of a given box size) before optimization of cross entropy
+fn set_data_box<F>(data : &mut Array2<F>, box_size : f64) 
     where  F: Float +  NumAssign + std::iter::Sum<F> + num_traits::cast::FromPrimitive + Send + Sync + ndarray::ScalarOperand  {
     let nbdata = data.nrows();
     let dim = data.ncols();
@@ -1123,7 +1142,9 @@ fn set_data_box<F>(data : &mut Array2<F>)
             data[[i,j]] = data[[i,j]] - means[j];
             max_max = max_max.max(data[[i,j]].abs());          
         }
-    }    
+    }
+    //
+    max_max /= F::from(0.5 * box_size).unwrap();
     for f in data.iter_mut()  {
         *f = (*f)/max_max;
         assert!((*f).abs() <= F::one());
