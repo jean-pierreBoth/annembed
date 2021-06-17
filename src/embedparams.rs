@@ -1,7 +1,18 @@
-//! defines parameters for ann embedding
+//! defines parameters for ann embedding.  
 //! 
+//! The weight w of an edge from node n in the graph to embed is defined as:
+//!
+//!    First we define the local scale $\rho$ around a point.  
+//!    It is the define as the mean of distances of points to their nearest neighbour.
+//!    The points taken into account to define this mean is the node we consider and
+//!    all its knbn neighbours. So we compute the mean of distances to neares neighbours 
+//!    on knbn + 1 points.
+//!   
+//!    let $d_{i}$ be the distance of neighbour i of a node n,
+//!     $$w = \exp\left(- \left(\frac{d_{i} - \rho}{\rho}\right)^{\beta} \right)$$
 //! 
-//! 
+
+
 /// main parameters driving Embeding
 #[derive(Clone, Copy)]
 pub struct EmbedderParams {
@@ -9,9 +20,11 @@ pub struct EmbedderParams {
     pub asked_dim : usize,
     /// defines if embedder is initialized by a diffusion map step. default to true
     pub dmap_init : bool,
+    /// exponent used in defining edge weight in original graph. 0.5 or 1.
+    pub beta : f64,
     ///
     pub b : f64,
-    /// scale factor. default to 1.
+    /// embedded scale factor. default to 1.
     pub scale_rho : f64,
     /// initial gradient step , default to 1.
     pub grad_step : f64,
@@ -26,17 +39,19 @@ impl EmbedderParams {
     pub fn new()  -> Self {
         let asked_dim = 2;
         let dmap_init = true;
+        let beta = 0.5;
         let b = 1.;
-        let grad_step = 0.05;
+        let grad_step = 1.;
         let nb_sampling_by_edge = 5;
         let scale_rho = 1.;
         let nb_grad_batch = 20;
-        EmbedderParams{asked_dim, dmap_init, b, scale_rho, grad_step, nb_sampling_by_edge , nb_grad_batch}
+        EmbedderParams{asked_dim, dmap_init, beta, b, scale_rho, grad_step, nb_sampling_by_edge , nb_grad_batch}
     }
 
     pub fn log(&self) {
         log::info!("EmbedderParams");
         log::info!("\t gradient step : {}", self.grad_step);
+        log::info!("\t edge exponent in original graph : {} ", self.beta);
         log::info!("\t nb sampling by edge : {}", self.nb_sampling_by_edge);
         log::info!("\t scale factor : {}", self.scale_rho);
         log::info!("\t number of gradient batch : {}", self.nb_grad_batch);

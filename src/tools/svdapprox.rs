@@ -5,15 +5,15 @@
 //!
 //! The reduced rank Q can be found using 2 algorithms described in 
 //! Halko-Tropp Probabilistic Algorithms For Approximate Matrix Decomposition 2011
-//! https://epubs.siam.org/doi/abs/10.1137/090771806
+//! Cf [Halko-Tropp](https://epubs.siam.org/doi/abs/10.1137/090771806)
 //!
-//! - The Adaptive Randomized Range Finder (Algo 4.2 of f Tropp-Halko, P 242-244)
+//! - The Adaptive Randomized Range Finder (Algo 4.2 of Tropp-Halko, P 242-244)  
 //!     This methods stops iterations when a precision criteria has been reached.
 //! 
-//! - The Randomized Subspace Iteration (Algo 4.4  of Tropp-Halko P244)
+//! - The Randomized Subspace Iteration (Algo 4.4  of Tropp-Halko P244)  
 //!     This methods asks for a specific output and is more adapted for slow decaying spectrum.
 //!
-//! See also Mahoney Lectures notes on randomized linearAlgebra 2016. P 149-150
+//! See also Mahoney Lectures notes on randomized linearAlgebra 2016. (P 149-150).
 //! We use gaussian matrix (instead SRTF as in the Ann context we have a small rank)
 //! 
 //! the type F must verify F : Float + FromPrimitive + Scalar + ndarray::ScalarOperand + Lapack
@@ -211,8 +211,9 @@ fn small_transpose_dense_mult_csr<F>(qmat : &Array2<F>, csrmat : &CsMat<F>) -> A
 
 
 /// We can ask for a range approximation of matrix on two modes:
-/// - epsil     : asking for precision lé norm residual under epsil
+/// - epsil     : asking for precision l2 norm residual under epsil
 /// - step      : at each iteration, step new base vectors of the range matrix are searched.
+///               around 10 seems adequate. To adapt to rank approximation searched
 /// - max_rank  : maximum rank of approximation
 #[derive(Clone, Copy)]
 pub struct RangePrecision {
@@ -243,6 +244,13 @@ pub struct RangeRank {
     nbiter : usize
 }
 
+impl RangeRank {
+    /// initializes a RangeRank structure with asked rank and maximum QR decompositions
+    pub fn new(rank: usize, nbiter : usize) -> Self {
+        RangeRank{rank, nbiter}
+    }
+}  // end of RangeRank
+
 
 /// The enum representing the 2  algorithms for range approximations
 /// It must be noted that for Compressed matrix only the adaptative mode corresponding to the EPSIL target is implemented.
@@ -269,6 +277,7 @@ pub struct RangeApprox<'a, F: Scalar> {
 impl <'a, F > RangeApprox<'a, F> 
      where  F : Float + Scalar  + Lapack + ndarray::ScalarOperand  + sprs::MulAcc{
 
+    /// describes the problem, matrix format and range approximation mode asked for.
     pub fn new(mat : &'a MatRepr<F>, mode : RangeApproxMode) -> Self {
         RangeApprox{mat, mode} 
     }
@@ -356,7 +365,7 @@ pub fn subspace_iteration<F> (mat : &Array2<F>, rank : usize, nbiter : usize) ->
 ///  - r is the rank increment in iterations
 ///  - max_rank is the maximum rank asked for.
 /// 
-///  Iterations stop when the block of r vectors added is less than epsil or if max_rank has been reached
+///  Iterations stop when the l2 norm of the block of r vectors added is less than epsil or if max_rank has been reached
 ///  This last stop rule is somewhat easier to define.
 /// 
 /// Algorithm : Adaptive Randomized Range Finder algo 4.2. from Halko-Martinsson-Tropp 2011
@@ -364,7 +373,7 @@ pub fn subspace_iteration<F> (mat : &Array2<F>, rank : usize, nbiter : usize) ->
 pub fn adaptative_range_finder_matrep<F>(mat : &MatRepr<F> , epsil:f64, r : usize, max_rank : usize) -> Array2<F> 
         where F : Float + Scalar  + Lapack + ndarray::ScalarOperand + sprs::MulAcc {
     //
-    log::trace!(" in adaptative_range_finder_matrep");
+    log::debug!(" in adaptative_range_finder_matrep");
     //
     let mut rng = RandomGaussianGenerator::new();
     let data_shape = mat.shape();
@@ -485,11 +494,16 @@ pub fn check_range_approx_repr<F> (a_mat : &MatRepr<F>, q_mat: &Array2<F>) -> F
 
 //================================ SVD part ===============================
 
-
+/// result of svd.
+/// For original data (m,n) with m the number of data vectors and n their dimension returns
+/// U and Vt with eigenvectors stored in column, so projected data are accessed by rows
 pub struct SvdResult<F> {
-  pub   s : Option<Array1<F>>,
-  pub   u : Option<Array2<F>>,
-  pub  vt : Option<Array2<F>>
+    /// eigenvalues
+    pub   s : Option<Array1<F>>,
+    /// left eigenvectors. (m,r) matrix where r is rank asked for and m the number of data.
+    pub   u : Option<Array2<F>>,
+    /// transpose of right eigen vectors. (r,n) matrix
+    pub  vt : Option<Array2<F>>
 } // end of struct SvdResult<F> 
 
 
@@ -519,7 +533,7 @@ impl <F> SvdResult<F> {
 /// This step can be done by asking for a required precision or a minimum rank for dense matrices represented by Array2.
 /// For compressed matrices only the precision criterion is possible.
 pub struct SvdApprox<'a, F: Scalar> {
-    /// matrix we want to approximate range of. We s
+    /// matrix we want to approximate range of.
     data : &'a MatRepr<F>,
 } // end of struct SvdApprox
 
@@ -531,7 +545,8 @@ impl <'a, F> SvdApprox<'a, F>
         SvdApprox{data}
     }
 
-    // direct svd from Algo 5.1 of Halko-Tropp
+    /// direct svd from Algo 5.1 of Halko-Tropp
+    /// Returns an error if either the preliminary range_approximation or the partial svd failed, else returns a SvdResult
     pub fn direct_svd(&mut self, parameters : RangeApproxMode) -> Result<SvdResult<F>, String> {
         let ra = RangeApprox::new(self.data, parameters);
         let q;

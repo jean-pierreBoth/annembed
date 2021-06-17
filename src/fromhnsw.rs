@@ -21,11 +21,9 @@ use hnsw_rs::hnsw::{Neighbour, DataId};
 
 
 
-/// morally F should be f32 and f64
-/// The solution from ndArray is F : Float + AddAssign + SubAssign + MulAssign + DivAssign + RemAssign + Display + Debug + LowerExp + UpperExp + (ScalarOperand + LinalgScalar) + Send + Sync 
-/// For edge weight we just need  F : FromPrimitive + Float + AddAssign + SubAssign + MulAssign + DivAssign + RemAssign + Display + Debug + LowerExp + UpperExp + Send + Sync 
-
-
+// morally F should be f32 and f64.  
+// The solution from ndArray is F : Float + AddAssign + SubAssign + MulAssign + DivAssign + RemAssign + Display + Debug + LowerExp + UpperExp + (ScalarOperand + LinalgScalar) + Send + Sync.   
+// For edge weight we just need  F : FromPrimitive + Float + AddAssign + SubAssign + MulAssign + DivAssign + RemAssign + Display + Debug + LowerExp + UpperExp + Send + Sync 
 
 /// keep a node index compatible with NdArray
 pub type NodeIdx = usize;
@@ -83,9 +81,10 @@ impl <F> From<Neighbour> for OutEdge<F>
 struct RangeNgbh<F:Float>(F, F);
 
 
-/// We may need  some statistics on the graph
-///  - range of neighbourhood
+/// We may need  some statistics on the graph:
+///  - range: distance to nearest and farthest nodes of each node
 ///  - how many edges arrives in a node (in_degree)
+///  - quantiles for the distance to nearest neighbour of nodes
 pub struct KGraphStat<F:Float> {
     /// for each node, distances to nearest and farthest neighbours
     ranges : Vec<RangeNgbh<F>>,
@@ -138,16 +137,18 @@ impl <F:Float> KGraphStat<F> {
 
 
 /// 
-/// A very minimal graph for this crate (otherwise use petgraph)
-/// The graph comes from an k-nn search so we know the number of neighbours we have
-/// W is a weight on edges and must satisfy Ord, hence the structure OutEdge<F>
+/// A very minimal graph for this crate.  
+/// 
+/// The graph comes from an k-nn search so we know the number of neighbours we have.
+/// Edges out of a node are given a weitht of type F which must satisfy Ord, so the 
+/// edges can be sorted.
 /// 
 /// The first initialization from hnsw is a full hnsw representation,
 /// but it should be possible to select a layer to get a subsampling of data
 /// or the whole children of a given node at any layer to get a specific region of the data.  
 ///  
 /// Note: The point extracted from the Hnsw are given an index by the KGraph structure
-/// as hnsw do not enforce client id to be in [0..nbpoints]
+/// as hnsw do not enforce client data_id to be in [0..nbpoints]
 /// 
 pub struct KGraph<F> {
     /// max number of neighbours of each node. Note it can a littel less.
@@ -155,7 +156,7 @@ pub struct KGraph<F> {
     /// number of nodes.
     /// If GraphK is initialized from the descendant of a point in Hnsw we do not know in advance the number of nodes!!
     nbnodes: usize,
-    /// neighbours[i] contains the indexes of neighbours node i sorted by increasing weight edge!
+    /// neighbours\[i\] contains the indexes of neighbours node i sorted by increasing weight edge!
     /// all node indexing is done after indexation in node_set
     pub neighbours : Vec<Vec<OutEdge<F>>>,
     /// to keep track of current node indexes.
@@ -202,15 +203,16 @@ impl <F> KGraph<F>
     }
 
     /// As data can come from hnsw with arbitrary data id not on [0..nb_data] we reindex
-    /// them for array computation. At the end we must provide a way to get back to
-    /// original labels of data
-    /// We when we get embedded data as an Array2<F> row i of data corresponds to
+    /// them for array computation.  
+    /// At the end we must provide a way to get back to original labels of data.
+    /// 
+    /// When we get embedded data as an Array2<F>, row i of data corresponds to
     /// the original data with label get_data_id_from_idx(i)
     pub fn get_data_id_from_idx(&self, index:usize) -> Option<&DataId> {
         return self.node_set.get_index(index)
     }
 
-    ///
+    /// get the index corresponding to a given DataId
     pub fn get_idx_from_dataid(&self, data_id: &DataId) -> Option<usize> {
         return self.node_set.get_index_of(data_id)
     }
@@ -220,7 +222,7 @@ impl <F> KGraph<F>
         &self.node_set
     }
 
-    /// Fills in KGraphStat from KGraphStat
+    /// Fills in KGraphStat from KGraph
     pub fn get_kraph_stats(&self) -> KGraphStat<F> {
         let mut in_degrees : Vec<u32> = (0..self.nbnodes).into_iter().map(|_| 0).collect();
         let mut ranges = Vec::<RangeNgbh<F>>::with_capacity(self.nbnodes);
@@ -273,10 +275,11 @@ impl <F> KGraph<F>
 
 
 
-    /// initialization of a graph with expected number of neighbours nbng.
+    /// initialization of a graph with expected number of neighbours nbng.  
+    /// 
     /// This initialization corresponds to the case where use all points of the hnsw structure
-    /// see also *initialize_from_layer* and *initialize_from_descendants*
-    /// The nbng is the maximal number of neighbours kept. The effective mean number can be less,
+    /// see also *initialize_from_layer* and *initialize_from_descendants*.   
+    /// nbng is the maximal number of neighbours kept. The effective mean number can be less,
     /// in this case use the Hnsw.set_keeping_pruned(true) to restrict pruning in the search.
     ///
     pub fn init_from_hnsw_all<D>(&mut self, hnsw : &Hnsw<F,D>, nbng : usize) -> std::result::Result<usize, usize> 
@@ -366,7 +369,8 @@ impl <F> KGraph<F>
     }   // end init_from_hnsw_all
 
 
-    /// extract points from a given layer (this provides sub samplwhere each point has nbng neighbours.
+    /// extract points from a given layer (this provides sub sampling where each point has nbng neighbours.  
+    /// 
     /// The number of neighbours asked for must be smaller than for init_from_hnsw_all as we do inspect only 
     /// a fraction of the points and a fraction of the neighbourhood of each point. (all the focus is inside a layer)
     pub fn init_from_hnsw_layer<D>(&mut self, hnsw : &Hnsw<F,D>, nbng : usize ,layer : usize) -> std::result::Result<usize, usize> 

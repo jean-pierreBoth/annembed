@@ -8,6 +8,8 @@ use std::path::{PathBuf};
 
 
 
+
+
 use hnsw_rs::prelude::*;
 
 use annembed::prelude::*;
@@ -173,7 +175,7 @@ pub fn main() {
     }  // drop mnist_data
     //
     let ef_c = 50;
-    let max_nb_connection = 100;
+    let max_nb_connection = 70;
     let nbimages = images_as_v.len();
     let nb_layer = 16.min((nbimages as f32).ln().trunc() as usize);
     let cpu_start = ProcessTime::now();
@@ -187,7 +189,7 @@ pub fn main() {
     // }
     // images as vectors of f32 and send to hnsw
     let cpu_time: Duration = cpu_start.elapsed();
-    println!(" ann construction sys time {:?} cpu time {:?}", sys_now.elapsed().unwrap().as_secs(), cpu_time);
+    println!(" ann construction sys time(s) {:?} cpu time {:?}", sys_now.elapsed().unwrap().as_secs(), cpu_time.as_secs());
 
     hnsw.dump_layer_info();
     //
@@ -198,28 +200,22 @@ pub fn main() {
     if res.is_err() {
         panic!("init_from_hnsw_all  failed");
     }
-    //
-    let mut kgraph = KGraph::<f32>::new();
-    log::info!("calling kgraph.init_from_hnsw_all");
-    let res = kgraph.init_from_hnsw_all(&hnsw, knbn);
-    if res.is_err() {
-        panic!("init_from_hnsw_all  failed");
-    }
     log::info!("minimum number of neighbours {}", kgraph.get_max_nbng());
     // 
     let _kgraph_stats = kgraph.get_kraph_stats();
     let mut embed_params = EmbedderParams::new();
-    embed_params.nb_grad_batch = 20;
+    embed_params.nb_grad_batch = 15;
     embed_params.scale_rho = 1.;
+    embed_params.beta = 2.;
     embed_params.grad_step = 1.;
     embed_params.nb_sampling_by_edge = 20;
+    embed_params.dmap_init = true;
     let mut embedder = Embedder::new(&kgraph, embed_params);
     let embed_res = embedder.embed();
     assert!(embed_res.is_ok()); 
-    assert!(embedder.get_emmbedded().is_some());
+    assert!(embedder.get_embedded().is_some());
+    println!(" ann embed time time {:.2e} s", sys_now.elapsed().unwrap().as_secs());
     // dump
-
-    
     log::info!("dumping initial embedding in csv file");
     let mut csv_w = Writer::from_path("mnist_init.csv").unwrap();
     let _res = write_csv_labeled_array2(&mut csv_w, labels.as_slice().unwrap(), embedder.get_initial_embedding().unwrap());
@@ -227,7 +223,7 @@ pub fn main() {
 
     log::info!("dumping in csv file");
     let mut csv_w = Writer::from_path("mnist.csv").unwrap();
-    let _res = write_csv_labeled_array2(&mut csv_w, labels.as_slice().unwrap(), embedder.get_emmbedded().unwrap());
+    let _res = write_csv_labeled_array2(&mut csv_w, labels.as_slice().unwrap(), embedder.get_embedded().unwrap());
     csv_w.flush().unwrap();
 }
 
