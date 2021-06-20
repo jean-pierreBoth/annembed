@@ -19,6 +19,7 @@ use quantiles::{ckms::CKMS};     // we could use also greenwald_khanna
 use hnsw_rs::prelude::*;
 use hnsw_rs::hnsw::{Neighbour, DataId};
 
+use serde::{Serialize, Deserialize};
 
 
 // morally F should be f32 and f64.  
@@ -29,7 +30,7 @@ use hnsw_rs::hnsw::{Neighbour, DataId};
 pub type NodeIdx = usize;
 
 /// an outEdge gives the destination node and weight of edge.
-#[derive(Clone,Copy,Debug)]
+#[derive(Clone,Copy,Debug, Serialize, Deserialize)]
 pub struct OutEdge<F> {
     pub node : NodeIdx,
     pub weight: F
@@ -78,7 +79,7 @@ impl <F> From<Neighbour> for OutEdge<F>
 
 /// A structure to keep track of min and max distance to neighbour.
 /// We keep assume that Nan are excluded once we have reached the point we need this.
-struct RangeNgbh<F:Float>(F, F);
+struct RangeNghb<F:Float>(F, F);
 
 
 /// We may need  some statistics on the graph:
@@ -87,7 +88,7 @@ struct RangeNgbh<F:Float>(F, F);
 ///  - quantiles for the distance to nearest neighbour of nodes
 pub struct KGraphStat<F:Float> {
     /// for each node, distances to nearest and farthest neighbours
-    ranges : Vec<RangeNgbh<F>>,
+    ranges : Vec<RangeNghb<F>>,
     /// incoming degrees
     in_degrees : Vec<u32>,
     /// mean incoming degree
@@ -150,6 +151,7 @@ impl <F:Float> KGraphStat<F> {
 /// Note: The point extracted from the Hnsw are given an index by the KGraph structure
 /// as hnsw do not enforce client data_id to be in [0..nbpoints]
 /// 
+#[derive(Clone)]
 pub struct KGraph<F> {
     /// max number of neighbours of each node. Note it can a littel less.
     max_nbng : usize,
@@ -225,7 +227,7 @@ impl <F> KGraph<F>
     /// Fills in KGraphStat from KGraph
     pub fn get_kraph_stats(&self) -> KGraphStat<F> {
         let mut in_degrees : Vec<u32> = (0..self.nbnodes).into_iter().map(|_| 0).collect();
-        let mut ranges = Vec::<RangeNgbh<F>>::with_capacity(self.nbnodes);
+        let mut ranges = Vec::<RangeNghb<F>>::with_capacity(self.nbnodes);
         //
         let mut max_max_r = F::zero();
         let mut min_min_r = F::max_value();
@@ -241,7 +243,7 @@ impl <F> KGraph<F>
                 max_max_r = max_max_r.max(max_r);
                 min_min_r = min_min_r.min(min_r);
                 // compute in_degrees
-                ranges.push(RangeNgbh(min_r, max_r));
+                ranges.push(RangeNghb(min_r, max_r));
                 for j in 0..self.neighbours[i].len() {
                     in_degrees[self.neighbours[i][j].node] += 1;
                 }
@@ -369,7 +371,7 @@ impl <F> KGraph<F>
     }   // end init_from_hnsw_all
 
 
-    /// extract points from a given layer (this provides sub sampling where each point has nbng neighbours.  
+    /// extract points from layers (less populated) above a given layer (this provides sub sampling where each point has nbng neighbours.  
     /// 
     /// The number of neighbours asked for must be smaller than for init_from_hnsw_all as we do inspect only 
     /// a fraction of the points and a fraction of the neighbourhood of each point. (all the focus is inside a layer)
@@ -470,10 +472,231 @@ impl <F> KGraph<F>
 }  // end of impl KGraph<F>
 
 
+//==========================================================================================
+
+use ndarray::{Array2};
+use std::collections::HashMap;
+
+use std::sync::Arc;
+
+/// Projection of distances.
+/// This structure maintains a distance summary between points of a Hnsw structure
+/// Each DataId field data_to_idx is mapped to a row of the distance array, so we can provide 
+/// a distance between couples of point in the Hnsw (or any other) structure at a large scale (or upper layers).
+/// This structure is dedicated to the hnsw projection functionality
+/// 
+struct ProjectedDistances<F> {
+    /// distances matrix between filtered points.
+    /// CAVEAT: the indexation of rows is just internal to this structuree and do not correspond to NodeId indexation
+    /// as we do not have it when constructing the structure, and do not know how it will be used.
+    distances : Array2<F>,
+    /// map Data Id kept in projection to row in distances matrix
+    data_to_idx : IndexSet<usize>, 
+}
+
+
+impl <F> ProjectedDistances<F> 
+    where F : Float + Add {
+
+    /// returns the projectded distance between 2 points. Panics if DataId arguments are not in indexset!
+    pub(crate) fn get_distance_by_data_id(&self, data1: DataId, data2 : DataId) -> F {
+        if data1 == data2 {
+            return F::zero();
+        }
+        // check indexes , transforms to elem1 , elem2, access to distances
+        let row1 = self.data_to_idx.get(&data1).unwrap();
+        let row2 = self.data_to_idx.get(&data2).unwrap();
+        self.distances[[*row1, *row2]]
+    } // end of get_distance
+
+
+    /// get distances between 2 rows of the distances matrix.
+    #[allow(unused)]
+    pub(crate) fn get_distance_by_elem(&self, data1: usize, data2 : usize) -> F {
+        if data1 == data2 {
+            return F::zero();
+        }
+        // check indexes , transforms to elem1 , elem2, access to distances
+        let row1 = self.data_to_idx.get(&data1).unwrap();
+        let row2 = self.data_to_idx.get(&data2).unwrap();
+        self.distances[[*row1, *row2]]
+    } // end of get_distance_by_elem   
+    
+}  // end of impl block ProjectedDistances
+
+
+
+//=================================================================================================================================
+
+
+/// Construct a projection from Hnsw data on layers above a given layers
+/// Maintain for each point in the Hnsw structure nearest point in projected structure.
+/// Possibly stores matrix of distances between filtered points
+/// 
+pub struct Projection<F> {
+    /// we consider projection on points on layers above and including this layer 
+    layer : usize,
+    /// projected distances
+    distances : ProjectedDistances<F>,
+    /// for each data out of the filtered data, we keep an edge to nearest data in the filtered set
+    proj_data : HashMap<DataId, OutEdge<F>>,
+} // end of struct Projection<F>
+
+
+impl <F> Projection<F>
+    where F : Float + AddAssign + SubAssign + MulAssign + DivAssign + RemAssign +
+            Display + Debug + LowerExp + UpperExp + std::iter::Sum + Send + Sync {
+
+    /// projects data on point in layers above layer
+    // CAVEAT we should use the D inside hnsw but that implies adds to hnsw interface... later
+    pub fn new<D>(hnsw : &Hnsw<F,D>, distance : D, layer : usize) -> Self 
+                    where D: Distance<F> + Send + Sync {
+        log::trace!("Projection new ");
+        let mut nb_point_to_collect = 0;
+        let max_level_observed = hnsw.get_max_level_observed() as usize;
+        // check number of points kept in
+        for l in (layer..=max_level_observed).rev() {
+            nb_point_to_collect += hnsw.get_point_indexation().get_layer_nb_point(l);
+        }
+        let layer_u8 = layer as u8;
+        log::info!("Projection : number of point to collect : {}", nb_point_to_collect);
+        let mut index_set = IndexSet::<DataId>::with_capacity(nb_point_to_collect);
+        let mut points = Vec::<std::sync::Arc<Point<F>>>::with_capacity(nb_point_to_collect);
+        let mut distances = Array2::<F>::zeros((nb_point_to_collect,nb_point_to_collect));
+        // We want to construct an indexation of nodes valid for the whole graph and for the upper layers.
+        // So we begin indexation from upper layers
+        for l in (layer..=max_level_observed).rev() {
+            let mut layer_iter = hnsw.get_point_indexation().get_layer_iterator(l);
+            while let Some(point) = layer_iter.next() {
+                let (_, _) = index_set.insert_full(point.get_origin_id());
+            }
+        }
+        // now we have an indexation of upper levels (less populatated levels)
+        let upper_index_set = index_set.clone();
+        // we now continue to have the whole indexation 
+        for l in (0..layer).rev() {
+            let mut layer_iter = hnsw.get_point_indexation().get_layer_iterator(l);
+            while let Some(point) = layer_iter.next() {
+                let (_, _) = index_set.insert_full(point.get_origin_id());
+            }
+        }        
+        // now we have the whole indexation
+
+        //
+        for l in (layer..=max_level_observed).rev() {
+            let mut layer_iter = hnsw.get_point_indexation().get_layer_iterator(l);
+            //
+            while let Some(point) = layer_iter.next() {
+                // now point is an Arc<Point<F>>
+                // point_id , we must reindex point_id for ProjectedDistances structure
+                let origin_id = point.get_origin_id();
+                let p_id = point.get_point_id();
+                if p_id.0 as usize != l {
+                    log::trace!("p_id layer : {} ",p_id.0 as usize);
+                }
+                assert_eq!(p_id.0 as usize, l);
+                // remap _point_id
+                let (index, _) = index_set.insert_full(origin_id);
+                assert_eq!(index, points.len());
+                // compute distance with preceding points. Fills distances
+                for k in 0..points.len() {
+                    // get index for point k !!!
+                    let (index_k, _) = index_set.insert_full(points[k].get_origin_id());
+                    distances[[index, index_k]] = F::from(distance.eval(points[k].get_v(), point.get_v())).unwrap();
+                    distances[[index_k, index]] = distances[[index,index_k]];
+                }
+                points.push(Arc::clone(&point));
+            } // end of while
+        } // end loop on upper layers
+        // at this step we have projected distances, yet we miss global projection mapping to kept DataId 
+        // so we need to loop on lower lyers 
+        let projected_distance = ProjectedDistances::<F>{ distances, data_to_idx : index_set};
+        // now we construct projection
+        let mut proj_data : HashMap<DataId, OutEdge<F>> = HashMap::new();
+        for l in 0..layer {
+            let mut layer_iter = hnsw.get_point_indexation().get_layer_iterator(l);
+            while let Some(point) = layer_iter.next() {
+                // we do as in KGraph.init_from_hnsw_layer
+                let neighbours_hnsw = point.get_neighborhood_id();
+                let best_distance = F::infinity();
+                // get nearest point in upper layers.
+                // possibly use a BinaryHeap?
+                let mut best_edge = OutEdge::<F>{node : usize::MAX, weight : best_distance};
+                for m in layer..=max_level_observed {
+                    for j in 0..neighbours_hnsw[m].len() {
+                        let n_origin_id = neighbours_hnsw[m][j].get_origin_id();
+                        let n_p_id = neighbours_hnsw[m][j].p_id;
+                        if n_p_id.0 >= layer_u8 && F::from(neighbours_hnsw[m][j].distance).unwrap() < best_distance {
+                            best_edge = OutEdge::<F>{ node : n_origin_id, weight : F::from(neighbours_hnsw[m][j].distance).unwrap() };
+                        }
+                    } // end of for j
+                }
+                // we have best edge, insert it in 
+                assert!(best_edge.weight < F::infinity() && best_edge.node < usize::MAX);
+                proj_data.insert(point.get_origin_id(), best_edge);
+                // now we must 
+            } // end while
+        } // end of search in densely populated layers.
+        // now we have id's of collected points.
+        log::trace!("Projection exiting from new");
+        log::trace!("collected {} points", points.len());
+        //
+        Projection{ layer, distances : projected_distance, proj_data : proj_data }
+    } // end of new
+
+    /// get layer corresponding above which the projection is done
+    pub fn get_layer(&self) -> usize {
+        self.layer
+    } // end of get_layer
+
+
+    pub fn get_distance_to_projection(&self, data_id : &DataId) -> F {
+        self.proj_data.get(&data_id).unwrap().weight
+    } // end of get_distance_to_projection
+
+
+
+    /// get projected distance between 2 dataId
+    /// Cost is 2 calls to hash functions to get projected dataid
+    /// (and then 2 calls to hash function to get mapping from proejected data id to index)
+    pub fn get_projected_distances(&self, data1 : DataId, data2: DataId) -> F {
+        let proj_data1 : DataId;
+        let proj_data2 : DataId;
+        // get projected DataId
+        proj_data1 = self.proj_data.get(&data1).unwrap().node;
+        proj_data2 = self.proj_data.get(&data2).unwrap().node;
+        // the call distances
+        self.distances.get_distance_by_data_id(proj_data1, proj_data2)
+    } // end of get_projected_distances
+}  // end of impl block
+
+
 
 
 // =============================================================================
 
+
+// a utility to reindex into contiguous usize [0..hnsw.get_nb_point()[ as DataId can be arbitrary]
+fn dataid_to_nodeid<F,D>(hnsw : &Hnsw<F, D>) -> IndexSet<DataId> 
+    where  F:Clone+Send+Sync, D: Distance<F> + Send + Sync {
+        //
+        let mut index_set = IndexSet::<DataId>::with_capacity(hnsw.get_nb_point());
+        let max_level_observed = hnsw.get_max_level_observed() as usize;
+        for l in 0..=max_level_observed {
+            let mut layer_iter = hnsw.get_point_indexation().get_layer_iterator(l);
+            while let Some(point) = layer_iter.next() {
+                let origin_id = point.get_origin_id();
+                let (_, _) = index_set.insert_full(origin_id);
+            }    
+        }
+        //
+        assert_eq!(hnsw.get_nb_point(), index_set.len());
+        //
+        index_set
+}  // end of dataid_to_nodeid
+
+
+// ================================================================================
 
 
 mod tests {
