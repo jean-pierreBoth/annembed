@@ -408,10 +408,6 @@ impl <F> KGraph<F>
                 // point_id must be in 0..nb_point. CAVEAT This is not enforced as in petgraph. We should check that
                 let origin_id = point.get_origin_id();
                 let p_id = point.get_point_id();
-                if p_id.0 as usize != l {
-                    log::trace!("p_id layer : {} ",p_id.0 as usize);
-                }
-                assert_eq!(p_id.0 as usize, l);
                 // remap _point_id
                 let (index, _) = self.node_set.insert_full(origin_id);
                 if index >= nb_point {
@@ -423,15 +419,18 @@ impl <F> KGraph<F>
                 // get neighbours of point in the same layer
                 // possibly use a BinaryHeap?
                 let mut vec_tmp = Vec::<OutEdge<F>>::with_capacity(max_nb_conn);
-                for j in 0..neighbours_hnsw[l].len() {
-                    let n_origin_id = neighbours_hnsw[l][j].get_origin_id();
-                    let n_p_id = neighbours_hnsw[l][j].p_id;
-                    if n_p_id.0 as usize >= l {
-                    // remap id. nodeset enforce reindexation from 0 to nbpoint
-                        let (neighbour_idx, _already) = self.node_set.insert_full(n_origin_id);
-                        vec_tmp.push(OutEdge::<F>{ node : neighbour_idx, weight : F::from_f32(neighbours_hnsw[l][j].distance).unwrap()});
-                    }
-                } // end of for j
+                // scan all neighbours in upper layer to keep 
+                for m in layer..=max_level_observed {
+                    for j in 0..neighbours_hnsw[m].len() {
+                        let n_origin_id = neighbours_hnsw[m][j].get_origin_id();
+                        let n_p_id = neighbours_hnsw[m][j].p_id;
+                        if n_p_id.0 as usize >= l {
+                            // remap id. nodeset enforce reindexation from 0 to nbpoint
+                            let (neighbour_idx, _already) = self.node_set.insert_full(n_origin_id);
+                            vec_tmp.push(OutEdge::<F>{ node : neighbour_idx, weight : F::from_f32(neighbours_hnsw[m][j].distance).unwrap()});
+                        }
+                    } // end of for j
+                } // end of for on m
                 vec_tmp.sort_unstable_by(| a, b | a.partial_cmp(b).unwrap_or(Ordering::Less));
                 assert!(vec_tmp.len() <= 1 || vec_tmp[0].weight <= vec_tmp[1].weight);    // temporary , check we did not invert order
                 // keep only the asked size. Could we keep more ?
@@ -474,10 +473,8 @@ impl <F> KGraph<F>
 
 //==========================================================================================
 
-use ndarray::{Array2};
 use std::collections::HashMap;
 
-use std::sync::Arc;
 
 /// Projection of distances.
 /// This structure maintains a distance summary between points of a Hnsw structure
@@ -485,42 +482,18 @@ use std::sync::Arc;
 /// a distance between couples of point in the Hnsw (or any other) structure at a large scale (or upper layers).
 /// This structure is dedicated to the hnsw projection functionality
 /// 
-struct ProjectedDistances<F> {
+struct ProjectedDistances {
     /// distances matrix between filtered points.
     /// CAVEAT: the indexation of rows is just internal to this structuree and do not correspond to NodeId indexation
     /// as we do not have it when constructing the structure, and do not know how it will be used.
-    distances : Array2<F>,
     /// map Data Id kept in projection to row in distances matrix
     data_to_idx : IndexSet<usize>, 
 }
 
 
-impl <F> ProjectedDistances<F> 
-    where F : Float + Add {
-
-    /// returns the projectded distance between 2 points. Panics if DataId arguments are not in indexset!
-    pub(crate) fn get_distance_by_data_id(&self, data1: DataId, data2 : DataId) -> F {
-        if data1 == data2 {
-            return F::zero();
-        }
-        // check indexes , transforms to elem1 , elem2, access to distances
-        let row1 = self.data_to_idx.get(&data1).unwrap();
-        let row2 = self.data_to_idx.get(&data2).unwrap();
-        self.distances[[*row1, *row2]]
-    } // end of get_distance
+impl  ProjectedDistances  {
 
 
-    /// get distances between 2 rows of the distances matrix.
-    #[allow(unused)]
-    pub(crate) fn get_distance_by_elem(&self, data1: usize, data2 : usize) -> F {
-        if data1 == data2 {
-            return F::zero();
-        }
-        // check indexes , transforms to elem1 , elem2, access to distances
-        let row1 = self.data_to_idx.get(&data1).unwrap();
-        let row2 = self.data_to_idx.get(&data2).unwrap();
-        self.distances[[*row1, *row2]]
-    } // end of get_distance_by_elem   
     
 }  // end of impl block ProjectedDistances
 
@@ -536,23 +509,27 @@ impl <F> ProjectedDistances<F>
 pub struct Projection<F> {
     /// we consider projection on points on layers above and including this layer 
     layer : usize,
-    /// projected distances
-    distances : ProjectedDistances<F>,
     /// for each data out of the filtered data, we keep an edge to nearest data in the filtered set
     proj_data : HashMap<DataId, OutEdge<F>>,
 } // end of struct Projection<F>
 
 
+
 impl <F> Projection<F>
-    where F : Float + AddAssign + SubAssign + MulAssign + DivAssign + RemAssign +
+    where F : Float + AddAssign + SubAssign + MulAssign + DivAssign + RemAssign + FromPrimitive +
             Display + Debug + LowerExp + UpperExp + std::iter::Sum + Send + Sync {
 
-    /// projects data on point in layers above layer
-    // CAVEAT we should use the D inside hnsw but that implies adds to hnsw interface... later
-    pub fn new<D>(hnsw : &Hnsw<F,D>, distance : D, layer : usize) -> Self 
+    //  - first we construct graph consisting in upper (less populated) layers
+    //  - Then we project : for points of others layers store the shorter edge from point to graph just constructed
+    //  - at last we construct graph for the lower (more populated layers)
+    //
+    /// construct graph from layers above layer, projects data of aother layers on point in layers above layer
+    pub fn new<D>(hnsw : &Hnsw<F,D>, layer : usize, nbng : usize) -> Self 
                     where D: Distance<F> + Send + Sync {
         log::trace!("Projection new ");
         let mut nb_point_to_collect = 0;
+        let mut nb_point_below_nbng = 0;
+        let max_nb_conn = hnsw.get_max_nb_connection() as usize;
         let max_level_observed = hnsw.get_max_level_observed() as usize;
         // check number of points kept in
         for l in (layer..=max_level_observed).rev() {
@@ -560,19 +537,23 @@ impl <F> Projection<F>
         }
         let layer_u8 = layer as u8;
         log::info!("Projection : number of point to collect : {}", nb_point_to_collect);
+        let mut upper_graph_neighbours = Vec::<Vec<OutEdge<F>>>::with_capacity(nb_point_to_collect);
+        for _i in 0..nb_point_to_collect {
+            upper_graph_neighbours.push(Vec::<OutEdge<F>>::new());
+        }
         let mut index_set = IndexSet::<DataId>::with_capacity(nb_point_to_collect);
-        let mut points = Vec::<std::sync::Arc<Point<F>>>::with_capacity(nb_point_to_collect);
-        let mut distances = Array2::<F>::zeros((nb_point_to_collect,nb_point_to_collect));
+        let mut nb_point_upper_graph = 0;
         // We want to construct an indexation of nodes valid for the whole graph and for the upper layers.
         // So we begin indexation from upper layers
         for l in (layer..=max_level_observed).rev() {
+            nb_point_upper_graph += hnsw.get_point_indexation().get_layer_nb_point(l);
             let mut layer_iter = hnsw.get_point_indexation().get_layer_iterator(l);
             while let Some(point) = layer_iter.next() {
                 let (_, _) = index_set.insert_full(point.get_origin_id());
             }
         }
-        // now we have an indexation of upper levels (less populatated levels)
-        let upper_index_set = index_set.clone();
+        // now we have an indexation of upper levels (less populatated levels), we clone present state of index_set
+        let mut upper_index_set = index_set.clone();
         // we now continue to have the whole indexation 
         for l in (0..layer).rev() {
             let mut layer_iter = hnsw.get_point_indexation().get_layer_iterator(l);
@@ -580,9 +561,7 @@ impl <F> Projection<F>
                 let (_, _) = index_set.insert_full(point.get_origin_id());
             }
         }        
-        // now we have the whole indexation
-
-        //
+        // now we have the whole indexation, we construct upper(less populated graph)
         for l in (layer..=max_level_observed).rev() {
             let mut layer_iter = hnsw.get_point_indexation().get_layer_iterator(l);
             //
@@ -591,26 +570,47 @@ impl <F> Projection<F>
                 // point_id , we must reindex point_id for ProjectedDistances structure
                 let origin_id = point.get_origin_id();
                 let p_id = point.get_point_id();
-                if p_id.0 as usize != l {
-                    log::trace!("p_id layer : {} ",p_id.0 as usize);
-                }
-                assert_eq!(p_id.0 as usize, l);
                 // remap _point_id
-                let (index, _) = index_set.insert_full(origin_id);
-                assert_eq!(index, points.len());
-                // compute distance with preceding points. Fills distances
-                for k in 0..points.len() {
-                    // get index for point k !!!
-                    let (index_k, _) = index_set.insert_full(points[k].get_origin_id());
-                    distances[[index, index_k]] = F::from(distance.eval(points[k].get_v(), point.get_v())).unwrap();
-                    distances[[index_k, index]] = distances[[index,index_k]];
-                }
-                points.push(Arc::clone(&point));
+                let (index, already) = index_set.insert_full(origin_id);
+                assert_eq!(already, true);
+                let neighbours_hnsw = point.get_neighborhood_id();
+                // get neighbours of point in the same layer  possibly use a BinaryHeap?
+                let mut vec_tmp = Vec::<OutEdge<F>>::with_capacity(max_nb_conn);
+                for m in layer..=max_level_observed {
+                    for j in 0..neighbours_hnsw[l].len() {
+                        let n_origin_id = neighbours_hnsw[m][j].get_origin_id();
+                        let n_p_id = neighbours_hnsw[m][j].p_id;
+                        if n_p_id.0 as usize >= l {
+                            // remap id. nodeset enforce reindexation from 0 to nbpoint
+                            let neighbour_idx = upper_index_set.get(&n_origin_id).unwrap();
+                            vec_tmp.push(OutEdge::<F>{ node : *neighbour_idx, weight : F::from_f32(neighbours_hnsw[m][j].distance).unwrap()});
+                        }
+                  } // end of for j
+                }   // end of for m 
+                vec_tmp.sort_unstable_by(| a, b | a.partial_cmp(b).unwrap_or(Ordering::Less));
+                assert!(vec_tmp.len() <= 1 || vec_tmp[0].weight <= vec_tmp[1].weight);    // temporary , check we did not invert order
+                // keep only the asked size. Could we keep more ?
+                if vec_tmp.len() < nbng {
+                    nb_point_below_nbng += 1;
+                    log::warn!("neighbours must have {} neighbours, got only {}", nbng, vec_tmp.len());
+                    log::warn!(" layer {}  , pos in layer {} ", p_id.0, p_id.1);
+                    if vec_tmp.len() == 0 {
+                        let p_id = point.get_point_id();
+                        log::warn!(" graph will not be connected, isolated point at layer {}  , pos in layer {} ", p_id.0, p_id.1);
+                        upper_index_set.remove(&index);
+                        index_set.remove(&index);
+                        continue;
+                    }
+                } 
+                vec_tmp.truncate(nbng);
+                nb_point_upper_graph += 1;
+                // We insert neighborhood info at slot corresponding to index beccause we want to access points in coherence with neighbours referencing
+                upper_graph_neighbours[index] = vec_tmp;
+                // compute distance with preceding points. Fills distances ????????????
             } // end of while
         } // end loop on upper layers
-        // at this step we have projected distances, yet we miss global projection mapping to kept DataId 
-        // so we need to loop on lower lyers 
-        let projected_distance = ProjectedDistances::<F>{ distances, data_to_idx : index_set};
+        // at this step we have upper Graph (and could store distances between points if not too many points) yet we miss global projection mapping to kept DataId 
+        // so we need to loop on lower layers 
         // now we construct projection
         let mut proj_data : HashMap<DataId, OutEdge<F>> = HashMap::new();
         for l in 0..layer {
@@ -627,7 +627,7 @@ impl <F> Projection<F>
                         let n_origin_id = neighbours_hnsw[m][j].get_origin_id();
                         let n_p_id = neighbours_hnsw[m][j].p_id;
                         if n_p_id.0 >= layer_u8 && F::from(neighbours_hnsw[m][j].distance).unwrap() < best_distance {
-                            best_edge = OutEdge::<F>{ node : n_origin_id, weight : F::from(neighbours_hnsw[m][j].distance).unwrap() };
+                            best_edge = OutEdge::<F>{ node : n_origin_id, weight : F::from_f32(neighbours_hnsw[m][j].distance).unwrap() };
                         }
                     } // end of for j
                 }
@@ -637,11 +637,60 @@ impl <F> Projection<F>
                 // now we must 
             } // end while
         } // end of search in densely populated layers.
-        // now we have id's of collected points.
-        log::trace!("Projection exiting from new");
-        log::trace!("collected {} points", points.len());
         //
-        Projection{ layer, distances : projected_distance, proj_data : proj_data }
+        let upper_graph = KGraph::<F>{ max_nbng : nbng, nbnodes : upper_graph_neighbours.len() , neighbours : upper_graph_neighbours, node_set : upper_index_set};
+        //
+        // construct the dense whole  graph, lower layers or more populated layers
+        //
+        nb_point_to_collect = hnsw.get_nb_point();
+        let mut graph_neighbours = Vec::<Vec<OutEdge<F>>>::with_capacity(nb_point_to_collect);
+        for _i in 0..nb_point_to_collect {
+            graph_neighbours.push(Vec::<OutEdge<F>>::new());
+        }
+        nb_point_below_nbng = 0;
+        for l in 0..=max_level_observed {
+            let mut layer_iter = hnsw.get_point_indexation().get_layer_iterator(l);
+            //
+            while let Some(point) = layer_iter.next() {
+                let origin_id = point.get_origin_id();
+                let (index, already) = index_set.insert_full(origin_id);
+                assert_eq!(already, true);
+                let neighbours_hnsw = point.get_neighborhood_id();
+                // get neighbours of point in the same layer  possibly use a BinaryHeap?
+                let mut vec_tmp = Vec::<OutEdge<F>>::with_capacity(max_nb_conn);
+                for m in 0..layer {
+                    for j in 0..neighbours_hnsw[m].len() {
+                        let n_origin_id = neighbours_hnsw[m][j].get_origin_id();
+                        let n_p_id = neighbours_hnsw[m][j].p_id;
+                        if n_p_id.0 as usize >= l {
+                            // points are already indexed , or panic!
+                            let neighbour_idx = index_set.get(&n_origin_id).unwrap();
+                            vec_tmp.push(OutEdge::<F>{ node : *neighbour_idx, weight : F::from_f32(neighbours_hnsw[m][j].distance).unwrap()});
+                        }
+                    } // end of for j
+                }   // end of for m 
+                vec_tmp.sort_unstable_by(| a, b | a.partial_cmp(b).unwrap_or(Ordering::Less));
+                if vec_tmp.len() < nbng {
+                    nb_point_below_nbng += 1;
+                    let p_id = point.get_point_id();
+                    log::warn!("neighbours must have {} neighbours, got only {}", nbng, vec_tmp.len());
+                    log::warn!(" layer {}  , pos in layer {} ", p_id.0, p_id.1);
+                    if vec_tmp.len() == 0 {
+                        log::warn!(" graph will not be connected, isolated point at layer {}  , pos in layer {} ", p_id.0, p_id.1);
+                        index_set.remove(&index);
+                        continue;
+                    }
+                } 
+                vec_tmp.truncate(nbng);
+                nb_point_upper_graph += 1;
+                // We insert neighborhood info at slot corresponding to index beccause we want to access points in coherence with neighbours referencing
+                graph_neighbours[index] = vec_tmp;
+            }
+        }  // end for on layers
+        // we have both graph and projection
+        log::trace!("Projection exiting from new");
+        //
+        Projection{ layer, proj_data : proj_data }
     } // end of new
 
     /// get layer corresponding above which the projection is done
@@ -655,19 +704,6 @@ impl <F> Projection<F>
     } // end of get_distance_to_projection
 
 
-
-    /// get projected distance between 2 dataId
-    /// Cost is 2 calls to hash functions to get projected dataid
-    /// (and then 2 calls to hash function to get mapping from proejected data id to index)
-    pub fn get_projected_distances(&self, data1 : DataId, data2: DataId) -> F {
-        let proj_data1 : DataId;
-        let proj_data2 : DataId;
-        // get projected DataId
-        proj_data1 = self.proj_data.get(&data1).unwrap().node;
-        proj_data2 = self.proj_data.get(&data2).unwrap().node;
-        // the call distances
-        self.distances.get_distance_by_data_id(proj_data1, proj_data2)
-    } // end of get_projected_distances
 }  // end of impl block
 
 
