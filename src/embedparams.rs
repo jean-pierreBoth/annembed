@@ -2,14 +2,30 @@
 //! 
 //! The weight w of an edge from node n in the graph to embed is defined as:
 //!
-//!    First we define the local scale $\rho$ around a point.  
-//!    It is the define as the mean of distances of points to their nearest neighbour.
-//!    The points taken into account to define this mean is the node we consider and
-//!    all its knbn neighbours. So we compute the mean of distances to neares neighbours 
-//!    on knbn + 1 points.
+//! First we define the local scale $\rho$ around a point.  
+//! It is defined as the mean of distances of points to their nearest neighbour.
+//! The points taken into account to define this mean is the node we consider and
+//! all its knbn neighbours. So we compute the mean of distances to nearest neighbours 
+//! on knbn + 1 points around current point.
 //!   
-//!    let $d_{i}$ be the distance of neighbour i of a node n,
-//!     $$w = \exp\left(- \left(\frac{d_{i} - \rho}{\rho}\right)^{\beta} \right)$$
+//! let $d_{i}$ be the distance of neighbour i of a node n,
+//!     $$w_{i} = \exp\left(- \left(\frac{d_{i} - d_{0}}{S * \rho}\right)^{\beta} \right)$$
+//! 
+//! S is a scale factor modulating $\rho$. 
+//! After that weights are normalized to a probability distribution.
+//!
+//! So before normalization $w_{0}$ is always equal to 1. Augmenting β to 2. makes the weight $w_{i}$ decrease faster.
+//! So after normalization the range of weights from $w_{0}$ to $w_{k}$ is larger. 
+//! Reducing S as similar effect.
+//! 
+//! Default value :  
+//! 
+//!         - β = 1 so that we have exponential weights similar to Umap.
+//!         - S = 1.
+//! 
+//! But it is possible to set β to 2. to get more gaussian weight and reduce also to 0.5.
+//! 
+//!    
 //! 
 
 

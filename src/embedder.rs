@@ -395,7 +395,7 @@ where
         let mut laplacian = self.get_laplacian();
         //
         log::debug!("got laplacian, going to svd ... asked_dim :  {}", asked_dim);
-        let svd_res = laplacian.do_svd(asked_dim+5).unwrap();
+        let svd_res = laplacian.do_svd(asked_dim+25).unwrap();
         // As we used a laplacian and probability transitions we eigenvectors corresponding to lower eigenvalues
         let lambdas = svd_res.get_sigma().as_ref().unwrap();
         // singular vectors are stored in decrasing order according to lapack for both gesdd and gesvd. 
@@ -605,7 +605,7 @@ where
         // we set scale so that transition proba do not vary more than PROBA_MIN between first and last neighbour
         // exp(- (first_dist -last_dist)/scale) >= PROBA_MIN
         // TODO do we need some optimization with respect to this 1 ? as we have lambda for high variations
-        let mut scale =  self.parameters.scale_rho as f32 * mean_rho;
+        let scale =  self.parameters.scale_rho as f32 * mean_rho;
         // now we adjust scale so that the ratio of proba of last neighbour to first neighbour do not exceed epsil.
         let first_dist = neighbours[0].weight.to_f32().unwrap();
         let last_dist = neighbours[nbgh - 1].weight.to_f32().unwrap();
@@ -614,16 +614,15 @@ where
         let beta : f32 = self.parameters.beta as f32;
         //
         if last_dist > first_dist {
-            let lambda = (last_dist - first_dist) / (scale * (-PROBA_MIN.ln()));
-            if lambda > 1. {
-                log::trace!("too small scale rescaling with lambda = {}", lambda);
-                // we rescale mean_rho to avoid too large range of probabilities in neighbours.
-                scale = scale * lambda;
+            let remap_weight = | w : F , scale : f32 | ((w.to_f32().unwrap() - first_dist).max(0.)/ scale).pow(beta);
+            //
+            if remap_weight(F::from(last_dist).unwrap(), scale)/remap_weight(F::from(first_dist).unwrap(), scale) < PROBA_MIN.ln() {
+                log::info!("too large variation of neighbours probablities , reduce beta");
+                // we could rescale by augmenting scale... or impose an edge weight of PROBA_MIN...
             }
-            let remap_weight = | w : F , scale : f32 | (w.to_f32().unwrap() - scale).max(0.)/ scale;
             let mut probas_edge = neighbours
                 .iter()
-                .map(|n| OutEdge::<f32>::new(n.node, (-remap_weight(n.weight, mean_rho).pow(beta)).exp()))
+                .map(|n| OutEdge::<f32>::new(n.node, (-remap_weight(n.weight, scale)).exp()) )
                 .collect::<Vec<OutEdge<f32>>>();
             //
             log::trace!("scale : {:.2e} proba gap {:.2e}", scale, probas_edge[probas_edge.len() - 1].weight / probas_edge[0].weight);
@@ -632,7 +631,7 @@ where
             for i in 0..nbgh {
                 probas_edge[i].weight = probas_edge[i].weight / sum;
             }
-            return NodeParam::new(mean_rho, probas_edge);
+            return NodeParam::new(scale, probas_edge);
         } else {
             // all neighbours are at the same distance!
             let probas_edge = neighbours
@@ -700,7 +699,7 @@ where
         let start = ProcessTime::now();
         for iter in 1..=self.get_nb_grad_batch() {
             // loop on edges
-            let grad_step = grad_step_init * (1.- iter as f64/self.get_nb_grad_batch() as f64).sqrt();
+            let grad_step = grad_step_init * (1.- iter as f64/self.get_nb_grad_batch() as f64);
             let start = ProcessTime::now();
             ce_optimization.gradient_iteration_threaded(nb_sample_by_iter, grad_step);
             let cpu_time: Duration = start.elapsed();
@@ -728,7 +727,8 @@ where
 /// and coordinates in embedded_space with lock protection for //
 struct EntropyOptim<'a, F> {
     /// initial space by neighbourhood of each node
-    node_params: &'a NodeParams,    /// for each edge , initial node, end node, proba (weight of edge) 24 bytes
+    node_params: &'a NodeParams,  
+    /// for each edge , initial node, end node, proba (weight of edge) 24 bytes
     edges : Vec<(NodeIdx, OutEdge<f32>)>,
     /// scale for each node
     initial_scales : Vec<f32>,
@@ -1001,7 +1001,7 @@ impl <'a, F> EntropyOptim<'a,F>
                 let alfa = 1./100.;
                 if d_ik > 0. {
                     let coeff_repulsion = 1. /(d_ik_scaled * d_ik_scaled).max(alfa);  // !!
-                    let coeff_ik =  (grad_step * coeff * coeff_repulsion).min(2.);    // clip to 2.
+                    let coeff_ik =  (grad_step * coeff * coeff_repulsion).min(2.);
                     gradient = (&y_k - &y_i) * F::from_f64(coeff_ik).unwrap();
                     log::trace!("norm repulsive  coeff gradient {:.2e} {:.2e}", coeff_ik , l2_norm(&gradient.view()).to_f64().unwrap());
                 }
