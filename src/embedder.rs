@@ -227,7 +227,9 @@ impl LaplacianGraph {
 /// and the asked dimension for embedding.
 pub struct Embedder<'a,F> {
     /// graph constrcuted with fromhnsw module
-    kgraph: &'a KGraph<F>,
+    kgraph: Option<&'a KGraph<F>>,
+    ///
+    hkgraph: Option<&'a KGraphProjection<F>>,
     /// parameters
     parameters : EmbedderParams,
     /// tells if we used approximated svd (with CSR mode)
@@ -248,8 +250,17 @@ where
 {
     /// constructor from a graph and asked embedding dimension
     pub fn new(kgraph : &'a KGraph<F>, parameters : EmbedderParams) -> Self {
-        Embedder::<F>{kgraph, parameters , approximated_svd : false, initial_space:None, initial_embedding : None, embedding:None}
+        Embedder::<F>{kgraph : Some(kgraph), hkgraph : None, parameters , approximated_svd : false, initial_space:None, initial_embedding : None, embedding:None}
     } // end of new
+
+
+    /// construction from a hierarchical graph
+    pub fn from_hkgraph(graph_projection : &'a KGraphProjection<F>, parameters : EmbedderParams) -> Self {
+        Embedder::<F>{kgraph : None, hkgraph : Some(graph_projection), parameters , approximated_svd : false, initial_space:None, initial_embedding : None, embedding:None}
+
+
+    } // end of from_hkgraph
+
 
     pub fn get_asked_dimension(&self) -> usize {
         self.parameters.asked_dim
@@ -275,18 +286,17 @@ where
     /// do the embedding
     pub fn embed(&mut self) -> Result<usize, usize> {
         //
-//        let kgraph_stats = self.kgraph.get_kraph_stats();
-        //
         self.parameters.log();
+        let graph_to_embed = self.kgraph.unwrap();
         // construction of initial neighbourhood, scales and weight of edges from distances.
-        self.initial_space = Some(NodeParams{params : self.construct_initial_space()});
+        self.initial_space = Some(NodeParams{params : self.construct_initial_space(graph_to_embed)});
         // we can initialize embedding with diffusion maps or pure random.
         let mut initial_embedding;
         if self.parameters.dmap_init {
             // initial embedding via diffusion maps, in this case we have to have a coherent box normalization with random case
             let cpu_start = ProcessTime::now();
             let sys_start = SystemTime::now();
-            initial_embedding = self.get_dmap_initial_embedding(self.parameters.get_dimension());
+            initial_embedding = self.get_dmap_initial_embedding(graph_to_embed, self.parameters.get_dimension());
             println!(" dmap initialization sys time(ms) {:.2e} cpu time(ms) {:.2e}", sys_start.elapsed().unwrap().as_millis(), cpu_start.elapsed().as_millis());
             set_data_box(&mut initial_embedding, 1.);
         }
@@ -313,15 +323,73 @@ where
     } // end embed
 
 
-    /// At the end returns the embedded data
+    /// At the end returns the embedded data as Matrix. 
+    /// The row of the matrix corresponds to the embedded dat vectors but after reindexation of DataId
+    /// to ensure a contiguous indexation.  
+    /// To get a matrix with row corresponding to DataId if they were already contiguous for 0 to nbdata use
+    /// function  get_embedded_reindexed to get the permutation/reindexation unrolled!
     pub fn get_embedded(&self) -> Option<&Array2<F>> {
         return self.embedding.as_ref();
     }
 
-     /// returns the initial embedding. Storage is optional TODO
+    /// returns embedded data reindexed by DataId. This requires the DataId to be contiguous from 0 to nbdata.  
+    ///  See [crate::fromhnsw::KGraph::get_idx_from_dataid]
+    pub fn get_embedded_reindexed(&self) -> Array2<F> {
+        let emmbedded = self.embedding.as_ref().unwrap();
+        let (nbrow, dim) = emmbedded.dim();
+        let mut reindexed =  Array2::<F>::zeros((nbrow, dim));
+        // TODO version 0.15 provides move_into and push_row
+        // Here we must not forget that to interpret results we must go
+        // back from indexset to original points (One week bug!)
+        for i in 0..nbrow {
+            let row = emmbedded.row(i);
+            let origin_id = self.kgraph.unwrap().get_data_id_from_idx(i).unwrap();
+            for j in 0..dim {
+                reindexed[[*origin_id,j]] = row[j];
+            }
+        }
+        return reindexed;
+    }    
+
+    /// **return the embedded vector corresponding to original data vector corresponding to data_id**
+    /// This methods fails if data_id do not exist. Use KGraph.get_data_id_from_idx to check before if necessary.
+    pub fn get_embedded_by_dataid(&self, data_id : &DataId) -> ArrayView1<F> {
+        // we must get data index as stored in IndexSet
+        let kgraph = self.kgraph.unwrap();    // CAVEAT depends on processing state
+        let data_idx = kgraph.get_idx_from_dataid(data_id).unwrap();
+        self.embedding.as_ref().unwrap().row(data_idx)
+    } // end of get_data_embedding
+
+
+    /// **get embedding of a given node index after reindexation by the embedding to index in [0..nb_nodes]**
+    pub fn get_embedded_by_nodeid(&self, node : NodeIdx) -> ArrayView1<F> {
+        self.embedding.as_ref().unwrap().row(node)
+    }
+
+    
+     /// returns the initial embedding. Same remark as for method get_embedded. Storage is optional TODO
      pub fn get_initial_embedding(&self) -> Option<&Array2<F>> {
         return self.initial_embedding.as_ref();
     }   
+
+    pub fn get_initial_embedding_reindexed(&self) ->  Array2<F> {
+        let emmbedded = self.initial_embedding.as_ref().unwrap();
+        let (nbrow, dim) = emmbedded.dim();
+        let mut reindexed =  Array2::<F>::zeros((nbrow, dim));
+        // TODO version 0.15 provides move_into and push_row
+        // Here we must not forget that to interpret results we must go
+        // back from indexset to original points (One week bug!)
+        for i in 0..nbrow {
+            let row = emmbedded.row(i);
+            let origin_id = self.kgraph.unwrap().get_data_id_from_idx(i).unwrap();
+            for j in 0..dim {
+                reindexed[[*origin_id,j]] = row[j];
+            }
+        }
+        return reindexed;
+    }  // end of get_initial_embedding_reindexed
+
+
 
     /// get random initialization in a square of side size
     fn get_random_init(&mut self, size:f32) -> Array2<F> {
@@ -344,17 +412,17 @@ where
     /// determines scales in initial space and proba of edges.
     /// Construct node params for later optimization
     // after this function we do not need field kgraph anymore!
-    fn construct_initial_space(&self) -> Vec::<NodeParam> {
-        let nbnodes = self.kgraph.get_nb_nodes();
+    fn construct_initial_space(&self, kgraph : &'a KGraph<F>) -> Vec::<NodeParam> {
+        let nbnodes = kgraph.get_nb_nodes();
         let mut perplexity_q : CKMS<f32> = CKMS::<f32>::new(0.001);
         let mut scale_q : CKMS<f32> = CKMS::<f32>::new(0.001);
         let mut weight_q :  CKMS<f32> = CKMS::<f32>::new(0.001);
         // get stats
         let mut node_params = Vec::<NodeParam>::with_capacity(nbnodes);
         // TODO can be // with rayon taking care of indexation
-        let neighbour_hood = self.kgraph.get_neighbours();
+        let neighbour_hood = kgraph.get_neighbours();
         for i in 0..neighbour_hood.len() {
-            let node_param = self.get_scale_from_proba_normalisation(&neighbour_hood[i]);
+            let node_param = self.get_scale_from_proba_normalisation(kgraph, &neighbour_hood[i]);
             scale_q.insert(node_param.scale);
             perplexity_q.insert(node_param.get_perplexity());
             // coose random edge to audit
@@ -388,11 +456,11 @@ where
     // i.e last non null eigenvalues of laplacian matrix!!
     // It is in fact diffusion Maps at time 0
     //
-    fn get_dmap_initial_embedding(&mut self, asked_dim: usize) -> Array2<F> {
+    fn get_dmap_initial_embedding(&mut self, kgraph : &'a KGraph<F>, asked_dim: usize) -> Array2<F> {
         //
         assert!(asked_dim >= 2);
         // get eigen values of normalized symetric lapalcian
-        let mut laplacian = self.get_laplacian();
+        let mut laplacian = self.get_laplacian(kgraph);
         //
         log::debug!("got laplacian, going to svd ... asked_dim :  {}", asked_dim);
         let svd_res = laplacian.do_svd(asked_dim+25).unwrap();
@@ -448,12 +516,12 @@ where
     //     the problem is : how to choose alfa, this is done in get_scale_from_proba_normalisation
     // See also Veerman A Primer on Laplacian Dynamics in Directed Graphs 2020 arxiv https://arxiv.org/abs/2002.02605
 
-    fn get_laplacian(&mut self) -> LaplacianGraph {
+    fn get_laplacian(&mut self, kgraph : &'a KGraph<F>) -> LaplacianGraph {
         log::trace!("in Embedder::get_laplacian");
         //
-        let nbnodes = self.kgraph.get_nb_nodes();
+        let nbnodes = kgraph.get_nb_nodes();
         // get stats
-        let max_nbng = self.kgraph.get_max_nbng();
+        let max_nbng = kgraph.get_max_nbng();
         let node_params = self.initial_space.as_ref().unwrap();
         // TODO define a threshold for dense/sparse representation
         if nbnodes <= FULL_MAT_REPR {
@@ -588,7 +656,7 @@ where
     // local_scale can be adjusted so that ratio of last proba to first proba >= epsil.
     // This function returns the local scale (i.e mean distance of a point to its nearest neighbour)
     // and vector of proba weight to nearest neighbours. Min
-    fn get_scale_from_proba_normalisation(&self, neighbours: &Vec<OutEdge<F>>) -> NodeParam {
+    fn get_scale_from_proba_normalisation(&self, kgraph : &'a KGraph<F>, neighbours: &Vec<OutEdge<F>>) -> NodeParam {
 //        log::trace!("in Embedder::get_scale_from_proba_normalisation");
         // p_i = exp[- beta * (d(x,y_i)/ local_scale) * lambda]
         let nbgh = neighbours.len();
@@ -597,7 +665,7 @@ where
         let mut rho_y_s = Vec::<f32>::with_capacity(neighbours.len() + 1);
         for i in 0..nbgh {
             let y_i = neighbours[i].node; // y_i is a NodeIx = usize
-            rho_y_s.push(self.kgraph.neighbours[y_i][0].weight.to_f32().unwrap());
+            rho_y_s.push(kgraph.neighbours[y_i][0].weight.to_f32().unwrap());
             // we rho_x, initial_scales
         } // end of for i
         rho_y_s.push(rho_x);
@@ -642,26 +710,6 @@ where
         }
     } // end of get_scale_from_proba_normalisation
 
-    /// As data can come from hnsw with arbitrary data id not on [0..nb_data] we reindex
-    /// them for array computation. At the end we must provide a way to get back to
-    /// original labels of data
-    /// **When we get embedded data as an Array2<F>, row i of data corresponds to the original data with label get_data_id_from_idx(i)**
-    pub fn get_data_id_from_idx(&self, index:usize) -> Option<&DataId> {
-        return self.kgraph.get_data_id_from_idx(index)
-    }
-
-    /// **get embedding of a given node index after reindexation by the embedding to index in [0..nb_nodes]**
-    pub fn get_node_embedding(&self, node : NodeIdx) -> ArrayView1<F> {
-        self.embedding.as_ref().unwrap().row(node)
-    }
-
-    /// **return the embedded vector corresponding to original data vector corresponding to data_id**
-    /// This methods fails if data_id do not exist. Use KGraph.get_data_id_from_idx to check before if necessary.
-    pub fn get_data_embedding(&self, data_id : &DataId) -> ArrayView1<F> {
-        // we must get data index as stored in IndexSet
-        let data_idx = self.kgraph.get_idx_from_dataid(data_id).unwrap();
-        self.embedding.as_ref().unwrap().row(data_idx)
-    }
 
     pub fn get_nb_nodes(&self) -> usize {
         self.initial_space.as_ref().unwrap().get_nb_nodes()
@@ -710,8 +758,22 @@ where
         println!(" gradient iterations cpu_time {:?}",  cpu_time);
         let final_ce = ce_optimization.ce_compute();
         println!(" final cross entropy value {:.2e}", final_ce);
+        // return reindexed data (if possible)
+        let dim = self.get_asked_dimension();
+        let nbrow = self.get_nb_nodes();
+        let mut reindexed =  Array2::<F>::zeros((nbrow, dim));
+        // TODO version 0.15 provides move_into and push_row
+        // Here we must not forget that to interpret results we must go
+        // back from indexset to original points (One week bug!)
+        for i in 0..nbrow {
+            let row = ce_optimization.get_embedded_data(i);
+//            let origin_id = self.kgraph.unwrap().get_data_id_from_idx(i).unwrap();
+            for j in 0..dim {
+                reindexed[[i,j]] = row.read()[j];
+            }
+        }
         //
-        Ok(ce_optimization.get_embedded_reindexed(self.kgraph.get_indexset()))
+        Ok(reindexed)
         //
     } // end of entropy_optimize
 
@@ -819,7 +881,8 @@ impl <'a, F> EntropyOptim<'a,F>
     // return result as an Array2<F> cloning data to return result to struct Embedder
     // Here we reindex data according to their original order. DataId must be contiguous and fill [0..nb_data]
     // for this method not to panic!
-    fn get_embedded_reindexed(& self, indexset: &IndexSet<NodeIdx>) -> Array2<F> {
+#[allow(unused)]
+    pub fn get_embedded_reindexed(& self, indexset: &IndexSet<NodeIdx>) -> Array2<F> {
         let nbrow = self.embedded.len();
         let nbcol = self.params.asked_dim;
         let mut embedding_res = Array2::<F>::zeros((nbrow, nbcol));
@@ -837,7 +900,7 @@ impl <'a, F> EntropyOptim<'a,F>
     }
 
 
-    /// 
+    /// row is here a NodeIdx (after reindexation of DataId), hence the not public interface
     fn get_embedded_data(&self, row : usize) -> Arc<RwLock<Array1<F>>> {
         Arc::clone(&self.embedded[row])
     }
