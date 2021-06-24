@@ -171,8 +171,8 @@ pub struct KGraph<F> {
 
 
 impl <F> KGraph<F> 
-    where F : FromPrimitive + Float + AddAssign + SubAssign + MulAssign + DivAssign + RemAssign +
-        Display + Debug + LowerExp + UpperExp + std::iter::Sum + Send + Sync 
+    where F : FromPrimitive + Float +
+        Display + Debug + LowerExp + UpperExp + Send + Sync 
 {
     /// allocates a graph with expected size nbnodes and nbng neighbours 
     pub fn new() -> Self {

@@ -706,7 +706,7 @@ struct EntropyOptim<'a, F> {
 
 
 impl <'a, F> EntropyOptim<'a,F> 
-    where F: Float +  NumAssign + std::iter::Sum + num_traits::cast::FromPrimitive + Send + Sync + ndarray::ScalarOperand {
+    where F: Float + NumAssign + std::iter::Sum + num_traits::cast::FromPrimitive + Send + Sync + ndarray::ScalarOperand {
     //
     pub fn new(node_params : &'a NodeParams, params: &'a EmbedderParams, initial_embed : &Array2<F>) -> Self {
         log::info!("entering EntropyOptim::new");
@@ -994,7 +994,6 @@ impl <'a, F> EntropyOptim<'a,F>
 
 //===============================================================================================================
 
-use core::ops::{AddAssign,SubAssign,MulAssign,DivAssign,RemAssign}; 
 use std::fmt::{Display,Debug,LowerExp,UpperExp}; 
 
 // Construct the representation of graph as a collections of probability-weighted edges
@@ -1005,8 +1004,7 @@ use std::fmt::{Display,Debug,LowerExp,UpperExp};
 // These 2 function are also the base of module dmap
 //
 fn construct_initial_space<F>(kgraph : & KGraph<F>, scale_rho : f32, beta : f32) -> Vec::<NodeParam> 
-    where F : Float + num_traits::cast::FromPrimitive + AddAssign + SubAssign + MulAssign + DivAssign + RemAssign +
-    Display + Debug + LowerExp + UpperExp + std::iter::Sum + Send + Sync {
+    where F : Float + num_traits::cast::FromPrimitive + Display + Debug + LowerExp + UpperExp + Send + Sync {
     //
     let nbnodes = kgraph.get_nb_nodes();
     let mut perplexity_q : CKMS<f32> = CKMS::<f32>::new(0.001);
@@ -1058,16 +1056,15 @@ fn construct_initial_space<F>(kgraph : & KGraph<F>, scale_rho : f32, beta : f32)
 fn get_scale_from_proba_normalisation<F> (kgraph : & KGraph<F>, scale_rho : f32, beta : f32, neighbours: &Vec<OutEdge<F>>) -> NodeParam 
     where F : Float + num_traits::cast::FromPrimitive {
     //
-//        log::trace!("in Embedder::get_scale_from_proba_normalisation");
+//        log::trace!("in get_scale_from_proba_normalisation");
     // p_i = exp[- beta * (d(x,y_i)/ local_scale) * lambda]
     let nbgh = neighbours.len();
-    // determnine mean distance to nearest neighbour at local scale
+    // determnine mean distance to nearest neighbour at local scale, reason why we need kgraph as argument.
     let rho_x = neighbours[0].weight.to_f32().unwrap();
     let mut rho_y_s = Vec::<f32>::with_capacity(neighbours.len() + 1);
     for i in 0..nbgh {
         let y_i = neighbours[i].node; // y_i is a NodeIx = usize
         rho_y_s.push(kgraph.neighbours[y_i][0].weight.to_f32().unwrap());
-        // we rho_x, initial_scales
     } // end of for i
     rho_y_s.push(rho_x);
     let mean_rho = rho_y_s.iter().sum::<f32>() / (rho_y_s.len() as f32);
@@ -1075,7 +1072,7 @@ fn get_scale_from_proba_normalisation<F> (kgraph : & KGraph<F>, scale_rho : f32,
     // exp(- (first_dist -last_dist)/scale) >= PROBA_MIN
     // TODO do we need some optimization with respect to this 1 ? as we have lambda for high variations
     let scale = scale_rho * mean_rho;
-    // now we adjust scale so that the ratio of proba of last neighbour to first neighbour do not exceed epsil.
+    // now we adjust scale so that the ratio of proba of last neighbour to first neighbour do not exceed epsil. CAVEAT
     let first_dist = neighbours[0].weight.to_f32().unwrap();
     let last_dist = neighbours[nbgh - 1].weight.to_f32().unwrap();
     assert!(first_dist > 0. && last_dist > 0.);
