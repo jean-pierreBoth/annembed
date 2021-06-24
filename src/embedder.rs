@@ -289,7 +289,7 @@ where
         self.parameters.log();
         let graph_to_embed = self.kgraph.unwrap();
         // construction of initial neighbourhood, scales and weight of edges from distances.
-        self.initial_space = Some(NodeParams{params : self.construct_initial_space(graph_to_embed)});
+        self.initial_space = Some(NodeParams{params : construct_initial_space(graph_to_embed, self.parameters.scale_rho as f32, self.parameters.beta as f32)});
         // we can initialize embedding with diffusion maps or pure random.
         let mut initial_embedding;
         if self.parameters.dmap_init {
@@ -407,47 +407,6 @@ where
         //
         initial_embedding
     }  // end of get_random_init
-
-
-    /// determines scales in initial space and proba of edges.
-    /// Construct node params for later optimization
-    // after this function we do not need field kgraph anymore!
-    fn construct_initial_space(&self, kgraph : &'a KGraph<F>) -> Vec::<NodeParam> {
-        let nbnodes = kgraph.get_nb_nodes();
-        let mut perplexity_q : CKMS<f32> = CKMS::<f32>::new(0.001);
-        let mut scale_q : CKMS<f32> = CKMS::<f32>::new(0.001);
-        let mut weight_q :  CKMS<f32> = CKMS::<f32>::new(0.001);
-        // get stats
-        let mut node_params = Vec::<NodeParam>::with_capacity(nbnodes);
-        // TODO can be // with rayon taking care of indexation
-        let neighbour_hood = kgraph.get_neighbours();
-        for i in 0..neighbour_hood.len() {
-            let node_param = self.get_scale_from_proba_normalisation(kgraph, &neighbour_hood[i]);
-            scale_q.insert(node_param.scale);
-            perplexity_q.insert(node_param.get_perplexity());
-            // coose random edge to audit
-            let j = thread_rng().gen_range(0..node_param.edges.len());
-            weight_q.insert(node_param.edges[j].weight);
-            assert_eq!(node_param.edges.len(), neighbour_hood[i].len());
-            node_params.push(node_param);
-        }
-        // dump info on quantiles
-        println!("\n constructed initial space");
-        println!("\n scales quantile at 0.05 : {:.2e} , 0.5 :  {:.2e}, 0.95 : {:.2e}, 0.99 : {:.2e}", 
-        scale_q.query(0.05).unwrap().1, scale_q.query(0.5).unwrap().1, 
-        scale_q.query(0.95).unwrap().1, scale_q.query(0.99).unwrap().1);
-        //
-        println!("\n edge weight quantile at 0.05 : {:.2e} , 0.5 :  {:.2e}, 0.95 : {:.2e}, 0.99 : {:.2e}", 
-        weight_q.query(0.05).unwrap().1, weight_q.query(0.5).unwrap().1, 
-        weight_q.query(0.95).unwrap().1, weight_q.query(0.99).unwrap().1);
-        //
-        println!("\n perplexity quantile at 0.05 : {:.2e} , 0.5 :  {:.2e}, 0.95 : {:.2e}, 0.99 : {:.2e}", 
-        perplexity_q.query(0.05).unwrap().1, perplexity_q.query(0.5).unwrap().1, 
-        perplexity_q.query(0.95).unwrap().1, perplexity_q.query(0.99).unwrap().1);
-        println!("");    
-        //
-        node_params
-    }  // end of construction of node params
 
 
 
@@ -648,67 +607,6 @@ where
         // in this state neither sum of proba adds up to 1 neither is any entropy (Shannon or Renyi) normailed.
         (1. / beta, dist)
     } // end of get_scale_from_umap
-
-
-    // Simplest function where we know really what we do and why. Get a normalized proba with constraint.
-    // given neighbours of a node we choose scale to satisfy a normalization constraint.
-    // p_i = exp[- beta * (d(x,y_i)/ local_scale)]  and then normalized to 1.
-    // local_scale can be adjusted so that ratio of last proba to first proba >= epsil.
-    // This function returns the local scale (i.e mean distance of a point to its nearest neighbour)
-    // and vector of proba weight to nearest neighbours. Min
-    fn get_scale_from_proba_normalisation(&self, kgraph : &'a KGraph<F>, neighbours: &Vec<OutEdge<F>>) -> NodeParam {
-//        log::trace!("in Embedder::get_scale_from_proba_normalisation");
-        // p_i = exp[- beta * (d(x,y_i)/ local_scale) * lambda]
-        let nbgh = neighbours.len();
-        // determnine mean distance to nearest neighbour at local scale
-        let rho_x = neighbours[0].weight.to_f32().unwrap();
-        let mut rho_y_s = Vec::<f32>::with_capacity(neighbours.len() + 1);
-        for i in 0..nbgh {
-            let y_i = neighbours[i].node; // y_i is a NodeIx = usize
-            rho_y_s.push(kgraph.neighbours[y_i][0].weight.to_f32().unwrap());
-            // we rho_x, initial_scales
-        } // end of for i
-        rho_y_s.push(rho_x);
-        let mean_rho = rho_y_s.iter().sum::<f32>() / (rho_y_s.len() as f32);
-        // we set scale so that transition proba do not vary more than PROBA_MIN between first and last neighbour
-        // exp(- (first_dist -last_dist)/scale) >= PROBA_MIN
-        // TODO do we need some optimization with respect to this 1 ? as we have lambda for high variations
-        let scale =  self.parameters.scale_rho as f32 * mean_rho;
-        // now we adjust scale so that the ratio of proba of last neighbour to first neighbour do not exceed epsil.
-        let first_dist = neighbours[0].weight.to_f32().unwrap();
-        let last_dist = neighbours[nbgh - 1].weight.to_f32().unwrap();
-        assert!(first_dist > 0. && last_dist > 0.);
-        assert!(last_dist >= first_dist);
-        let beta : f32 = self.parameters.beta as f32;
-        //
-        if last_dist > first_dist {
-            let remap_weight = | w : F , scale : f32 | ((w.to_f32().unwrap() - first_dist).max(0.)/ scale).pow(beta);
-            //
-            if remap_weight(F::from(last_dist).unwrap(), scale)/remap_weight(F::from(first_dist).unwrap(), scale) < PROBA_MIN.ln() {
-                log::info!("too large variation of neighbours probablities , reduce beta");
-                // we could rescale by augmenting scale... or impose an edge weight of PROBA_MIN...
-            }
-            let mut probas_edge = neighbours
-                .iter()
-                .map(|n| OutEdge::<f32>::new(n.node, (-remap_weight(n.weight, scale)).exp()) )
-                .collect::<Vec<OutEdge<f32>>>();
-            //
-            log::trace!("scale : {:.2e} proba gap {:.2e}", scale, probas_edge[probas_edge.len() - 1].weight / probas_edge[0].weight);
-            assert!(probas_edge[probas_edge.len() - 1].weight / probas_edge[0].weight >= PROBA_MIN);
-            let sum = probas_edge.iter().map(|e| e.weight).sum::<f32>();
-            for i in 0..nbgh {
-                probas_edge[i].weight = probas_edge[i].weight / sum;
-            }
-            return NodeParam::new(scale, probas_edge);
-        } else {
-            // all neighbours are at the same distance!
-            let probas_edge = neighbours
-                .iter()
-                .map(|n| OutEdge::<f32>::new(n.node, 1.0 / nbgh as f32))
-                .collect::<Vec<OutEdge<f32>>>();
-            return NodeParam::new(scale, probas_edge);
-        }
-    } // end of get_scale_from_proba_normalisation
 
 
     pub fn get_nb_nodes(&self) -> usize {
@@ -1096,7 +994,123 @@ impl <'a, F> EntropyOptim<'a,F>
 
 //===============================================================================================================
 
+use core::ops::{AddAssign,SubAssign,MulAssign,DivAssign,RemAssign}; 
+use std::fmt::{Display,Debug,LowerExp,UpperExp}; 
 
+// Construct the representation of graph as a collections of probability-weighted edges
+// determines scales in initial space and proba of edges for the neighbourhood of every point.
+// Construct node params for later optimization
+// after this function Embedder structure do not need field kgraph anymore
+// This function relies on get_scale_from_proba_normalisation function which construct proabability-weighted edge around each node.
+// These 2 function are also the base of module dmap
+//
+fn construct_initial_space<F>(kgraph : & KGraph<F>, scale_rho : f32, beta : f32) -> Vec::<NodeParam> 
+    where F : Float + num_traits::cast::FromPrimitive + AddAssign + SubAssign + MulAssign + DivAssign + RemAssign +
+    Display + Debug + LowerExp + UpperExp + std::iter::Sum + Send + Sync {
+    //
+    let nbnodes = kgraph.get_nb_nodes();
+    let mut perplexity_q : CKMS<f32> = CKMS::<f32>::new(0.001);
+    let mut scale_q : CKMS<f32> = CKMS::<f32>::new(0.001);
+    let mut weight_q :  CKMS<f32> = CKMS::<f32>::new(0.001);
+    // get stats
+    let mut node_params = Vec::<NodeParam>::with_capacity(nbnodes);
+    // TODO can be // with rayon taking care of indexation
+    let neighbour_hood = kgraph.get_neighbours();
+    for i in 0..neighbour_hood.len() {
+        let node_param = get_scale_from_proba_normalisation(kgraph, scale_rho, beta, &neighbour_hood[i]);
+        scale_q.insert(node_param.scale);
+        perplexity_q.insert(node_param.get_perplexity());
+        // coose random edge to audit
+        let j = thread_rng().gen_range(0..node_param.edges.len());
+        weight_q.insert(node_param.edges[j].weight);
+        assert_eq!(node_param.edges.len(), neighbour_hood[i].len());
+        node_params.push(node_param);
+    }
+    // dump info on quantiles
+    println!("\n constructed initial space");
+    println!("\n scales quantile at 0.05 : {:.2e} , 0.5 :  {:.2e}, 0.95 : {:.2e}, 0.99 : {:.2e}", 
+    scale_q.query(0.05).unwrap().1, scale_q.query(0.5).unwrap().1, 
+    scale_q.query(0.95).unwrap().1, scale_q.query(0.99).unwrap().1);
+    //
+    println!("\n edge weight quantile at 0.05 : {:.2e} , 0.5 :  {:.2e}, 0.95 : {:.2e}, 0.99 : {:.2e}", 
+    weight_q.query(0.05).unwrap().1, weight_q.query(0.5).unwrap().1, 
+    weight_q.query(0.95).unwrap().1, weight_q.query(0.99).unwrap().1);
+    //
+    println!("\n perplexity quantile at 0.05 : {:.2e} , 0.5 :  {:.2e}, 0.95 : {:.2e}, 0.99 : {:.2e}", 
+    perplexity_q.query(0.05).unwrap().1, perplexity_q.query(0.5).unwrap().1, 
+    perplexity_q.query(0.95).unwrap().1, perplexity_q.query(0.99).unwrap().1);
+    println!("");    
+    //
+    node_params
+}  // end of construction of node params
+
+
+
+// Simplest function where we know really what we do and why. 
+// Given a graph, scale and exponent parameters transform a list of distance-edge to neighbours into a list of proba-edge.
+// 
+// Given neighbours of a node we choose scale to satisfy a normalization constraint.
+// p_i = exp[- beta * (d(x,y_i) - d(x,y_0))/ local_scale)]  and then normalized to 1.
+
+// This function returns the local scale (i.e mean distance of a point to its nearest neighbour)
+// and vector of proba weight to nearest neighbours.
+//
+fn get_scale_from_proba_normalisation<F> (kgraph : & KGraph<F>, scale_rho : f32, beta : f32, neighbours: &Vec<OutEdge<F>>) -> NodeParam 
+    where F : Float + num_traits::cast::FromPrimitive {
+    //
+//        log::trace!("in Embedder::get_scale_from_proba_normalisation");
+    // p_i = exp[- beta * (d(x,y_i)/ local_scale) * lambda]
+    let nbgh = neighbours.len();
+    // determnine mean distance to nearest neighbour at local scale
+    let rho_x = neighbours[0].weight.to_f32().unwrap();
+    let mut rho_y_s = Vec::<f32>::with_capacity(neighbours.len() + 1);
+    for i in 0..nbgh {
+        let y_i = neighbours[i].node; // y_i is a NodeIx = usize
+        rho_y_s.push(kgraph.neighbours[y_i][0].weight.to_f32().unwrap());
+        // we rho_x, initial_scales
+    } // end of for i
+    rho_y_s.push(rho_x);
+    let mean_rho = rho_y_s.iter().sum::<f32>() / (rho_y_s.len() as f32);
+    // we set scale so that transition proba do not vary more than PROBA_MIN between first and last neighbour
+    // exp(- (first_dist -last_dist)/scale) >= PROBA_MIN
+    // TODO do we need some optimization with respect to this 1 ? as we have lambda for high variations
+    let scale = scale_rho * mean_rho;
+    // now we adjust scale so that the ratio of proba of last neighbour to first neighbour do not exceed epsil.
+    let first_dist = neighbours[0].weight.to_f32().unwrap();
+    let last_dist = neighbours[nbgh - 1].weight.to_f32().unwrap();
+    assert!(first_dist > 0. && last_dist > 0.);
+    assert!(last_dist >= first_dist);
+    //
+    if last_dist > first_dist {
+        let remap_weight = | w : F , scale : f32 | ((w.to_f32().unwrap() - first_dist).max(0.)/ scale).pow(beta);
+        //
+        if remap_weight(F::from(last_dist).unwrap(), scale)/remap_weight(F::from(first_dist).unwrap(), scale) < PROBA_MIN.ln() {
+            log::info!("too large variation of neighbours probablities , reduce beta");
+            // we could rescale by augmenting scale... or impose an edge weight of PROBA_MIN...
+        }
+        let mut probas_edge = neighbours
+            .iter()
+            .map(|n| OutEdge::<f32>::new(n.node, (-remap_weight(n.weight, scale)).exp()) )
+            .collect::<Vec<OutEdge<f32>>>();
+        //
+        log::trace!("scale : {:.2e} proba gap {:.2e}", scale, probas_edge[probas_edge.len() - 1].weight / probas_edge[0].weight);
+        assert!(probas_edge[probas_edge.len() - 1].weight / probas_edge[0].weight >= PROBA_MIN);
+        let sum = probas_edge.iter().map(|e| e.weight).sum::<f32>();
+        for i in 0..nbgh {
+            probas_edge[i].weight = probas_edge[i].weight / sum;
+        }
+        return NodeParam::new(scale, probas_edge);
+    } else {
+        // all neighbours are at the same distance!
+        let probas_edge = neighbours
+            .iter()
+            .map(|n| OutEdge::<f32>::new(n.node, 1.0 / nbgh as f32))
+            .collect::<Vec<OutEdge<f32>>>();
+        return NodeParam::new(scale, probas_edge);
+    }
+} // end of get_scale_from_proba_normalisation
+    
+        
 // restrain value
 #[allow(unused)]
 fn clip<F>(f : F, max : f64) -> F 
