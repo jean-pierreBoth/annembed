@@ -220,7 +220,8 @@ impl <F> KGraph<F>
         return self.node_set.get_index_of(data_id)
     }
 
-    /// necessary after embedding to get back to original indexes.
+    /// usefule after embedding to get back to original indexes.
+#[allow(unused)]
     pub(crate) fn get_indexset(&self) -> &IndexSet<DataId> {
         &self.node_set
     }
@@ -485,7 +486,7 @@ use ndarray::{Array2};
 /// Maintain for each point in the Hnsw structure nearest point in projected structure.
 /// Possibly stores matrix of distances between filtered points
 /// 
-pub struct GraphProjection<F> {
+pub struct KGraphProjection<F> {
     /// we consider projection on points on layers above and including this layer 
     layer : usize,
     /// graph on which we project
@@ -498,7 +499,7 @@ pub struct GraphProjection<F> {
 
 
 
-impl <F> GraphProjection<F>
+impl <F> KGraphProjection<F>
     where F : Float + AddAssign + SubAssign + MulAssign + DivAssign + RemAssign + FromPrimitive +
             Display + Debug + LowerExp + UpperExp + std::iter::Sum + Send + Sync {
 
@@ -709,7 +710,7 @@ impl <F> GraphProjection<F>
         log::info!("number of points with less than : {} neighbours = {} ", nbng, nb_point_below_nbng);
         log::trace!("Projection exiting from new");
         //
-        GraphProjection{ layer, small_graph : upper_graph, proj_data : proj_data, large_graph : whole_graph}
+        KGraphProjection{ layer, small_graph : upper_graph, proj_data : proj_data, large_graph : whole_graph}
     } // end of new
 
 
@@ -942,7 +943,7 @@ fn test_graph_projection() {
     hns.parallel_insert(&data_with_id);
     hns.dump_layer_info();
     //
-    let _graph_projection = GraphProjection::<f32>::new(&hns, layer , knbn);
+    let _graph_projection = KGraphProjection::<f32>::new(&hns, layer , knbn);
 
 
 } // end of test_graph_projection
