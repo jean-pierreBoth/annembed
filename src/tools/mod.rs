@@ -2,3 +2,4 @@
 
 pub mod svdapprox;
 pub mod entropy;
+pub mod dichotomy;

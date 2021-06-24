@@ -11,11 +11,10 @@
 use num_traits::{Float, NumAssign};
 use std::collections::HashMap;
 
-use ndarray::{Array1, Array2, ArrayView1,Axis, Array};
+use ndarray::{Array1, Array2, ArrayView1,Axis};
 use ndarray_linalg::{Lapack, Scalar};
 use sprs::{CsMat, TriMatBase};
 
-use lax::{layout::MatrixLayout, UVTFlag, SVDDC_};
 
 use quantiles::{ckms::CKMS};     // we could use also greenwald_khanna
 
@@ -38,12 +37,13 @@ use hnsw_rs::prelude::*;
 use crate::fromhnsw::*;
 use crate::embedparams::*;
 use crate::tools::svdapprox::*;
+use crate::graphlaplace::*;
 
+use crate::tools::dichotomy::*;
 
 /// do not consider probabilities under PROBA_MIN, thresolded!!
 const PROBA_MIN: f32 = 1.0E-5;
 
-const FULL_SVD_SIZE_LIMIT : usize = 2000;
 const FULL_MAT_REPR : usize = 5000;
 
 
@@ -101,123 +101,6 @@ impl NodeParams {
 
 
 
-
-//==================================================================================================================
-
-
-/// We use a normalized symetric laplacian to go to the svd.
-/// But we want the left eigenvectors of the normalized R(andom)W(alk) laplacian so we must keep track
-/// of degrees (rown L1 norms)
-struct LaplacianGraph {
-    // symetrized graph. Exactly D^{-1/2} * G * D^{-1/2}
-    sym_laplacian: MatRepr<f32>,
-    // the vector giving D of the symtrized graph
-    degrees: Array1<f32>,
-    // 
-    _s : Option<Array1<f32>>,
-    //
-    _u : Option<Array2<f32>>
-}
-
-
-impl LaplacianGraph {
-
-
-    pub fn new(sym_laplacian: MatRepr<f32>, degrees: Array1<f32>) -> Self {
-        LaplacianGraph{sym_laplacian, degrees, _s : None, _u: None}
-    } // end of new for LaplacianGraph
-
-
-
-#[inline]
-    fn is_csr(&self) -> bool {
-        self.sym_laplacian.is_csr()
-    } // end is_csr
-
-    fn get_nbrow(&self) -> usize {
-        self.degrees.len()
-    }
-
-    fn do_full_svd(&mut self) -> Result<SvdResult<f32>, String> {
-        //
-        log::trace!("LaplacianGraph doing full svd");
-        let b = self.sym_laplacian.get_full_mut().unwrap();
-        log::trace!("LaplacianGraph ... size nbrow {} nbcol {} ", b.shape()[0], b.shape()[1]);
-
-        let layout = MatrixLayout::C { row: b.shape()[0] as i32, lda: b.shape()[1] as i32 };
-        let slice_for_svd_opt = b.as_slice_mut();
-        if slice_for_svd_opt.is_none() {
-            println!("direct_svd Matrix cannot be transformed into a slice : not contiguous or not in standard order");
-            return Err(String::from("not contiguous or not in standard order"));
-        }
-        // use divide conquer (calls lapack gesdd), faster but could use svd (lapack gesvd)
-        log::trace!("direct_svd calling svddc driver");
-        let res_svd_b = f32::svddc(layout,  UVTFlag::Some, slice_for_svd_opt.unwrap());
-        if res_svd_b.is_err()  {
-            log::info!("LaplacianGraph do_full_svd svddc failed");
-            return Err(String::from("LaplacianGraph svddc failed"));
-        };
-        // we have to decode res and fill in SvdApprox fields.
-        // lax does encapsulte dgesvd (double) and sgesvd (single)  which returns U and Vt as vectors.
-        // We must reconstruct Array2 from slices.
-        // now we must match results
-        // u is (m,r) , vt must be (r, n) with m = self.data.shape()[0]  and n = self.data.shape()[1]
-        let res_svd_b = res_svd_b.unwrap();
-        let r = res_svd_b.s.len();
-        let m = b.shape()[0];
-        // must truncate to asked dim
-        let s : Array1<f32> = res_svd_b.s.iter().map(|x| *x).collect::<Array1<f32>>();
-        //
-        let s_u : Option<Array2<f32>>;
-        if let Some(u_vec) = res_svd_b.u {
-            s_u = Some(Array::from_shape_vec((m, r), u_vec).unwrap());
-        }
-        else {
-            s_u = None;
-        }
-        Ok(SvdResult{s : Some(s), u: s_u, vt : None})
-    }  // end of do_full_svd
-
-
-    /// do a partial approxlated svd
-    fn do_approx_svd(&mut self, asked_dim : usize) -> Result<SvdResult<f32>, String> {
-        assert!(asked_dim >= 2);
-        // get eigen values of normalized symetric lapalcian
-        //
-        //  switch to full or partial svd depending on csr representation and size
-        // csr implies approx svd.
-        log::info!("got laplacian, going to approximated svd ... asked_dim :  {}", asked_dim);
-        let mut svdapprox = SvdApprox::new(&self.sym_laplacian);
-        // TODO adjust epsil ?
-        // we need one dim more beccause we get rid of first eigen vector as in dmap
-        let svdmode = RangeApproxMode::EPSIL(RangePrecision::new(0.1, 25, asked_dim+5));
-        let svd_res = svdapprox.direct_svd(svdmode);
-        log::trace!("exited svd");
-        if !svd_res.is_ok() {
-            println!("svd approximation failed");
-            std::panic!();
-        }
-        return svd_res;
-    } // end if do_approx_svd
-
-
-
-    fn do_svd(&mut self, asked_dim : usize) -> Result<SvdResult<f32>, String> {
-        if !self.is_csr() && self.get_nbrow() <= FULL_SVD_SIZE_LIMIT {  // try direct svd
-            self.do_full_svd()
-        }
-        else {
-            self.do_approx_svd(asked_dim)
-        }
-     
-    } // end of init_from_sv_approx
-
-
-} // end of impl LaplacianGraph
-
-
-
-
 //=====================================================================================
 
 
@@ -232,8 +115,6 @@ pub struct Embedder<'a,F> {
     hkgraph: Option<&'a KGraphProjection<F>>,
     /// parameters
     parameters : EmbedderParams,
-    /// tells if we used approximated svd (with CSR mode)
-    approximated_svd : bool,
     /// contains edge probabilities according to the probabilized graph constructed before laplacian symetrization
     /// It is this representation that is used for cross entropy optimization!
     initial_space: Option<NodeParams>,
@@ -250,13 +131,13 @@ where
 {
     /// constructor from a graph and asked embedding dimension
     pub fn new(kgraph : &'a KGraph<F>, parameters : EmbedderParams) -> Self {
-        Embedder::<F>{kgraph : Some(kgraph), hkgraph : None, parameters , approximated_svd : false, initial_space:None, initial_embedding : None, embedding:None}
+        Embedder::<F>{kgraph : Some(kgraph), hkgraph : None, parameters , initial_space:None, initial_embedding : None, embedding:None}
     } // end of new
 
 
     /// construction from a hierarchical graph
     pub fn from_hkgraph(graph_projection : &'a KGraphProjection<F>, parameters : EmbedderParams) -> Self {
-        Embedder::<F>{kgraph : None, hkgraph : Some(graph_projection), parameters , approximated_svd : false, initial_space:None, initial_embedding : None, embedding:None}
+        Embedder::<F>{kgraph : None, hkgraph : Some(graph_projection), parameters , initial_space:None, initial_embedding : None, embedding:None}
 
 
     } // end of from_hkgraph
@@ -1007,7 +888,7 @@ fn get_scale_from_proba_normalisation<F> (kgraph : & KGraph<F>, scale_rho : f32,
 //     the problem is : how to choose alfa, this is done in get_scale_from_proba_normalisation
 // See also Veerman A Primer on Laplacian Dynamics in Directed Graphs 2020 arxiv https://arxiv.org/abs/2002.02605
 
-fn get_laplacian<F> (kgraph : &KGraph<F>, initial_space : &NodeParams) -> LaplacianGraph 
+fn get_laplacian<F> (kgraph : &KGraph<F>, initial_space : &NodeParams) -> GraphLaplacian 
     where F : Float + num_traits::cast::FromPrimitive + Display + Debug + LowerExp + UpperExp + Send + Sync {
     //
     log::trace!("in Embedder::get_laplacian");
@@ -1018,7 +899,7 @@ fn get_laplacian<F> (kgraph : &KGraph<F>, initial_space : &NodeParams) -> Laplac
     let node_params = initial_space;
     // TODO define a threshold for dense/sparse representation
     if nbnodes <= FULL_MAT_REPR {
-        log::debug!("Embedder using full matrix");
+        log::debug!("get_laplacian using full matrix");
         let mut transition_proba = Array2::<f32>::zeros((nbnodes, nbnodes));
         // we loop on all nodes, for each we want nearest neighbours, and get scale of distances around it
         for i in 0..node_params.params.len() {
@@ -1049,7 +930,7 @@ fn get_laplacian<F> (kgraph : &KGraph<F>, initial_space : &NodeParams) -> Laplac
         }
         //
         log::trace!("\n allocating full matrix laplacian");            
-        let laplacian = LaplacianGraph::new(MatRepr::from_array2(symgraph), diag);
+        let laplacian = GraphLaplacian::new(MatRepr::from_array2(symgraph), diag);
         laplacian
     } else {
         log::debug!("Embedder using csr matrix");
@@ -1105,7 +986,7 @@ fn get_laplacian<F> (kgraph : &KGraph<F>, initial_space : &NodeParams) -> Laplac
             values,
         );
         let csr_mat: CsMat<f32> = laplacian.to_csr();
-        let laplacian = LaplacianGraph::new(MatRepr::from_csrmat(csr_mat),diagonal);
+        let laplacian = GraphLaplacian::new(MatRepr::from_csrmat(csr_mat),diagonal);
         laplacian
     } // end case CsMat
         //
@@ -1232,68 +1113,6 @@ fn set_data_box<F>(data : &mut Array2<F>, box_size : f64)
 
 
 
-#[allow(unused)]
-/// search a root for f(x) = target between lower_r and upper_r. The flag increasing specifies the variation of f. true means increasing
-fn dichotomy_solver<F>(increasing: bool, f: F, lower_r: f32, upper_r: f32, target: f32) -> f32
-where
-    F: Fn(f32) -> f32,
-{
-    //
-    if lower_r >= upper_r {
-        panic!(
-            "dichotomy_solver failure low {} greater than upper {} ",
-            lower_r, upper_r
-        );
-    }
-    let range_low = f(lower_r).max(f(upper_r));
-    let range_upper = f(upper_r).min(f(lower_r));
-    if f(lower_r).max(f(upper_r)) < target || f(upper_r).min(f(lower_r)) > target {
-        panic!(
-            "dichotomy_solver target not in range of function range {}  {} ",
-            range_low, range_upper
-        );
-    }
-    //
-    if f(upper_r) < f(lower_r) && increasing {
-        panic!("f not increasing")
-    } else if f(upper_r) > f(lower_r) && !increasing {
-        panic!("f not decreasing")
-    }
-    // target in range, proceed
-    let mut middle = 1.;
-    let mut upper = upper_r;
-    let mut lower = lower_r;
-    //
-    let mut nbiter = 0;
-    while (target - f(middle)).abs() > 1.0E-5 {
-        if increasing {
-            if f(middle) > target {
-                upper = middle;
-            } else {
-                lower = middle;
-            }
-        }
-        // increasing type
-        else {
-            // decreasing case
-            if f(middle) > target {
-                lower = middle;
-            } else {
-                upper = middle;
-            }
-        } // end decreasing type
-        middle = (lower + upper) * 0.5;
-        nbiter += 1;
-        if nbiter > 100 {
-            panic!(
-                "dichotomy_solver do not converge, err :  {} ",
-                (target - f(middle)).abs()
-            );
-        }
-    } // end of while
-    return middle;
-}
-
 mod tests {
 
 //    cargo test embedder  -- --nocapture
@@ -1318,22 +1137,6 @@ mod tests {
     }
 
 
-    #[test]
-    fn test_dichotomy_inc() {
-        let f = |x: f32| x * x;
-        //
-        let beta = dichotomy_solver(true, f, 0., 5., 2.);
-        println!("beta : {}", beta);
-        assert!((beta - 2.0f32.sqrt()).abs() < 1.0E-4);
-    } // test_dichotomy_inc
-    #[test]
-    fn test_dichotomy_dec() {
-        let f = |x: f32| 1.0f32 / (x * x);
-        //
-        let beta = dichotomy_solver(false, f, 0.2, 5., 1. / 2.);
-        println!("beta : {}", beta);
-        assert!((beta - 2.0f32.sqrt()).abs() < 1.0E-4);
-    } // test_dichotomy_dec
 
 
     #[allow(unused)]
