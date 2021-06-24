@@ -289,7 +289,7 @@ where
         self.parameters.log();
         let graph_to_embed = self.kgraph.unwrap();
         // construction of initial neighbourhood, scales and weight of edges from distances.
-        self.initial_space = Some(NodeParams{params : construct_initial_space(graph_to_embed, self.parameters.scale_rho as f32, self.parameters.beta as f32)});
+        self.initial_space = Some(NodeParams{params : to_proba_edges(graph_to_embed, self.parameters.scale_rho as f32, self.parameters.beta as f32)});
         // we can initialize embedding with diffusion maps or pure random.
         let mut initial_embedding;
         if self.parameters.dmap_init {
@@ -419,7 +419,7 @@ where
         //
         assert!(asked_dim >= 2);
         // get eigen values of normalized symetric lapalcian
-        let mut laplacian = self.get_laplacian(kgraph);
+        let mut laplacian = get_laplacian(kgraph, self.initial_space.as_ref().unwrap());
         //
         log::debug!("got laplacian, going to svd ... asked_dim :  {}", asked_dim);
         let svd_res = laplacian.do_svd(asked_dim+25).unwrap();
@@ -461,122 +461,6 @@ where
     } // end of get_dmap_initial_embedding
 
 
-
-    // the function computes a symetric laplacian graph for svd.
-    // We will then need the lower non zero eigenvalues and eigen vectors.
-    // The best justification for this is in Diffusion Maps.
-    //
-    // Store in a symetric matrix representation dense of CsMat with for spectral embedding
-    // Do the Svd to initialize embedding. After that we do not need any more a full matrix.
-    //      - Get maximal incoming degree and choose either a CsMat or a dense Array2.
-    //
-    // Let x a point y_i its neighbours
-    //     after simplification weight assigned can be assumed to be of the form exp(-alfa * (d(x, y_i))
-    //     the problem is : how to choose alfa, this is done in get_scale_from_proba_normalisation
-    // See also Veerman A Primer on Laplacian Dynamics in Directed Graphs 2020 arxiv https://arxiv.org/abs/2002.02605
-
-    fn get_laplacian(&mut self, kgraph : &'a KGraph<F>) -> LaplacianGraph {
-        log::trace!("in Embedder::get_laplacian");
-        //
-        let nbnodes = kgraph.get_nb_nodes();
-        // get stats
-        let max_nbng = kgraph.get_max_nbng();
-        let node_params = self.initial_space.as_ref().unwrap();
-        // TODO define a threshold for dense/sparse representation
-        if nbnodes <= FULL_MAT_REPR {
-            log::debug!("Embedder using full matrix");
-            let mut transition_proba = Array2::<f32>::zeros((nbnodes, nbnodes));
-            // we loop on all nodes, for each we want nearest neighbours, and get scale of distances around it
-            for i in 0..node_params.params.len() {
-                // remind to index each request
-                let node_param = node_params.get_node_param(i);
-                // CAVEAT diagonal transition 0. or 1. ? Choose 0. as in t-sne umap LargeVis
-                transition_proba[[i, i]] = 0.;
-                for j in 0..node_param.edges.len() {
-                    let edge = node_param.edges[j];
-                    transition_proba[[i, edge.node]] = edge.weight;
-                } // end of for j
-            } // end for i
-            log::trace!("scaling of nodes done");            
-            // now we symetrize the graph by taking mean
-            // The UMAP formula (p_i+p_j - p_i *p_j) implies taking the non null proba when one proba is null,
-            // so UMAP initialization is more packed.
-            let mut symgraph = (&transition_proba + &transition_proba.view().t()) * 0.5;
-            // now we go to the symetric laplacian D^-1/2 * G * D^-1/2 but get rid of the I - ... cf Jordan
-            //  compute sum of row and renormalize. See Lafon-Keller-Coifman
-            // Diffusions Maps appendix B
-            // IEEE TRANSACTIONS ON PATTERN ANALYSIS AND MACHINE INTELLIGENCE,VOL. 28, NO. 11,NOVEMBER 2006
-            let diag = symgraph.sum_axis(Axis(1));
-            for i in 0..nbnodes {
-                let mut row = symgraph.row_mut(i);
-                for j in 0..nbnodes {
-                    row[[j]] /= (diag[[i]] * diag[[j]]).sqrt();
-                }
-            }
-            //
-            log::trace!("\n allocating full matrix laplacian");            
-            let laplacian = LaplacianGraph::new(MatRepr::from_array2(symgraph), diag);
-            laplacian
-        } else {
-            log::debug!("Embedder using csr matrix");
-            self.approximated_svd = true;
-            // now we must construct a CsrMat to store the symetrized graph transition probablity to go svd.
-            // and initialize field initial_space with some NodeParams
-            let mut edge_list = HashMap::<(usize, usize), f32>::with_capacity(nbnodes * max_nbng);
-            for i in 0..node_params.params.len() {
-                let node_param = node_params.get_node_param(i);
-                for j in 0..node_param.edges.len() {
-                    let edge = node_param.edges[j];
-                    edge_list.insert((i, edge.node), node_param.edges[j].weight);
-                } // end of for j
-            }
-            // now we iter on the hasmap symetrize the graph, and insert in triplets transition_proba
-            let mut diagonal = Array1::<f32>::zeros(nbnodes);
-            let mut rows = Vec::<usize>::with_capacity(nbnodes * 2 * max_nbng);
-            let mut cols = Vec::<usize>::with_capacity(nbnodes * 2 * max_nbng);
-            let mut values = Vec::<f32>::with_capacity(nbnodes * 2 * max_nbng);
-
-            for ((i, j), val) in edge_list.iter() {
-                assert!(*i != *j);  // we do not store null distance for self (loop) edge, its proba transition is always set to 0. CAVEAT
-                let sym_val;
-                if let Some(t_val) = edge_list.get(&(*j, *i)) {
-                    sym_val = (val + t_val) * 0.5;
-                } else {
-                    sym_val = *val;
-                }
-                rows.push(*i);
-                cols.push(*j);
-                values.push(sym_val);
-                diagonal[*i] += sym_val;
-                //
-                rows.push(*j);
-                cols.push(*i);
-                values.push(sym_val);
-                diagonal[*j] += sym_val;
-            }
-            // now we push terms (i,i) in csr
-            // Now we reset non diagonal terms to D^-1/2 G D^-1/2  i.e  val[i,j]/(D[i]*D[j])^1/2
-            for i in 0..rows.len() {
-                let row = rows[i];
-                let col = cols[i];
-                if row != col {
-                    values[i] = values[i] / (diagonal[row] * diagonal[col]).sqrt();
-                }
-            }
-            // 
-            log::trace!("allocating csr laplacian");            
-            let laplacian = TriMatBase::<Vec<usize>, Vec<f32>>::from_triplets(
-                (nbnodes, nbnodes),
-                rows,
-                cols,
-                values,
-            );
-            let csr_mat: CsMat<f32> = laplacian.to_csr();
-            let laplacian = LaplacianGraph::new(MatRepr::from_csrmat(csr_mat),diagonal);
-            laplacian
-        } // end case CsMat
-          //
-    } // end of get_laplacian
 
 
     // given neighbours of a node we choose scale to satisfy a normalization constraint.
@@ -1003,7 +887,7 @@ use std::fmt::{Display,Debug,LowerExp,UpperExp};
 // This function relies on get_scale_from_proba_normalisation function which construct proabability-weighted edge around each node.
 // These 2 function are also the base of module dmap
 //
-fn construct_initial_space<F>(kgraph : & KGraph<F>, scale_rho : f32, beta : f32) -> Vec::<NodeParam> 
+fn to_proba_edges<F>(kgraph : & KGraph<F>, scale_rho : f32, beta : f32) -> Vec::<NodeParam> 
     where F : Float + num_traits::cast::FromPrimitive + Display + Debug + LowerExp + UpperExp + Send + Sync {
     //
     let nbnodes = kgraph.get_nb_nodes();
@@ -1107,7 +991,128 @@ fn get_scale_from_proba_normalisation<F> (kgraph : & KGraph<F>, scale_rho : f32,
     }
 } // end of get_scale_from_proba_normalisation
     
-        
+
+
+
+// the function computes a symetric laplacian graph for svd.
+// We will then need the lower non zero eigenvalues and eigen vectors.
+// The best justification for this is in Diffusion Maps.
+//
+// Store in a symetric matrix representation dense of CsMat with for spectral embedding
+// Do the Svd to initialize embedding. After that we do not need any more a full matrix.
+//      - Get maximal incoming degree and choose either a CsMat or a dense Array2.
+//
+// Let x a point y_i its neighbours
+//     after simplification weight assigned can be assumed to be of the form exp(-alfa * (d(x, y_i))
+//     the problem is : how to choose alfa, this is done in get_scale_from_proba_normalisation
+// See also Veerman A Primer on Laplacian Dynamics in Directed Graphs 2020 arxiv https://arxiv.org/abs/2002.02605
+
+fn get_laplacian<F> (kgraph : &KGraph<F>, initial_space : &NodeParams) -> LaplacianGraph 
+    where F : Float + num_traits::cast::FromPrimitive + Display + Debug + LowerExp + UpperExp + Send + Sync {
+    //
+    log::trace!("in Embedder::get_laplacian");
+    //
+    let nbnodes = kgraph.get_nb_nodes();
+    // get stats
+    let max_nbng = kgraph.get_max_nbng();
+    let node_params = initial_space;
+    // TODO define a threshold for dense/sparse representation
+    if nbnodes <= FULL_MAT_REPR {
+        log::debug!("Embedder using full matrix");
+        let mut transition_proba = Array2::<f32>::zeros((nbnodes, nbnodes));
+        // we loop on all nodes, for each we want nearest neighbours, and get scale of distances around it
+        for i in 0..node_params.params.len() {
+            // remind to index each request
+            let node_param = node_params.get_node_param(i);
+            // CAVEAT diagonal transition 0. or 1. ? Choose 0. as in t-sne umap LargeVis
+            transition_proba[[i, i]] = 0.;
+            for j in 0..node_param.edges.len() {
+                let edge = node_param.edges[j];
+                transition_proba[[i, edge.node]] = edge.weight;
+            } // end of for j
+        } // end for i
+        log::trace!("scaling of nodes done");            
+        // now we symetrize the graph by taking mean
+        // The UMAP formula (p_i+p_j - p_i *p_j) implies taking the non null proba when one proba is null,
+        // so UMAP initialization is more packed.
+        let mut symgraph = (&transition_proba + &transition_proba.view().t()) * 0.5;
+        // now we go to the symetric laplacian D^-1/2 * G * D^-1/2 but get rid of the I - ... cf Jordan
+        //  compute sum of row and renormalize. See Lafon-Keller-Coifman
+        // Diffusions Maps appendix B
+        // IEEE TRANSACTIONS ON PATTERN ANALYSIS AND MACHINE INTELLIGENCE,VOL. 28, NO. 11,NOVEMBER 2006
+        let diag = symgraph.sum_axis(Axis(1));
+        for i in 0..nbnodes {
+            let mut row = symgraph.row_mut(i);
+            for j in 0..nbnodes {
+                row[[j]] /= (diag[[i]] * diag[[j]]).sqrt();
+            }
+        }
+        //
+        log::trace!("\n allocating full matrix laplacian");            
+        let laplacian = LaplacianGraph::new(MatRepr::from_array2(symgraph), diag);
+        laplacian
+    } else {
+        log::debug!("Embedder using csr matrix");
+        // now we must construct a CsrMat to store the symetrized graph transition probablity to go svd.
+        // and initialize field initial_space with some NodeParams
+        let mut edge_list = HashMap::<(usize, usize), f32>::with_capacity(nbnodes * max_nbng);
+        for i in 0..node_params.params.len() {
+            let node_param = node_params.get_node_param(i);
+            for j in 0..node_param.edges.len() {
+                let edge = node_param.edges[j];
+                edge_list.insert((i, edge.node), node_param.edges[j].weight);
+            } // end of for j
+        }
+        // now we iter on the hasmap symetrize the graph, and insert in triplets transition_proba
+        let mut diagonal = Array1::<f32>::zeros(nbnodes);
+        let mut rows = Vec::<usize>::with_capacity(nbnodes * 2 * max_nbng);
+        let mut cols = Vec::<usize>::with_capacity(nbnodes * 2 * max_nbng);
+        let mut values = Vec::<f32>::with_capacity(nbnodes * 2 * max_nbng);
+
+        for ((i, j), val) in edge_list.iter() {
+            assert!(*i != *j);  // we do not store null distance for self (loop) edge, its proba transition is always set to 0. CAVEAT
+            let sym_val;
+            if let Some(t_val) = edge_list.get(&(*j, *i)) {
+                sym_val = (val + t_val) * 0.5;
+            } else {
+                sym_val = *val;
+            }
+            rows.push(*i);
+            cols.push(*j);
+            values.push(sym_val);
+            diagonal[*i] += sym_val;
+            //
+            rows.push(*j);
+            cols.push(*i);
+            values.push(sym_val);
+            diagonal[*j] += sym_val;
+        }
+        // now we push terms (i,i) in csr
+        // Now we reset non diagonal terms to D^-1/2 G D^-1/2  i.e  val[i,j]/(D[i]*D[j])^1/2
+        for i in 0..rows.len() {
+            let row = rows[i];
+            let col = cols[i];
+            if row != col {
+                values[i] = values[i] / (diagonal[row] * diagonal[col]).sqrt();
+            }
+        }
+        // 
+        log::trace!("allocating csr laplacian");            
+        let laplacian = TriMatBase::<Vec<usize>, Vec<f32>>::from_triplets(
+            (nbnodes, nbnodes),
+            rows,
+            cols,
+            values,
+        );
+        let csr_mat: CsMat<f32> = laplacian.to_csr();
+        let laplacian = LaplacianGraph::new(MatRepr::from_csrmat(csr_mat),diagonal);
+        laplacian
+    } // end case CsMat
+        //
+} // end of get_laplacian
+
+
+
 // restrain value
 #[allow(unused)]
 fn clip<F>(f : F, max : f64) -> F 
