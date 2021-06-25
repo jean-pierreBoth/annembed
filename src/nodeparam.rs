@@ -103,15 +103,24 @@ impl NodeParam {
 /// We maintain NodeParam for each node as it enables scaling in the embedded space and cross entropy minimization.
 pub(crate) struct NodeParams {
     pub(crate) params: Vec<NodeParam>,
+    max_nbng : usize,
 }
 
 impl NodeParams {
+    pub fn new(params :Vec<NodeParam>, max_nbng : usize) -> Self {
+        NodeParams{params, max_nbng}
+    }
+    //
     pub fn get_node_param(&self, node: NodeIdx) -> &NodeParam {
         return &self.params[node];
     }
 
     pub fn get_nb_nodes(&self) -> usize {
         self.params.len()
+    }
+
+    pub fn get_max_nbng(&self) -> usize {
+        self.max_nbng
     }
 } // end of NodeParams
 

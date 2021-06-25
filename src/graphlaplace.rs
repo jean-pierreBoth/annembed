@@ -1,7 +1,5 @@
 //! Graph Laplacian stuff
 
-use num_traits::{Float};
-use std::fmt::{Display,Debug,LowerExp,UpperExp};   // for Display + Debug + LowerExp + UpperExp 
 use std::collections::HashMap;
 
 use ndarray::{Array1, Array2, Array, Axis};
@@ -11,7 +9,6 @@ use lax::{layout::MatrixLayout, UVTFlag, SVDDC_};
 
 use crate::tools::svdapprox::*;
 
-use crate::fromhnsw::*;
 use crate::nodeparam::*;
 
 const FULL_MAT_REPR : usize = 5000;
@@ -141,14 +138,13 @@ impl GraphLaplacian {
 //
 // See also Veerman A Primer on Laplacian Dynamics in Directed Graphs 2020 arxiv https://arxiv.org/abs/2002.02605
 
-pub(crate) fn get_laplacian<F> (kgraph : &KGraph<F>, initial_space : &NodeParams) -> GraphLaplacian 
-    where F : Float + num_traits::cast::FromPrimitive + Display + Debug + LowerExp + UpperExp + Send + Sync {
+pub(crate) fn get_laplacian(initial_space : &NodeParams) -> GraphLaplacian {
     //
-    log::trace!("in Embedder get_laplacian");
+    log::debug!("in get_laplacian");
     //
-    let nbnodes = kgraph.get_nb_nodes();
+    let nbnodes = initial_space.get_nb_nodes();
     // get stats
-    let max_nbng = kgraph.get_max_nbng();
+    let max_nbng = initial_space.get_max_nbng();
     let node_params = initial_space;
     // TODO define a threshold for dense/sparse representation
     if nbnodes <= FULL_MAT_REPR {
@@ -164,7 +160,7 @@ pub(crate) fn get_laplacian<F> (kgraph : &KGraph<F>, initial_space : &NodeParams
                 transition_proba[[i, edge.node]] = edge.weight;
             } // end of for j
         } // end for i
-        log::trace!("scaling of nodes done");            
+        log::trace!("full matrix initialized");            
         // now we symetrize the graph by taking mean
         // The UMAP formula (p_i+p_j - p_i *p_j) implies taking the non null proba when one proba is null,
         // so UMAP initialization is more packed.

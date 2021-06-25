@@ -8,7 +8,7 @@
 
 //#![allow(dead_code)]
 
-use num_traits::{Float, NumAssign};
+use num_traits::{Float, NumAssign, cast::FromPrimitive};
 
 use ndarray::{Array1, Array2, ArrayView1};
 use ndarray_linalg::{Lapack, Scalar};
@@ -116,14 +116,14 @@ where
         let graph_to_embed = self.kgraph.unwrap();
         // construction of initial neighbourhood, scales and proba of edges from distances.
         // we will need  initial_space representation for graph laplacian and in cross entropy optimization
-        self.initial_space = Some(NodeParams{params : to_proba_edges(graph_to_embed, self.parameters.scale_rho as f32, self.parameters.beta as f32)});
+        self.initial_space = Some(to_proba_edges(graph_to_embed, self.parameters.scale_rho as f32, self.parameters.beta as f32));
         // we can initialize embedding with diffusion maps or pure random.
         let mut initial_embedding;
         if self.parameters.dmap_init {
             // initial embedding via diffusion maps, in this case we have to have a coherent box normalization with random case
             let cpu_start = ProcessTime::now();
             let sys_start = SystemTime::now();
-            initial_embedding = self.get_dmap_initial_embedding(graph_to_embed, self.parameters.get_dimension());
+            initial_embedding = get_dmap_initial_embedding(self.initial_space.as_ref().unwrap(), self.parameters.get_dimension());
             println!(" dmap initialization sys time(ms) {:.2e} cpu time(ms) {:.2e}", sys_start.elapsed().unwrap().as_millis(), cpu_start.elapsed().as_millis());
             set_data_box(&mut initial_embedding, 1.);
         }
@@ -232,58 +232,6 @@ where
         //
         initial_embedding
     }  // end of get_random_init
-
-
-
-    // this function initialize and returns embedding by a svd (or else?)
-    // We are intersested in first eigenvalues (excpeting 1.) of transition probability matrix
-    // i.e last non null eigenvalues of laplacian matrix!!
-    // It is in fact diffusion Maps at time 0
-    //
-    fn get_dmap_initial_embedding(&mut self, kgraph : &'a KGraph<F>, asked_dim: usize) -> Array2<F> {
-        //
-        assert!(asked_dim >= 2);
-        // get eigen values of normalized symetric lapalcian
-        let mut laplacian = get_laplacian(kgraph, self.initial_space.as_ref().unwrap());
-        //
-        log::debug!("got laplacian, going to svd ... asked_dim :  {}", asked_dim);
-        let svd_res = laplacian.do_svd(asked_dim+25).unwrap();
-        // As we used a laplacian and probability transitions we eigenvectors corresponding to lower eigenvalues
-        let lambdas = svd_res.get_sigma().as_ref().unwrap();
-        // singular vectors are stored in decrasing order according to lapack for both gesdd and gesvd. 
-        if lambdas.len() > 2 && lambdas[1] > lambdas[0] {
-            panic!("svd spectrum not decreasing");
-        }
-        // we examine spectrum
-        // our laplacian is without the term I-G , we use directly G symetrized so we consider upper eigenvalues
-        log::info!(" first 3 eigen values {:.2e} {:.2e} {:2e}",lambdas[0], lambdas[1] , lambdas[2]);
-        // get info on spectral gap
-        log::info!(" last eigenvalue computed rank {} value {:.2e}", lambdas.len()-1, lambdas[lambdas.len()-1]);
-        //
-        log::debug!("keeping columns from 1 to : {}", asked_dim);
-        // We get U at index in range first_non_zero-max_dim..first_non_zero
-        let u = svd_res.get_u().as_ref().unwrap();
-        log::debug!("u shape : nrows: {} ,  ncols : {} ", u.nrows(), u.ncols());
-        // we can get svd from approx range so that nrows and ncols can be number of nodes!
-        let mut embedded = Array2::<F>::zeros((u.nrows(), asked_dim));
-        // according to theory (See Luxburg or Lafon-Keller diffusion maps) we must go back to eigen vectors of rw laplacian.
-        // Appendix A of Coifman-Lafon Diffusion Maps. Applied Comput Harmonical Analysis 2006.
-        // moreover we must get back to type F
-        let normalized_lambdas = lambdas/(*lambdas)[0];
-        let time = 5.0f32.min(0.9f32.ln()/ (normalized_lambdas[2]/normalized_lambdas[1]).ln());
-        log::info!("get_dmap_initial_embedding applying dmap time {:.2e}", time);
-        let sum_diag = laplacian.degrees.into_iter().sum::<f32>(); 
-        for i in 0..u.nrows() {
-            let row_i = u.row(i);
-            let weight_i = (laplacian.degrees[i]/sum_diag).sqrt();
-            for j in 0..asked_dim {
-                // divide j value by diagonal and convert to F. TODO could take l_{i}^{t} as in dmap?
-                embedded[[i, j]] = F::from_f32(normalized_lambdas[j+1].pow(time) * row_i[j+1] / weight_i).unwrap();
-            }
-        }
-        log::trace!("ended get_dmap_initial_embedding");
-        return embedded;
-    } // end of get_dmap_initial_embedding
 
 
 
@@ -711,7 +659,7 @@ use std::fmt::{Display,Debug,LowerExp,UpperExp};
 // This function relies on get_scale_from_proba_normalisation function which construct proabability-weighted edge around each node.
 // These 2 function are also the base of module dmap
 //
-fn to_proba_edges<F>(kgraph : & KGraph<F>, scale_rho : f32, beta : f32) -> Vec::<NodeParam> 
+fn to_proba_edges<F>(kgraph : & KGraph<F>, scale_rho : f32, beta : f32) -> NodeParams
     where F : Float + num_traits::cast::FromPrimitive + Display + Debug + LowerExp + UpperExp + Send + Sync {
     //
     let nbnodes = kgraph.get_nb_nodes();
@@ -722,6 +670,7 @@ fn to_proba_edges<F>(kgraph : & KGraph<F>, scale_rho : f32, beta : f32) -> Vec::
     let mut node_params = Vec::<NodeParam>::with_capacity(nbnodes);
     // TODO can be // with rayon taking care of indexation
     let neighbour_hood = kgraph.get_neighbours();
+    let mut max_nbng = 0;
     for i in 0..neighbour_hood.len() {
         let node_param = get_scale_from_proba_normalisation(kgraph, scale_rho, beta, &neighbour_hood[i]);
         scale_q.insert(node_param.scale);
@@ -729,6 +678,7 @@ fn to_proba_edges<F>(kgraph : & KGraph<F>, scale_rho : f32, beta : f32) -> Vec::
         // coose random edge to audit
         let j = thread_rng().gen_range(0..node_param.edges.len());
         weight_q.insert(node_param.edges[j].weight);
+        max_nbng = node_param.edges.len().max(max_nbng);
         assert_eq!(node_param.edges.len(), neighbour_hood[i].len());
         node_params.push(node_param);
     }
@@ -747,7 +697,7 @@ fn to_proba_edges<F>(kgraph : & KGraph<F>, scale_rho : f32, beta : f32) -> Vec::
     perplexity_q.query(0.95).unwrap().1, perplexity_q.query(0.99).unwrap().1);
     println!("");    
     //
-    node_params
+    NodeParams::new(node_params, max_nbng)
 }  // end of construction of node params
 
 
@@ -823,6 +773,60 @@ fn get_scale_from_proba_normalisation<F> (kgraph : & KGraph<F>, scale_rho : f32,
     }
 } // end of get_scale_from_proba_normalisation
     
+
+
+// this function initialize and returns embedding by a svd (or else?)
+// We are intersested in first eigenvalues (excpeting 1.) of transition probability matrix
+// i.e last non null eigenvalues of laplacian matrix!!
+// It is in fact diffusion Maps at time 0
+//
+fn get_dmap_initial_embedding<F>(initial_space : &NodeParams, asked_dim: usize) -> Array2<F> 
+    where F :  Float + FromPrimitive {
+    //
+    assert!(asked_dim >= 2);
+    // get eigen values of normalized symetric lapalcian
+    let mut laplacian = get_laplacian(initial_space);
+    //
+    log::debug!("got laplacian, going to svd ... asked_dim :  {}", asked_dim);
+    let svd_res = laplacian.do_svd(asked_dim+25).unwrap();
+    // As we used a laplacian and probability transitions we eigenvectors corresponding to lower eigenvalues
+    let lambdas = svd_res.get_sigma().as_ref().unwrap();
+    // singular vectors are stored in decrasing order according to lapack for both gesdd and gesvd. 
+    if lambdas.len() > 2 && lambdas[1] > lambdas[0] {
+        panic!("svd spectrum not decreasing");
+    }
+    // we examine spectrum
+    // our laplacian is without the term I-G , we use directly G symetrized so we consider upper eigenvalues
+    log::info!(" first 3 eigen values {:.2e} {:.2e} {:2e}",lambdas[0], lambdas[1] , lambdas[2]);
+    // get info on spectral gap
+    log::info!(" last eigenvalue computed rank {} value {:.2e}", lambdas.len()-1, lambdas[lambdas.len()-1]);
+    //
+    log::debug!("keeping columns from 1 to : {}", asked_dim);
+    // We get U at index in range first_non_zero-max_dim..first_non_zero
+    let u = svd_res.get_u().as_ref().unwrap();
+    log::debug!("u shape : nrows: {} ,  ncols : {} ", u.nrows(), u.ncols());
+    // we can get svd from approx range so that nrows and ncols can be number of nodes!
+    let mut embedded = Array2::<F>::zeros((u.nrows(), asked_dim));
+    // according to theory (See Luxburg or Lafon-Keller diffusion maps) we must go back to eigen vectors of rw laplacian.
+    // Appendix A of Coifman-Lafon Diffusion Maps. Applied Comput Harmonical Analysis 2006.
+    // moreover we must get back to type F
+    let normalized_lambdas = lambdas/(*lambdas)[0];
+    let time = 5.0f32.min(0.9f32.ln()/ (normalized_lambdas[2]/normalized_lambdas[1]).ln());
+    log::info!("get_dmap_initial_embedding applying dmap time {:.2e}", time);
+    let sum_diag = laplacian.degrees.into_iter().sum::<f32>(); 
+    for i in 0..u.nrows() {
+        let row_i = u.row(i);
+        let weight_i = (laplacian.degrees[i]/sum_diag).sqrt();
+        for j in 0..asked_dim {
+            // divide j value by diagonal and convert to F. TODO could take l_{i}^{t} as in dmap?
+            embedded[[i, j]] = F::from_f32(normalized_lambdas[j+1].pow(time) * row_i[j+1] / weight_i).unwrap();
+        }
+    }
+    log::trace!("ended get_dmap_initial_embedding");
+    return embedded;
+} // end of get_dmap_initial_embedding
+
+
 
 
 
