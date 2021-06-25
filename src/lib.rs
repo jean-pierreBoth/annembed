@@ -15,6 +15,7 @@ pub mod hdbscan;
 pub mod embedder;
 pub mod embedparams;
 pub mod graphlaplace;
+pub mod nodeparam;
 pub mod prelude;
 
 pub mod io;

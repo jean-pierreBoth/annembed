@@ -1,6 +1,8 @@
-//! defines parameters for ann embedding.  
+//! This module defines parameters for ann embedding.
 //! 
-//! The weight w of an edge from node n in the graph to embed is defined as:
+//! It is necessary to describe briefly the model used in the embedding:
+//! 
+//! ## Definition of the weight of an edge of the graph to embed
 //!
 //! First we define the local scale $\rho$ around a point.  
 //! It is defined as the mean of distances of points to their nearest neighbour.
@@ -8,7 +10,7 @@
 //! all its knbn neighbours. So we compute the mean of distances to nearest neighbours 
 //! on knbn + 1 points around current point.
 //!   
-//! let $d_{i}$ be the distance of neighbour i of a node n,
+//! let ($d_{i}$) be the sorted distances in increasing order of neighbours  for i=1..k of a node n,
 //!     $$w_{i} = \exp\left(- \left(\frac{d_{i} - d_{0}}{S * \rho}\right)^{\beta} \right)$$
 //! 
 //! S is a scale factor modulating $\rho$. 
@@ -26,7 +28,13 @@
 //! But it is possible to set β to 2. to get more gaussian weight and reduce also to 0.5.
 //! 
 //!    
+//! ## Definition of the weight of an edge of the embedded graph
 //! 
+//! ## The optimization of the embedding
+//! 
+//! - expression of the gradient
+//! 
+//! - number of batches and initial step of the gradient
 
 
 /// main parameters driving Embeding

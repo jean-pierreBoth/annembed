@@ -17,61 +17,13 @@ use quantiles::{ckms::CKMS};     // we could use also greenwald_khanna
 
 
 use hnsw_rs::prelude::*;
-use hnsw_rs::hnsw::{Neighbour, DataId};
+use hnsw_rs::hnsw::{DataId};
 
-use serde::{Serialize, Deserialize};
-
+use crate::nodeparam::*;
 
 // morally F should be f32 and f64.  
 // The solution from ndArray is F : Float + AddAssign + SubAssign + MulAssign + DivAssign + RemAssign + Display + Debug + LowerExp + UpperExp + (ScalarOperand + LinalgScalar) + Send + Sync.   
 // For edge weight we just need  F : FromPrimitive + Float + Display + Debug + LowerExp + UpperExp + Send + Sync 
-
-/// keep a node index compatible with NdArray
-pub type NodeIdx = usize;
-
-/// an outEdge gives the destination node and weight of edge.
-#[derive(Clone,Copy,Debug, Serialize, Deserialize)]
-pub struct OutEdge<F> {
-    pub node : NodeIdx,
-    pub weight: F
-}  // end of struct OutEdge<F>
-
-
-impl <F>  OutEdge<F> {
-    pub fn new(node:NodeIdx, weight: F) -> Self {
-        OutEdge{node, weight}
-    }
-}
-
-impl <F> PartialEq for OutEdge<F> 
-    where F : Float {
-    fn eq(&self, other: &OutEdge<F>) -> bool {
-        return self.weight == other.weight;
-    } // end eq
-}
-
-
-// CAVEAT coud use the PointWithOrder<T> implementation for Ord which panic on Nan.
-/// order points by distance to self.
-impl <F:Float> PartialOrd for OutEdge<F> {
-    fn partial_cmp(&self, other: &OutEdge<F>) -> Option<Ordering> {
-        self.weight.partial_cmp(& other.weight)
-    } // end cmp
-} // end impl PartialOrd
-
-
-/// convert a neigbour from Hnsw to an edge in GraphK
-impl <F> From<Neighbour> for OutEdge<F> 
-            where F  : Float + FromPrimitive {
-    //
-    fn from(neighbour : Neighbour) -> OutEdge<F> {
-        OutEdge{
-            node : neighbour.d_id,
-            weight : F::from_f32(neighbour.distance).unwrap()
-        }
-    } // end of from
-
-}
 
 
 //====================================================================================================
