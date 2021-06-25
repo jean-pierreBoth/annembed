@@ -790,7 +790,7 @@ fn get_scale_from_proba_normalisation<F> (kgraph : & KGraph<F>, scale_rho : f32,
     assert!(first_dist > 0. && last_dist > 0.);
     assert!(last_dist >= first_dist);
     //
-    let remap_weight = | w : F , shift : f32, scale : f32 , beta : f32| (-(w.to_f32().unwrap() - shift).max(0.)/ scale).pow(beta).exp();
+    let remap_weight = | w : F , shift : f32, scale : f32 , beta : f32| (-((w.to_f32().unwrap() - shift).max(0.)/ scale).pow(beta)).exp();
     //
     if last_dist > first_dist {
         //
@@ -803,7 +803,10 @@ fn get_scale_from_proba_normalisation<F> (kgraph : & KGraph<F>, scale_rho : f32,
             .map(|n| OutEdge::<f32>::new(n.node, remap_weight(n.weight, first_dist, scale, beta)) )
             .collect::<Vec<OutEdge<f32>>>();
         //
-        log::trace!("scale : {:.2e} proba gap {:.2e}", scale, probas_edge[probas_edge.len() - 1].weight / probas_edge[0].weight);
+        log::trace!(" first dist {:2e} last dist {:2e}", first_dist, last_dist);
+        log::trace!("scale : {:.2e} , first neighbour proba {:2e}, last neighbour proba {:2e} proba gap {:.2e}", scale, probas_edge[0].weight, 
+                        probas_edge[probas_edge.len() - 1].weight,
+                        probas_edge[probas_edge.len() - 1].weight / probas_edge[0].weight);
         assert!(probas_edge[probas_edge.len() - 1].weight / probas_edge[0].weight >= PROBA_MIN);
         let sum = probas_edge.iter().map(|e| e.weight).sum::<f32>();
         for i in 0..nbgh {
@@ -1000,12 +1003,8 @@ mod tests {
         hns.dump_layer_info();
         // go to kgraph
         let knbn = 10;
-        let mut kgraph = KGraph::<f32>::new();
         log::info!("calling kgraph.init_from_hnsw_all");
-        let res = kgraph.init_from_hnsw_all(&hns, knbn);
-        if res.is_err() {
-            panic!("init_from_hnsw_all  failed");
-        }
+        let kgraph = kgraph_from_hnsw_all(&hns, knbn).unwrap();
         log::info!("minimum number of neighbours {}", kgraph.get_max_nbng());
         let _kgraph_stats = kgraph.get_kraph_stats();
         let mut embed_params = EmbedderParams::new();

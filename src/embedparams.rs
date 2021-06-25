@@ -63,12 +63,12 @@ impl EmbedderParams {
     pub fn new()  -> Self {
         let asked_dim = 2;
         let dmap_init = true;
-        let beta = 0.5;
+        let beta = 1.;
         let b = 1.;
-        let grad_step = 1.;
-        let nb_sampling_by_edge = 5;
+        let grad_step = 5.;
+        let nb_sampling_by_edge = 15;
         let scale_rho = 1.;
-        let nb_grad_batch = 20;
+        let nb_grad_batch = 15;
         EmbedderParams{asked_dim, dmap_init, beta, b, scale_rho, grad_step, nb_sampling_by_edge , nb_grad_batch}
     }
 
@@ -77,6 +77,7 @@ impl EmbedderParams {
         log::info!("\t gradient step : {}", self.grad_step);
         log::info!("\t edge exponent in original graph : {} ", self.beta);
         log::info!("\t nb sampling by edge : {}", self.nb_sampling_by_edge);
+        log::info!("\t beta : {}", self.beta);
         log::info!("\t scale factor : {}", self.scale_rho);
         log::info!("\t number of gradient batch : {}", self.nb_grad_batch);
     }
