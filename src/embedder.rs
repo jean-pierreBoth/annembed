@@ -169,7 +169,8 @@ where
         //
         self.parameters.log();
         let graph_to_embed = self.kgraph.unwrap();
-        // construction of initial neighbourhood, scales and weight of edges from distances.
+        // construction of initial neighbourhood, scales and proba of edges from distances.
+        // we will need  initial_space representation for graph laplacian and in cross entropy optimization
         self.initial_space = Some(NodeParams{params : to_proba_edges(graph_to_embed, self.parameters.scale_rho as f32, self.parameters.beta as f32)});
         // we can initialize embedding with diffusion maps or pure random.
         let mut initial_embedding;
@@ -185,8 +186,6 @@ where
         // if we use random initialization we must have a box size coherent with renormalizes scales, so box size is 1.
             initial_embedding = self.get_random_init(1.);
         }
-        // we nedd to construct field initial_space has been contructed in get_laplacian 
-        // cross entropy optimization
         let embedding_res = self.entropy_optimize(&self.parameters, &initial_embedding);
         // optional store dump initial embedding
         self.initial_embedding = Some(initial_embedding);
@@ -364,7 +363,7 @@ where
         };
         // f is decreasing
         // TODO we could also normalize as usual?
-        let beta = dichotomy_solver(false, f, 0f32, f32::MAX, norm as f32);
+        let beta = dichotomy_solver(false, f, 0f32, f32::MAX, norm as f32).unwrap();
         // reuse rho_y_s to return proba of edge
         for i in 0..nbgh {
             dist[i] = (-(dist[i] - rho_x) * beta).exp();
@@ -430,7 +429,6 @@ where
         // back from indexset to original points (One week bug!)
         for i in 0..nbrow {
             let row = ce_optimization.get_embedded_data(i);
-//            let origin_id = self.kgraph.unwrap().get_data_id_from_idx(i).unwrap();
             for j in 0..dim {
                 reindexed[[i,j]] = row.read()[j];
             }
@@ -843,16 +841,17 @@ fn get_scale_from_proba_normalisation<F> (kgraph : & KGraph<F>, scale_rho : f32,
     assert!(first_dist > 0. && last_dist > 0.);
     assert!(last_dist >= first_dist);
     //
+    let remap_weight = | w : F , shift : f32, scale : f32 , beta : f32| (-(w.to_f32().unwrap() - shift).max(0.)/ scale).pow(beta).exp();
+    //
     if last_dist > first_dist {
-        let remap_weight = | w : F , scale : f32 | ((w.to_f32().unwrap() - first_dist).max(0.)/ scale).pow(beta);
         //
-        if remap_weight(F::from(last_dist).unwrap(), scale)/remap_weight(F::from(first_dist).unwrap(), scale) < PROBA_MIN.ln() {
+        if remap_weight(F::from(last_dist).unwrap(), first_dist, scale, beta )/remap_weight(F::from(first_dist).unwrap(), first_dist, scale, beta) < PROBA_MIN.ln() {
             log::info!("too large variation of neighbours probablities , reduce beta");
             // we could rescale by augmenting scale... or impose an edge weight of PROBA_MIN...
         }
         let mut probas_edge = neighbours
             .iter()
-            .map(|n| OutEdge::<f32>::new(n.node, (-remap_weight(n.weight, scale)).exp()) )
+            .map(|n| OutEdge::<f32>::new(n.node, remap_weight(n.weight, first_dist, scale, beta)) )
             .collect::<Vec<OutEdge<f32>>>();
         //
         log::trace!("scale : {:.2e} proba gap {:.2e}", scale, probas_edge[probas_edge.len() - 1].weight / probas_edge[0].weight);
@@ -883,15 +882,12 @@ fn get_scale_from_proba_normalisation<F> (kgraph : & KGraph<F>, scale_rho : f32,
 // Do the Svd to initialize embedding. After that we do not need any more a full matrix.
 //      - Get maximal incoming degree and choose either a CsMat or a dense Array2.
 //
-// Let x a point y_i its neighbours
-//     after simplification weight assigned can be assumed to be of the form exp(-alfa * (d(x, y_i))
-//     the problem is : how to choose alfa, this is done in get_scale_from_proba_normalisation
 // See also Veerman A Primer on Laplacian Dynamics in Directed Graphs 2020 arxiv https://arxiv.org/abs/2002.02605
 
 fn get_laplacian<F> (kgraph : &KGraph<F>, initial_space : &NodeParams) -> GraphLaplacian 
     where F : Float + num_traits::cast::FromPrimitive + Display + Debug + LowerExp + UpperExp + Send + Sync {
     //
-    log::trace!("in Embedder::get_laplacian");
+    log::trace!("in Embedder get_laplacian");
     //
     let nbnodes = kgraph.get_nb_nodes();
     // get stats

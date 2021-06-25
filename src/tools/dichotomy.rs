@@ -4,7 +4,7 @@
 
 
 /// search a root for f(x) = target between lower_r and upper_r. The flag increasing specifies the variation of f. true means increasing
-pub(crate) fn dichotomy_solver<F>(increasing: bool, f: F, lower_r: f32, upper_r: f32, target: f32) -> f32
+pub(crate) fn dichotomy_solver<F>(increasing: bool, f: F, lower_r: f32, upper_r: f32, target: f32) -> Result<f32,f32>
 where
     F: Fn(f32) -> f32,
 {
@@ -55,13 +55,10 @@ where
         middle = (lower + upper) * 0.5;
         nbiter += 1;
         if nbiter > 100 {
-            panic!(
-                "dichotomy_solver do not converge, err :  {} ",
-                (target - f(middle)).abs()
-            );
+            return Err((target - f(middle)).abs());
         }
     } // end of while
-    return middle;
+    return Ok(middle);
 }
 
 
@@ -79,15 +76,17 @@ mod tests {
     fn test_dichotomy_inc() {
         let f = |x: f32| x * x;
         //
-        let beta = dichotomy_solver(true, f, 0., 5., 2.);
+        let beta = dichotomy_solver(true, f, 0., 5., 2.).unwrap();
         println!("beta : {}", beta);
         assert!((beta - 2.0f32.sqrt()).abs() < 1.0E-4);
     } // test_dichotomy_inc
+
+    
     #[test]
     fn test_dichotomy_dec() {
         let f = |x: f32| 1.0f32 / (x * x);
         //
-        let beta = dichotomy_solver(false, f, 0.2, 5., 1. / 2.);
+        let beta = dichotomy_solver(false, f, 0.2, 5., 1. / 2.).unwrap();
         println!("beta : {}", beta);
         assert!((beta - 2.0f32.sqrt()).abs() < 1.0E-4);
     } // test_dichotomy_dec
