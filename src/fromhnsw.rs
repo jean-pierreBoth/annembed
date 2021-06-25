@@ -8,7 +8,6 @@ use num_traits::cast::FromPrimitive;
 
 use indexmap::set::*;
 
-use core::ops::*;  // for  AddAssign + SubAssign + MulAssign + DivAssign + RemAssign 
 use std::fmt::*;   // for Display + Debug + LowerExp + UpperExp 
 use std::cmp::Ordering;
 
@@ -25,7 +24,7 @@ use serde::{Serialize, Deserialize};
 
 // morally F should be f32 and f64.  
 // The solution from ndArray is F : Float + AddAssign + SubAssign + MulAssign + DivAssign + RemAssign + Display + Debug + LowerExp + UpperExp + (ScalarOperand + LinalgScalar) + Send + Sync.   
-// For edge weight we just need  F : FromPrimitive + Float + AddAssign + SubAssign + MulAssign + DivAssign + RemAssign + Display + Debug + LowerExp + UpperExp + Send + Sync 
+// For edge weight we just need  F : FromPrimitive + Float + Display + Debug + LowerExp + UpperExp + Send + Sync 
 
 /// keep a node index compatible with NdArray
 pub type NodeIdx = usize;
@@ -287,8 +286,7 @@ impl <F> KGraph<F>
     /// in this case use the Hnsw.set_keeping_pruned(true) to restrict pruning in the search.
     ///
     pub fn init_from_hnsw_all<D>(&mut self, hnsw : &Hnsw<F,D>, nbng : usize) -> std::result::Result<usize, usize> 
-        where   F : Float + AddAssign + SubAssign + MulAssign + DivAssign + RemAssign +
-                    Display + Debug + LowerExp + UpperExp + std::iter::Sum + Send + Sync,
+        where   F : Float + Display + Debug + LowerExp + UpperExp + std::iter::Sum + Send + Sync,
                 D : Distance<F> + Send + Sync {
         //
         log::info!("entering init_from_hnsw_all");
@@ -378,8 +376,7 @@ impl <F> KGraph<F>
     /// The number of neighbours asked for must be smaller than for init_from_hnsw_all as we do inspect only 
     /// a fraction of the points and a fraction of the neighbourhood of each point. (all the focus is inside a layer)
     pub fn init_from_hnsw_layer<D>(&mut self, hnsw : &Hnsw<F,D>, nbng : usize ,layer : usize) -> std::result::Result<usize, usize> 
-        where   F : Float + AddAssign + SubAssign + MulAssign + DivAssign + RemAssign +
-                    Display + Debug + LowerExp + UpperExp + std::iter::Sum + Send + Sync,
+        where   F : Float + Display + Debug + LowerExp + UpperExp + std::iter::Sum + Send + Sync,
                 D : Distance<F> + Send + Sync {
         //
         log::trace!("init_from_hnsw_layer");
@@ -500,8 +497,7 @@ pub struct KGraphProjection<F> {
 
 
 impl <F> KGraphProjection<F>
-    where F : Float + AddAssign + SubAssign + MulAssign + DivAssign + RemAssign + FromPrimitive +
-            Display + Debug + LowerExp + UpperExp + std::iter::Sum + Send + Sync {
+    where F : Float + FromPrimitive + Display + Debug + LowerExp + UpperExp + std::iter::Sum + Send + Sync {
 
     //  - first we construct graph consisting in upper (less populated) layers
     //  - Then we project : for points of others layers store the shorter edge from point to graph just constructed
