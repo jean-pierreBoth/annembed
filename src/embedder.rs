@@ -8,7 +8,7 @@
 
 //#![allow(dead_code)]
 
-use num_traits::{Float, NumAssign, cast::FromPrimitive};
+use num_traits::{Float, NumAssign};
 
 use ndarray::{Array1, Array2, ArrayView1};
 use ndarray_linalg::{Lapack, Scalar};
@@ -34,9 +34,8 @@ use cpu_time::ProcessTime;
 use hnsw_rs::prelude::*;
 use crate::fromhnsw::*;
 use crate::embedparams::*;
-use crate::graphlaplace::*;
 use crate::nodeparam::*;
-
+use crate::diffmaps::*;
 use crate::tools::dichotomy::*;
 
 /// do not consider probabilities under PROBA_MIN, thresolded!!
@@ -123,7 +122,7 @@ where
             // initial embedding via diffusion maps, in this case we have to have a coherent box normalization with random case
             let cpu_start = ProcessTime::now();
             let sys_start = SystemTime::now();
-            initial_embedding = get_dmap_initial_embedding(self.initial_space.as_ref().unwrap(), self.parameters.get_dimension());
+            initial_embedding = get_dmap_embedding(self.initial_space.as_ref().unwrap(), self.parameters.get_dimension());
             println!(" dmap initialization sys time(ms) {:.2e} cpu time(ms) {:.2e}", sys_start.elapsed().unwrap().as_millis(), cpu_start.elapsed().as_millis());
             set_data_box(&mut initial_embedding, 1.);
         }
@@ -773,59 +772,6 @@ fn get_scale_from_proba_normalisation<F> (kgraph : & KGraph<F>, scale_rho : f32,
     }
 } // end of get_scale_from_proba_normalisation
     
-
-
-// this function initialize and returns embedding by a svd (or else?)
-// We are intersested in first eigenvalues (excpeting 1.) of transition probability matrix
-// i.e last non null eigenvalues of laplacian matrix!!
-// It is in fact diffusion Maps at time 0
-//
-fn get_dmap_initial_embedding<F>(initial_space : &NodeParams, asked_dim: usize) -> Array2<F> 
-    where F :  Float + FromPrimitive {
-    //
-    assert!(asked_dim >= 2);
-    // get eigen values of normalized symetric lapalcian
-    let mut laplacian = get_laplacian(initial_space);
-    //
-    log::debug!("got laplacian, going to svd ... asked_dim :  {}", asked_dim);
-    let svd_res = laplacian.do_svd(asked_dim+25).unwrap();
-    // As we used a laplacian and probability transitions we eigenvectors corresponding to lower eigenvalues
-    let lambdas = svd_res.get_sigma().as_ref().unwrap();
-    // singular vectors are stored in decrasing order according to lapack for both gesdd and gesvd. 
-    if lambdas.len() > 2 && lambdas[1] > lambdas[0] {
-        panic!("svd spectrum not decreasing");
-    }
-    // we examine spectrum
-    // our laplacian is without the term I-G , we use directly G symetrized so we consider upper eigenvalues
-    log::info!(" first 3 eigen values {:.2e} {:.2e} {:2e}",lambdas[0], lambdas[1] , lambdas[2]);
-    // get info on spectral gap
-    log::info!(" last eigenvalue computed rank {} value {:.2e}", lambdas.len()-1, lambdas[lambdas.len()-1]);
-    //
-    log::debug!("keeping columns from 1 to : {}", asked_dim);
-    // We get U at index in range first_non_zero-max_dim..first_non_zero
-    let u = svd_res.get_u().as_ref().unwrap();
-    log::debug!("u shape : nrows: {} ,  ncols : {} ", u.nrows(), u.ncols());
-    // we can get svd from approx range so that nrows and ncols can be number of nodes!
-    let mut embedded = Array2::<F>::zeros((u.nrows(), asked_dim));
-    // according to theory (See Luxburg or Lafon-Keller diffusion maps) we must go back to eigen vectors of rw laplacian.
-    // Appendix A of Coifman-Lafon Diffusion Maps. Applied Comput Harmonical Analysis 2006.
-    // moreover we must get back to type F
-    let normalized_lambdas = lambdas/(*lambdas)[0];
-    let time = 5.0f32.min(0.9f32.ln()/ (normalized_lambdas[2]/normalized_lambdas[1]).ln());
-    log::info!("get_dmap_initial_embedding applying dmap time {:.2e}", time);
-    let sum_diag = laplacian.degrees.into_iter().sum::<f32>(); 
-    for i in 0..u.nrows() {
-        let row_i = u.row(i);
-        let weight_i = (laplacian.degrees[i]/sum_diag).sqrt();
-        for j in 0..asked_dim {
-            // divide j value by diagonal and convert to F. TODO could take l_{i}^{t} as in dmap?
-            embedded[[i, j]] = F::from_f32(normalized_lambdas[j+1].pow(time) * row_i[j+1] / weight_i).unwrap();
-        }
-    }
-    log::trace!("ended get_dmap_initial_embedding");
-    return embedded;
-} // end of get_dmap_initial_embedding
-
 
 
 

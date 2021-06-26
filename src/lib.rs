@@ -16,6 +16,7 @@ pub mod embedder;
 pub mod embedparams;
 pub mod graphlaplace;
 pub mod nodeparam;
+pub mod diffmaps;
 pub mod prelude;
 
 pub mod io;

@@ -48,8 +48,9 @@ It took 55s of which 18 were spent in the ann construction.
 
 ## Docs
 
-To build the doc with latex use :
-cargo rustdoc -- --html-in-header katex.html
+To build the doc with latex set in your environment
+set RUSTDOCFLAGS=--html-in-header katex-header.html
+and run cargo rustdoc -- --html-in-header katex.html
 
 ## References
 
