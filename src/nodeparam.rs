@@ -69,7 +69,7 @@ impl <F> From<Neighbour> for OutEdge<F>
 ///
 /// Identity of neighbour node must be fetched in KGraph structure to spare memory
 #[derive(Clone)]
-pub(crate) struct NodeParam {
+pub struct NodeParam {
     pub(crate) scale: f32,
     pub(crate) edges: Vec<OutEdge<f32>>,
 }
@@ -101,9 +101,9 @@ impl NodeParam {
 
 
 /// We maintain NodeParam for each node as it enables scaling in the embedded space and cross entropy minimization.
-pub(crate) struct NodeParams {
-    pub(crate) params: Vec<NodeParam>,
-    max_nbng : usize,
+pub struct NodeParams {
+    pub params: Vec<NodeParam>,
+    pub max_nbng : usize,
 }
 
 impl NodeParams {

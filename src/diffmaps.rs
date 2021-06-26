@@ -58,9 +58,9 @@ impl DiffusionMaps {
 // this function initialize and returns embedding by a svd (or else?)
 // We are intersested in first eigenvalues (excpeting 1.) of transition probability matrix
 // i.e last non null eigenvalues of laplacian matrix!!
-// It is in fact diffusion Maps at time 0
-//
-pub(crate) fn get_dmap_embedding<F>(initial_space : &NodeParams, asked_dim: usize) -> Array2<F> 
+// The time used is the one in argument in t_opt if not None.
+// If t_opt is none the time is compute so that $ (\lambda_{2}/\lambda_{1})^t \less 0.9 $
+pub(crate) fn get_dmap_embedding<F>(initial_space : &NodeParams, asked_dim: usize, t_opt : Option<f32>) -> Array2<F> 
     where F :  Float + FromPrimitive {
     //
     assert!(asked_dim >= 2);
@@ -91,7 +91,10 @@ pub(crate) fn get_dmap_embedding<F>(initial_space : &NodeParams, asked_dim: usiz
     // Appendix A of Coifman-Lafon Diffusion Maps. Applied Comput Harmonical Analysis 2006.
     // moreover we must get back to type F
     let normalized_lambdas = lambdas/(*lambdas)[0];
-    let time = 5.0f32.min(0.9f32.ln()/ (normalized_lambdas[2]/normalized_lambdas[1]).ln());
+    let time = match t_opt {
+        Some(t) => t,
+            _   => 5.0f32.min(0.9f32.ln()/ (normalized_lambdas[2]/normalized_lambdas[1]).ln()),
+    };
     log::info!("get_dmap_initial_embedding applying dmap time {:.2e}", time);
     let sum_diag = laplacian.degrees.into_iter().sum::<f32>(); 
     for i in 0..u.nrows() {
