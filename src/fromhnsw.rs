@@ -121,7 +121,7 @@ pub struct KGraph<F> {
 
 
 impl <F> KGraph<F> 
-    where F : FromPrimitive + Float + Send + Sync 
+    where F : FromPrimitive + Float 
 {
     /// allocates a graph with expected size nbnodes and nbng neighbours 
     pub fn new() -> Self {
@@ -235,9 +235,10 @@ impl <F> KGraph<F>
 /// nbng is the maximal number of neighbours kept. The effective mean number can be less,
 /// in this case use the Hnsw.set_keeping_pruned(true) to restrict pruning in the search.
 ///
-pub fn kgraph_from_hnsw_all<F,D>(hnsw : &Hnsw<F,D>, nbng : usize) -> std::result::Result<KGraph<F>, usize> 
-    where   F : Float + FromPrimitive + Send + Sync,
-            D : Distance<F> + Send + Sync {
+pub fn kgraph_from_hnsw_all<T, D, F>(hnsw : &Hnsw<T,D>, nbng : usize) -> std::result::Result<KGraph<F>, usize> 
+    where   T : Clone + Send + Sync, 
+            D : Distance<T> + Send + Sync,
+            F : Float + FromPrimitive {
     //
     log::info!("entering kgraph_from_hnsw_all");
     //
@@ -326,9 +327,10 @@ pub fn kgraph_from_hnsw_all<F,D>(hnsw : &Hnsw<F,D>, nbng : usize) -> std::result
     /// 
     /// The number of neighbours asked for must be smaller than for init_from_hnsw_all as we do inspect only 
     /// a fraction of the points and a fraction of the neighbourhood of each point. (all the focus is inside a layer)
-    pub fn kgraph_from_hnsw_layer<F, D>(hnsw : &Hnsw<F,D>, nbng : usize ,layer : usize) -> std::result::Result<KGraph<F>, usize> 
-        where   F : Float + FromPrimitive + Send + Sync,
-                D : Distance<F> + Send + Sync {
+    pub fn kgraph_from_hnsw_layer<T, D, F>(hnsw : &Hnsw<T,D>, nbng : usize ,layer : usize) -> std::result::Result<KGraph<F>, usize> 
+        where   T : Clone + Send + Sync, 
+                D : Distance<T> + Send + Sync,
+                F : Float + FromPrimitive {
         //
         log::trace!("init_from_hnsw_layer");
         //
@@ -449,15 +451,16 @@ pub struct KGraphProjection<F> {
 
 
 impl <F> KGraphProjection<F>
-    where F : Float + FromPrimitive + Send + Sync {
+    where F : Float + FromPrimitive {
 
     //  - first we construct graph consisting in upper (less populated) layers
     //  - Then we project : for points of others layers store the shorter edge from point to graph just constructed
     //  - at last we construct graph for the lower (more populated layers)
     //
     /// construct graph from layers above layer, projects data of aother layers on point in layers above layer
-    pub fn new<D>(hnsw : &Hnsw<F,D>, layer : usize, nbng : usize) -> Self 
-                    where D: Distance<F> + Send + Sync {
+    pub fn new<T, D>(hnsw : &Hnsw<T,D>, layer : usize, nbng : usize) -> Self 
+                    where T : Clone + Send + Sync,
+                          D: Distance<T> + Send + Sync {
         log::trace!("Projection new ");
         let mut nb_point_to_collect = 0;
         let mut nb_point_below_nbng = 0;
@@ -551,7 +554,7 @@ impl <F> KGraphProjection<F>
         // now we construct projection
         let mut nb_point_without_projection = 0;
         let mut proj_data : HashMap<NodeIdx, OutEdge<F>> = HashMap::new();
-        let mut points_with_no_projection = Vec::<Arc<Point<F>>>::new();
+        let mut points_with_no_projection = Vec::<Arc<Point<T>>>::new();
         for l in 0..layer {
             log::trace!("scanning projections of layer {}", l);
             let mut layer_iter = hnsw.get_point_indexation().get_layer_iterator(l);
@@ -691,9 +694,10 @@ impl <F> KGraphProjection<F>
 
 
 // search a projection among projection of neighbours
-fn get_point_approximate_projection<F>(point : &Arc<Point<F>>, proj_data : &mut HashMap<NodeIdx, OutEdge<F>> , 
+fn get_point_approximate_projection<T, F>(point : &Arc<Point<T>>, proj_data : &mut HashMap<NodeIdx, OutEdge<F>> , 
         index_set : &IndexSet::<DataId>, layer : usize) -> Option<OutEdge<F>> 
-        where F : Float + Send + Sync {
+        where   T : Clone + Send + Sync,
+                F : Float {
     //
     let neighbours_hnsw = point.get_neighborhood_id();
     // search a neighbour with a projection
@@ -713,9 +717,9 @@ fn get_point_approximate_projection<F>(point : &Arc<Point<F>>, proj_data : &mut 
 
 
 // hack to approximate projections for problem points. We take the projection of neighbour 
-fn fix_points_with_no_projection<F>(proj_data : &mut HashMap<NodeIdx, OutEdge<F>>, index_set : &IndexSet::<DataId>, 
-        points : &Vec::<Arc<Point<F>>>, layer : usize) -> usize
-    where F : Float + Send + Sync {
+fn fix_points_with_no_projection<T,F>(proj_data : &mut HashMap<NodeIdx, OutEdge<F>>, index_set : &IndexSet::<DataId>, points : &Vec::<Arc<Point<T>>>, layer : usize) -> usize
+        where   T: Clone + Send + Sync,
+                F : Float {
     //
     let nb_points_noproj = points.len();
     let mut nb_fixed = 0;
@@ -801,7 +805,7 @@ fn test_full_hnsw() {
     hns.dump_layer_info();
     //
     log::info!("calling kgraph.init_from_hnsw_all");
-    let kgraph = kgraph_from_hnsw_all(&hns, knbn).unwrap();
+    let kgraph : KGraph<f32> = kgraph_from_hnsw_all(&hns, knbn).unwrap();
     log::info!("minimum number of neighbours {}", kgraph.get_max_nbng());
     let _kgraph_stats = kgraph.get_kraph_stats();
 }  // end of test_full_hnsw
@@ -836,7 +840,7 @@ fn test_layer_hnsw() {
     hns.dump_layer_info();
     //
     log::info!("calling kgraph.init_from_hnsw_layer");
-    let kgraph = kgraph_from_hnsw_layer(&hns, knbn, layer).unwrap();
+    let kgraph : KGraph<f32> = kgraph_from_hnsw_layer(&hns, knbn, layer).unwrap();
     log::info!("minimum number of neighbours {}", kgraph.get_max_nbng());
     let _kgraph_stats = kgraph.get_kraph_stats();
 }  // end of test_layer_hnsw

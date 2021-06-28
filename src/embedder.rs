@@ -973,7 +973,7 @@ mod tests {
         // go to kgraph
         let knbn = 10;
         log::info!("calling kgraph.init_from_hnsw_all");
-        let kgraph = kgraph_from_hnsw_all(&hns, knbn).unwrap();
+        let kgraph : KGraph<f32> = kgraph_from_hnsw_all(&hns, knbn).unwrap();
         log::info!("minimum number of neighbours {}", kgraph.get_max_nbng());
         let _kgraph_stats = kgraph.get_kraph_stats();
         let mut embed_params = EmbedderParams::new();

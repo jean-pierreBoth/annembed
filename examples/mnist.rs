@@ -137,6 +137,7 @@ pub fn read_label_file(io_in: &mut dyn Read) -> Array1<u8>{
 use csv::*;
 
 
+
 use std::time::{Duration, SystemTime};
 use cpu_time::ProcessTime;
 
@@ -193,21 +194,17 @@ pub fn main() {
 
     hnsw.dump_layer_info();
     //
-    let mut kgraph = KGraph::<f32>::new();
     log::info!("calling kgraph.init_from_hnsw_all");
-    let knbn = 10;
-    let res = kgraph.init_from_hnsw_all(&hnsw, knbn);
-    if res.is_err() {
-        panic!("init_from_hnsw_all  failed");
-    }
+    let knbn = 8;
+    let kgraph : KGraph<f32>= kgraph_from_hnsw_all(&hnsw, knbn).unwrap();
     log::info!("minimum number of neighbours {}", kgraph.get_max_nbng());
     // 
     let _kgraph_stats = kgraph.get_kraph_stats();
     let mut embed_params = EmbedderParams::new();
     embed_params.nb_grad_batch = 15;
-    embed_params.scale_rho = 1.;
+    embed_params.scale_rho = 0.5;
     embed_params.beta = 2.;
-    embed_params.grad_step = 1.;
+    embed_params.grad_step = 5.;
     embed_params.nb_sampling_by_edge = 20;
     embed_params.dmap_init = true;
     let mut embedder = Embedder::new(&kgraph, embed_params);
@@ -218,12 +215,14 @@ pub fn main() {
     // dump
     log::info!("dumping initial embedding in csv file");
     let mut csv_w = Writer::from_path("mnist_init.csv").unwrap();
-    let _res = write_csv_labeled_array2(&mut csv_w, labels.as_slice().unwrap(), embedder.get_initial_embedding().unwrap());
+    // we can use get_embedded_reindexed as we indexed DataId contiguously in hnsw!
+    let _res = write_csv_labeled_array2(&mut csv_w, labels.as_slice().unwrap(), &embedder.get_initial_embedding_reindexed());
     csv_w.flush().unwrap();
 
     log::info!("dumping in csv file");
     let mut csv_w = Writer::from_path("mnist.csv").unwrap();
-    let _res = write_csv_labeled_array2(&mut csv_w, labels.as_slice().unwrap(), embedder.get_embedded().unwrap());
+    // we can use get_embedded_reindexed as we indexed DataId contiguously in hnsw!
+    let _res = write_csv_labeled_array2(&mut csv_w, labels.as_slice().unwrap(), &embedder.get_embedded_reindexed());
     csv_w.flush().unwrap();
 }
 
