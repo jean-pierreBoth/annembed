@@ -1,8 +1,16 @@
-//! umap-like embedding from GraphK
-//! The embedding is based on the graph provided by hnsw.
-//! Edges out a given point are given an exponential weight scaled with the distance to nearest neighbour
-//! point in the vicinity of the point. This scale can be modulated by the scale_rho parameter.
+//! Embedding from GraphK
 //! 
+//! The embedding is based on the graph extracted from the Hnsw structure.
+//! Edges out a given point are given an exponential weight scaled related to the distance their neighbour.
+//! This weight is modulated locally by a scale parameter computed by the mean of the distance of a point to
+//! its nearest neighbour observed locaaly around each point.  
+//! 
+//! **A more complete description of the model used can be found in module embedparams with hints to
+//! initialize parameters**.
+//! 
+//!  To go through the entropy optimization the type F defining the probability of edges must statisfy
+//!  F: Float + NumAssign + std::iter::Sum + num_traits::cast::FromPrimitive + Send + Sync + ndarray::ScalarOperand 
+//!  in fact it is f32 or f64.
 
 
 
@@ -119,13 +127,70 @@ where
 
 
 
-    /// do hierarchical embedding on GrapPprojection
+    /// do hierarchical embedding on GraphPrrojection
     pub fn h_embed(&mut self) -> Result<usize, usize> {
+        if self.hkgraph.is_none() {
+            log::error!("Embedder::h_embed , graph projection is none");
+            return Err(1);
+        }
         // one_step embed of the small graph.
+        let graph_projection = self.hkgraph.as_ref().unwrap();
+        log::info!(" embedding first (small) graph");
+        let mut embedder_first_step = Embedder::new(graph_projection.get_small_graph(), self.parameters);
+        let cpu_start = ProcessTime::now();
+        let sys_start = SystemTime::now();
+        let res_first = embedder_first_step.one_step_embed();
+        if res_first.is_err() {
+            log::error!("Embedder::h_embed first step failed");
+            return res_first;
+        }
+        println!(" first step embedding sys time(s) {:.2e} cpu time(s) {:.2e}", sys_start.elapsed().unwrap().as_secs(), cpu_start.elapsed().as_secs());
+        // get initial embedding
+        let large_graph = graph_projection.get_large_graph();
+        self.initial_space = Some(to_proba_edges(large_graph, self.parameters.scale_rho as f32, self.parameters.beta as f32));
+        let nb_nodes_large = large_graph.get_nb_nodes();
+        let first_embedding = embedder_first_step.get_embedded().unwrap();
         // use projection to initialize large graph
+        let dim = self.parameters.get_dimension();
+        let mut second_step_init = Array2::<F>::zeros((nb_nodes_large, dim));
+        log::info!("doing projection");
+        let (nb_nodes_small, _) = first_embedding.dim();
+        // we were cautious on indexation so we can do:
+        let unif = Uniform::<f32>::new(0. , 1.);
+        let mut rng = thread_rng();
+        for i in 0..nb_nodes_small {
+            for j in 0..dim {
+                second_step_init[[i,j]] = first_embedding[[i,j]];
+            }
+        }
+        for i in nb_nodes_small..nb_nodes_large {
+            let projected_i = graph_projection.get_projection_by_nodeidx(&i).node;
+            for j in 0..dim {
+                second_step_init[[i,j]] = first_embedding[[projected_i,j]] + F::from(0.1 * rng.sample(unif)).unwrap();
+            }
+        }
+        log::info!("projection done");
+        //
+        self.initial_embedding = Some(second_step_init);
         // cross entropy optimize
-        panic!("not yet implemented");
-    }
+        log::info!("optiizing second step");
+        let embedding_res = self.entropy_optimize(&self.parameters, self.initial_embedding.as_ref().unwrap());
+        //
+        println!(" first + second step embedding sys time(s) {:.2e} cpu time(s) {:.2e}", sys_start.elapsed().unwrap().as_secs(), cpu_start.elapsed().as_secs());
+        //
+        match embedding_res {
+            Ok(embedding) => {
+                self.embedding = Some(embedding);
+                return Ok(1);
+            }
+            _ => {
+                log::info!("Embedder::embed : embedding optimization failed");
+                return Err(1);
+            }        
+        }
+    } // end of h_embed
+
+
 
     /// do the embedding
     pub fn one_step_embed(&mut self) -> Result<usize, usize> {
@@ -181,12 +246,16 @@ where
         let emmbedded = self.embedding.as_ref().unwrap();
         let (nbrow, dim) = emmbedded.dim();
         let mut reindexed =  Array2::<F>::zeros((nbrow, dim));
+        //
+        let kgraph = if self.hkgraph.is_some()
+                            { self.hkgraph.as_ref().unwrap().get_large_graph() } 
+                     else   {self.kgraph.as_ref().unwrap() };
         // TODO version 0.15 provides move_into and push_row
         // Here we must not forget that to interpret results we must go
         // back from indexset to original points (One week bug!)
         for i in 0..nbrow {
             let row = emmbedded.row(i);
-            let origin_id = self.kgraph.unwrap().get_data_id_from_idx(i).unwrap();
+            let origin_id = kgraph.get_data_id_from_idx(i).unwrap();
             for j in 0..dim {
                 reindexed[[*origin_id,j]] = row[j];
             }
@@ -216,15 +285,21 @@ where
     }   
 
     pub fn get_initial_embedding_reindexed(&self) ->  Array2<F> {
+        //
         let emmbedded = self.initial_embedding.as_ref().unwrap();
         let (nbrow, dim) = emmbedded.dim();
         let mut reindexed =  Array2::<F>::zeros((nbrow, dim));
+        //
+        let kgraph = if self.hkgraph.is_some()
+                            { self.hkgraph.as_ref().unwrap().get_large_graph() } 
+                     else   {self.kgraph.as_ref().unwrap() };
+        //
         // TODO version 0.15 provides move_into and push_row
         // Here we must not forget that to interpret results we must go
         // back from indexset to original points (One week bug!)
         for i in 0..nbrow {
             let row = emmbedded.row(i);
-            let origin_id = self.kgraph.unwrap().get_data_id_from_idx(i).unwrap();
+            let origin_id = kgraph.get_data_id_from_idx(i).unwrap();
             for j in 0..dim {
                 reindexed[[*origin_id,j]] = row[j];
             }
@@ -325,10 +400,10 @@ where
             ce_optimization.gradient_iteration_threaded(nb_sample_by_iter, grad_step);
             let cpu_time: Duration = start.elapsed();
 //            println!("ce after grad iteration time {:?} grad iter {:.2e}",  cpu_time, ce_optimization.ce_compute_threaded());
-            log::debug!("ce after grad iteration time {:?} grad iter {:.2e}",  cpu_time, ce_optimization.ce_compute_threaded());
+//            log::debug!("ce after grad iteration time(ms) {:.2e} grad iter {:.2e}",  cpu_time.as_millis(), ce_optimization.ce_compute_threaded());
         }
         let cpu_time: Duration = start.elapsed();
-        println!(" gradient iterations cpu_time {:?}",  cpu_time);
+        println!(" gradient iterations cpu_time {:.2e}",  cpu_time.as_secs());
         let final_ce = ce_optimization.ce_compute();
         println!(" final cross entropy value {:.2e}", final_ce);
         // return reindexed data (if possible)
@@ -521,7 +596,7 @@ impl <'a, F> EntropyOptim<'a,F>
                 let node_j = edge.1.node;
                 let weight_ij = edge.1.weight as f64;
                 let weight_ij_embed = cauchy_edge_weight(&self.embedded[node_i].read(), 
-                        self.initial_scales[node_i] as f64, b,
+                        self.embedded_scales[node_i] as f64, b,
                         &self.embedded[node_j].read()).to_f64().unwrap();
                 let mut term = 0.;
                 if weight_ij_embed > 0. {
@@ -534,7 +609,7 @@ impl <'a, F> EntropyOptim<'a,F>
             })
             .sum::<f64>();
         return ce_entropy;
-    }
+    }  // end of ce_compute_threaded
 
 
 
@@ -668,7 +743,6 @@ impl <'a, F> EntropyOptim<'a,F>
 
 //===============================================================================================================
 
-use std::fmt::{Display,Debug,LowerExp,UpperExp}; 
 
 // Construct the representation of graph as a collections of probability-weighted edges
 // determines scales in initial space and proba of edges for the neighbourhood of every point.
@@ -678,7 +752,7 @@ use std::fmt::{Display,Debug,LowerExp,UpperExp};
 // These 2 function are also the base of module dmap
 //
 fn to_proba_edges<F>(kgraph : & KGraph<F>, scale_rho : f32, beta : f32) -> NodeParams
-    where F : Float + num_traits::cast::FromPrimitive + Display + Debug + LowerExp + UpperExp + Send + Sync {
+    where F : Float + num_traits::cast::FromPrimitive + Send + Sync {
     //
     let nbnodes = kgraph.get_nb_nodes();
     let mut perplexity_q : CKMS<f32> = CKMS::<f32>::new(0.001);
@@ -885,7 +959,7 @@ fn estimate_embedded_scales_from_initial_scales(initial_scales :&Vec<f32>) -> Ve
 
 // renormalize data (center and enclose in a box of a given box size) before optimization of cross entropy
 fn set_data_box<F>(data : &mut Array2<F>, box_size : f64) 
-    where  F: Float +  NumAssign + std::iter::Sum<F> + num_traits::cast::FromPrimitive + Send + Sync + ndarray::ScalarOperand  {
+    where  F: Float +  NumAssign + std::iter::Sum<F> + num_traits::cast::FromPrimitive + ndarray::ScalarOperand  {
     let nbdata = data.nrows();
     let dim = data.ncols();
     //

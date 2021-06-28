@@ -104,7 +104,7 @@ impl <F:Float> KGraphStat<F> {
 /// 
 #[derive(Clone)]
 pub struct KGraph<F> {
-    /// max number of neighbours of each node. Note it can a littel less.
+    /// max number of neighbours of each node. Note it can a little less than computed in Hnsw
     max_nbng : usize,
     /// number of nodes.
     /// If GraphK is initialized from the descendant of a point in Hnsw we do not know in advance the number of nodes!!
@@ -458,7 +458,7 @@ impl <F> KGraphProjection<F>
     //  - at last we construct graph for the lower (more populated layers)
     //
     /// construct graph from layers above layer, projects data of aother layers on point in layers above layer
-    pub fn new<T, D>(hnsw : &Hnsw<T,D>, layer : usize, nbng : usize) -> Self 
+    pub fn new<T, D>(hnsw : &Hnsw<T,D>, nbng : usize, layer : usize) -> Self 
                     where T : Clone + Send + Sync,
                           D: Distance<T> + Send + Sync {
         log::trace!("Projection new ");
@@ -671,10 +671,10 @@ impl <F> KGraphProjection<F>
     } // end of get_layer
 
 
-    /// returns the distance to nearest element in projected (small) graph
+    /// returns the edge defingin distance to nearest element in projected (small) graph
     /// The argument is a NodeIdx
-    pub fn get_distance_to_projection_by_nodeidx(&self, nodeidx : &NodeIdx) -> F {
-        self.proj_data.get(&nodeidx).unwrap().weight
+    pub fn get_projection_by_nodeidx(&self, nodeidx : &NodeIdx) -> OutEdge<F> {
+        *(self.proj_data.get(&nodeidx).unwrap())
     } // end of get_distance_to_projection
 
 
@@ -685,8 +685,15 @@ impl <F> KGraphProjection<F>
         self.proj_data.get(&edge.node).unwrap().weight
     } // end of get_distance_to_projection
 
+    // return a reference to the small graph
+    pub fn get_small_graph(&self) -> &KGraph<F> {
+        &self.small_graph
+    }
 
-
+    // returns a reference to the large graph
+    pub fn get_large_graph(&self) -> &KGraph<F> {
+        &self.large_graph
+    }
 
 }  // end of impl block
 
