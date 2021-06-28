@@ -8,7 +8,6 @@ use num_traits::cast::FromPrimitive;
 
 use indexmap::set::*;
 
-use std::fmt::*;   // for Display + Debug + LowerExp + UpperExp 
 use std::cmp::Ordering;
 
 use std::sync::Arc;
@@ -122,8 +121,7 @@ pub struct KGraph<F> {
 
 
 impl <F> KGraph<F> 
-    where F : FromPrimitive + Float +
-        Display + Debug + LowerExp + UpperExp + Send + Sync 
+    where F : FromPrimitive + Float + Send + Sync 
 {
     /// allocates a graph with expected size nbnodes and nbng neighbours 
     pub fn new() -> Self {
@@ -215,8 +213,8 @@ impl <F> KGraph<F>
         println!("\n minimal graph statistics \n");
         println!("max in degree : {:.2e}", max_in_degree);
         println!("mean in degree : {:.2e}", mean_in_degree);
-        println!("max max range : {:.2e} ", max_max_r);
-        println!("min min range : {:.2e} ", min_min_r);
+        println!("max max range : {:.2e} ", max_max_r.to_f32().unwrap());
+        println!("min min range : {:.2e} ", min_min_r.to_f32().unwrap());
         if quant.count() > 0 {
             println!("min radius quantile at 0.05 : {:.2e} , 0.5 :  {:.2e}, 0.95 : {:.2e}, 0.99 : {:.2e}", 
                         quant.query(0.05).unwrap().1, quant.query(0.5).unwrap().1, 
@@ -238,7 +236,7 @@ impl <F> KGraph<F>
 /// in this case use the Hnsw.set_keeping_pruned(true) to restrict pruning in the search.
 ///
 pub fn kgraph_from_hnsw_all<F,D>(hnsw : &Hnsw<F,D>, nbng : usize) -> std::result::Result<KGraph<F>, usize> 
-    where   F : Float +  FromPrimitive + Display + Debug + LowerExp + UpperExp + std::iter::Sum + Send + Sync,
+    where   F : Float + FromPrimitive + Send + Sync,
             D : Distance<F> + Send + Sync {
     //
     log::info!("entering kgraph_from_hnsw_all");
@@ -329,7 +327,7 @@ pub fn kgraph_from_hnsw_all<F,D>(hnsw : &Hnsw<F,D>, nbng : usize) -> std::result
     /// The number of neighbours asked for must be smaller than for init_from_hnsw_all as we do inspect only 
     /// a fraction of the points and a fraction of the neighbourhood of each point. (all the focus is inside a layer)
     pub fn kgraph_from_hnsw_layer<F, D>(hnsw : &Hnsw<F,D>, nbng : usize ,layer : usize) -> std::result::Result<KGraph<F>, usize> 
-        where   F : Float + FromPrimitive + Display + Debug + LowerExp + UpperExp + std::iter::Sum + Send + Sync,
+        where   F : Float + FromPrimitive + Send + Sync,
                 D : Distance<F> + Send + Sync {
         //
         log::trace!("init_from_hnsw_layer");
@@ -451,7 +449,7 @@ pub struct KGraphProjection<F> {
 
 
 impl <F> KGraphProjection<F>
-    where F : Float + FromPrimitive + Display + Debug + LowerExp + UpperExp + std::iter::Sum + Send + Sync {
+    where F : Float + FromPrimitive + Send + Sync {
 
     //  - first we construct graph consisting in upper (less populated) layers
     //  - Then we project : for points of others layers store the shorter edge from point to graph just constructed

@@ -107,9 +107,28 @@ where
         self.parameters.nb_grad_batch
     }
 
+    /// dispatch to one_step embed or hierarchical embedding
+    pub fn embed(&mut self) -> Result<usize, usize> {
+        if self.kgraph.is_some() {
+            self.one_step_embed()
+        }
+        else {
+            self.h_embed()
+        }
+    } // end of embed
+
+
+
+    /// do hierarchical embedding on GrapPprojection
+    pub fn h_embed(&mut self) -> Result<usize, usize> {
+        // one_step embed of the small graph.
+        // use projection to initialize large graph
+        // cross entropy optimize
+        panic!("not yet implemented");
+    }
 
     /// do the embedding
-    pub fn embed(&mut self) -> Result<usize, usize> {
+    pub fn one_step_embed(&mut self) -> Result<usize, usize> {
         //
         self.parameters.log();
         let graph_to_embed = self.kgraph.unwrap();
@@ -122,7 +141,7 @@ where
             // initial embedding via diffusion maps, in this case we have to have a coherent box normalization with random case
             let cpu_start = ProcessTime::now();
             let sys_start = SystemTime::now();
-            initial_embedding = get_dmap_embedding(self.initial_space.as_ref().unwrap(), self.parameters.get_dimension());
+            initial_embedding = get_dmap_embedding(self.initial_space.as_ref().unwrap(), self.parameters.get_dimension(), None);
             println!(" dmap initialization sys time(ms) {:.2e} cpu time(ms) {:.2e}", sys_start.elapsed().unwrap().as_millis(), cpu_start.elapsed().as_millis());
             set_data_box(&mut initial_embedding, 1.);
         }
