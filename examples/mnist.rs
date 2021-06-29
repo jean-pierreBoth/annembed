@@ -173,6 +173,7 @@ pub fn main() {
             let v : Vec<f32> = images.slice(s![.., .., k]).iter().map(|v| *v as f32).collect();
             images_as_v.push(v);
         }
+    // now read test data
     }  // drop mnist_data
     //
     let ef_c = 50;
@@ -191,26 +192,40 @@ pub fn main() {
     // images as vectors of f32 and send to hnsw
     let cpu_time: Duration = cpu_start.elapsed();
     println!(" ann construction sys time(s) {:?} cpu time {:?}", sys_now.elapsed().unwrap().as_secs(), cpu_time.as_secs());
-
     hnsw.dump_layer_info();
     //
-    log::info!("calling kgraph.init_from_hnsw_all");
     let knbn = 8;
-    let kgraph : KGraph<f32>= kgraph_from_hnsw_all(&hnsw, knbn).unwrap();
-    log::info!("minimum number of neighbours {}", kgraph.get_max_nbng());
-    // 
-    let _kgraph_stats = kgraph.get_kraph_stats();
+    let kgraph : KGraph<f32>;
+    let graphprojection: KGraphProjection<f32>;
+    //
     let mut embed_params = EmbedderParams::new();
     embed_params.nb_grad_batch = 15;
     embed_params.scale_rho = 0.5;
-    embed_params.beta = 2.;
-    embed_params.grad_step = 5.;
+    embed_params.beta = 1.;
+    embed_params.grad_step = 3.;
     embed_params.nb_sampling_by_edge = 20;
     embed_params.dmap_init = true;
-    let mut embedder = Embedder::new(&kgraph, embed_params);
-    let embed_res = embedder.embed();
-    assert!(embed_res.is_ok()); 
-    assert!(embedder.get_embedded().is_some());
+    log::info!("calling kgraph.init_from_hnsw_all");
+    kgraph = kgraph_from_hnsw_all(&hnsw, knbn).unwrap();
+    log::info!("minimum number of neighbours {}", kgraph.get_max_nbng());
+    let _kgraph_stats = kgraph.get_kraph_stats();
+
+    let mut embedder;
+    let hierarchical = true;
+    if !hierarchical {
+        embedder = Embedder::new(&kgraph, embed_params);
+        let embed_res = embedder.embed();
+        assert!(embed_res.is_ok()); 
+        assert!(embedder.get_embedded().is_some());
+    }
+    else {
+        log::info!("trying graph projection");
+        graphprojection =  KGraphProjection::<f32>::new(&hnsw, knbn, 1);
+        embedder = Embedder::from_hkgraph(&graphprojection, embed_params);
+        let embed_res = embedder.embed();        
+        assert!(embed_res.is_ok()); 
+        assert!(embedder.get_embedded().is_some());
+    }
     println!(" ann embed time time {:.2e} s", sys_now.elapsed().unwrap().as_secs());
     // dump
     log::info!("dumping initial embedding in csv file");
