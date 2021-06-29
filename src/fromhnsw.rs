@@ -695,6 +695,15 @@ impl <F> KGraphProjection<F>
         &self.large_graph
     }
 
+    /// returns quantile stats on distances to projection point
+    pub fn get_projection_distance_quant(&self) -> CKMS<f32> {
+        let mut quant = CKMS::<f32>::new(0.001);
+        for (_, edge) in self.proj_data.iter() {
+            quant.insert(F::to_f32(&edge.weight).unwrap());
+        }
+        //
+        quant
+    }
 }  // end of impl block
 
 

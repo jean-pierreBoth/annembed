@@ -32,6 +32,7 @@ use std::sync::Arc;
 use rand::{Rng, thread_rng};
 use rand::distributions::{Uniform};
 use rand_distr::{WeightedAliasIndex};
+use rand_distr::{Normal, Distribution};
 
 use indexmap::set::*;
 
@@ -126,7 +127,6 @@ where
     } // end of embed
 
 
-
     /// do hierarchical embedding on GraphPrrojection
     pub fn h_embed(&mut self) -> Result<usize, usize> {
         if self.hkgraph.is_none() {
@@ -136,7 +136,10 @@ where
         // one_step embed of the small graph.
         let graph_projection = self.hkgraph.as_ref().unwrap();
         log::info!(" embedding first (small) graph");
-        let mut embedder_first_step = Embedder::new(graph_projection.get_small_graph(), self.parameters);
+        let mut first_step_parameters = self.parameters;
+        first_step_parameters.nb_grad_batch = 50;
+        first_step_parameters.grad_step = 0.5;
+        let mut embedder_first_step = Embedder::new(graph_projection.get_small_graph(), first_step_parameters);
         let cpu_start = ProcessTime::now();
         let sys_start = SystemTime::now();
         let res_first = embedder_first_step.one_step_embed();
@@ -144,36 +147,45 @@ where
             log::error!("Embedder::h_embed first step failed");
             return res_first;
         }
-        println!(" first step embedding sys time(s) {:.2e} cpu time(s) {:.2e}", sys_start.elapsed().unwrap().as_secs(), cpu_start.elapsed().as_secs());
+        println!(" first step embedding sys time(ms) {:.2e} cpu time(ms) {:.2e}", sys_start.elapsed().unwrap().as_millis(), cpu_start.elapsed().as_millis());
         // get initial embedding
         let large_graph = graph_projection.get_large_graph();
         self.initial_space = Some(to_proba_edges(large_graph, self.parameters.scale_rho as f32, self.parameters.beta as f32));
         let nb_nodes_large = large_graph.get_nb_nodes();
         let first_embedding = embedder_first_step.get_embedded().unwrap();
         // use projection to initialize large graph
+        let quant = graph_projection.get_projection_distance_quant();
+        if quant.count() > 0 {
+            println!("projecion distance quantile at 0.05 : {:.2e} , 0.5 :  {:.2e}, 0.95 : {:.2e}, 0.99 : {:.2e}", 
+                        quant.query(0.05).unwrap().1, quant.query(0.5).unwrap().1, 
+                        quant.query(0.95).unwrap().1, quant.query(0.99).unwrap().1);
+        };
         let dim = self.parameters.get_dimension();
         let mut second_step_init = Array2::<F>::zeros((nb_nodes_large, dim));
         log::info!("doing projection");
         let (nb_nodes_small, _) = first_embedding.dim();
         // we were cautious on indexation so we can do:
-        let unif = Uniform::<f32>::new(0. , 1.);
         let mut rng = thread_rng();
         for i in 0..nb_nodes_small {
             for j in 0..dim {
                 second_step_init[[i,j]] = first_embedding[[i,j]];
             }
         }
+        let median_dist =  quant.query(0.5).unwrap().1;
+        let normal = Normal::new(0., 1.0).unwrap();
         for i in nb_nodes_small..nb_nodes_large {
-            let projected_i = graph_projection.get_projection_by_nodeidx(&i).node;
-            for j in 0..dim {
-                second_step_init[[i,j]] = first_embedding[[projected_i,j]] + F::from(0.1 * rng.sample(unif)).unwrap();
+            let projected_edge = graph_projection.get_projection_by_nodeidx(&i);
+            let ratio = projected_edge.weight.to_f32().unwrap() / median_dist;
+            for j in 0..dim { 
+                let exp_correction = clip((ratio/dim as f32) * normal.sample(&mut rng), 2.);  // CAVEAT
+                second_step_init[[i,j]] = first_embedding[[projected_edge.node,j]] + F::from(exp_correction).unwrap();
             }
         }
         log::info!("projection done");
         //
         self.initial_embedding = Some(second_step_init);
         // cross entropy optimize
-        log::info!("optiizing second step");
+        log::info!("optimizing second step");
         let embedding_res = self.entropy_optimize(&self.parameters, self.initial_embedding.as_ref().unwrap());
         //
         println!(" first + second step embedding sys time(s) {:.2e} cpu time(s) {:.2e}", sys_start.elapsed().unwrap().as_secs(), cpu_start.elapsed().as_secs());
@@ -379,7 +391,7 @@ where
         let ce_optimization = EntropyOptim::new(self.initial_space.as_ref().unwrap(), params, initial_embedding);
         // compute initial value of objective function
         let start = ProcessTime::now();
-        let initial_ce = ce_optimization.ce_compute();
+        let initial_ce = ce_optimization.ce_compute_threaded();
         let cpu_time: Duration = start.elapsed();
         println!(" initial cross entropy value {:.2e},  in time {:?}", initial_ce, cpu_time);
         // We manage some iterations on gradient computing
@@ -392,19 +404,18 @@ where
         log::info!("\n optimizing embedding");
         log::info!(" nb edges {} , number of edge sampling by grad iteration {}", ce_optimization.get_nb_edges(), nb_sample_by_iter);
         log::info!(" nb iteration : {}  sampling size {} ", self.get_nb_grad_batch(), nb_sample_by_iter);
-        let start = ProcessTime::now();
+        let cpu_start = ProcessTime::now();
+        let sys_start = SystemTime::now();
         for iter in 1..=self.get_nb_grad_batch() {
             // loop on edges
             let grad_step = grad_step_init * (1.- iter as f64/self.get_nb_grad_batch() as f64);
-            let start = ProcessTime::now();
             ce_optimization.gradient_iteration_threaded(nb_sample_by_iter, grad_step);
-            let cpu_time: Duration = start.elapsed();
+//            let cpu_time: Duration = start.elapsed();
 //            println!("ce after grad iteration time {:?} grad iter {:.2e}",  cpu_time, ce_optimization.ce_compute_threaded());
 //            log::debug!("ce after grad iteration time(ms) {:.2e} grad iter {:.2e}",  cpu_time.as_millis(), ce_optimization.ce_compute_threaded());
         }
-        let cpu_time: Duration = start.elapsed();
-        println!(" gradient iterations cpu_time {:.2e}",  cpu_time.as_secs());
-        let final_ce = ce_optimization.ce_compute();
+        println!(" gradient iterations sys time(s) {:.2e} , cpu_time(s) {:.2e}",  sys_start.elapsed().unwrap().as_secs(), cpu_start.elapsed().as_secs());
+        let final_ce = ce_optimization.ce_compute_threaded();
         println!(" final cross entropy value {:.2e}", final_ce);
         // return reindexed data (if possible)
         let dim = self.get_asked_dimension();
@@ -439,8 +450,6 @@ struct EntropyOptim<'a, F> {
     node_params: &'a NodeParams,  
     /// for each edge , initial node, end node, proba (weight of edge) 24 bytes
     edges : Vec<(NodeIdx, OutEdge<f32>)>,
-    /// scale for each node
-    initial_scales : Vec<f32>,
     /// embedded coordinates of each node, under RwLock to // optimization     nbnodes * (embedded dim * f32 + lock size))
     embedded : Vec<Arc<RwLock<Array1<F>>>>,
     /// embedded_scales
@@ -496,7 +505,7 @@ impl <'a, F> EntropyOptim<'a,F>
         scales_q.query(0.95).unwrap().1, scales_q.query(0.99).unwrap().1);
         println!("");  
         //
-        EntropyOptim { node_params,  edges, initial_scales, embedded, embedded_scales, 
+        EntropyOptim { node_params,  edges, embedded, embedded_scales, 
                             pos_edge_distribution : pos_edge_sampler,
                             params : params}
         // construct field embedded
@@ -554,6 +563,7 @@ impl <'a, F> EntropyOptim<'a,F>
 
     // computes croos entropy between initial space and embedded distribution. 
     // necessary to monitor optimization
+#[allow(unused)]
     fn ce_compute(&self) -> f64 {
         log::trace!("\n entering EntropyOptim::ce_compute");
         //
@@ -711,7 +721,7 @@ impl <'a, F> EntropyOptim<'a,F>
                 let alfa = 1./100.;
                 if d_ik > 0. {
                     let coeff_repulsion = 1. /(d_ik_scaled * d_ik_scaled).max(alfa);  // !!
-                    let coeff_ik =  (grad_step * coeff * coeff_repulsion).min(2.);
+                    let coeff_ik =  (grad_step * coeff * coeff_repulsion).min(4.);
                     gradient = (&y_k - &y_i) * F::from_f64(coeff_ik).unwrap();
                     log::trace!("norm repulsive  coeff gradient {:.2e} {:.2e}", coeff_ik , l2_norm(&gradient.view()).to_f64().unwrap());
                 }
@@ -845,11 +855,13 @@ fn get_scale_from_proba_normalisation<F> (kgraph : & KGraph<F>, scale_rho : f32,
             .map(|n| OutEdge::<f32>::new(n.node, remap_weight(n.weight, first_dist, scale, beta)) )
             .collect::<Vec<OutEdge<f32>>>();
         //
+        let proba_range = probas_edge[probas_edge.len() - 1].weight / probas_edge[0].weight;
         log::trace!(" first dist {:2e} last dist {:2e}", first_dist, last_dist);
         log::trace!("scale : {:.2e} , first neighbour proba {:2e}, last neighbour proba {:2e} proba gap {:.2e}", scale, probas_edge[0].weight, 
                         probas_edge[probas_edge.len() - 1].weight,
-                        probas_edge[probas_edge.len() - 1].weight / probas_edge[0].weight);
-        assert!(probas_edge[probas_edge.len() - 1].weight / probas_edge[0].weight >= PROBA_MIN);
+                        proba_range);
+        assert!(proba_range >= PROBA_MIN, "proba range {:.2e} too low edge proba, reduce beta", proba_range);
+        //
         let sum = probas_edge.iter().map(|e| e.weight).sum::<f32>();
         for i in 0..nbgh {
             probas_edge[i].weight = probas_edge[i].weight / sum;
@@ -904,7 +916,7 @@ where
     let mut dist_f64 = dist.to_f64().unwrap() / (scale*scale);
     //
     dist_f64 = dist_f64.powf(b);
-    assert!(dist_f64 > 0.);
+//    assert!(dist_f64 > 0.);
     //
     let weight =  1. / (1. + dist_f64);
     let mut weight_f = F::from_f64(weight).unwrap();
