@@ -1,4 +1,9 @@
-//! Structure and functions to read MNIST database
+//! Structure and functions to read MNIST digits database
+//! To run the examples change the line :  
+//! 
+//! const MNIST_DIGITS_DIR : &'static str = "/home.1/jpboth/Data/MNIST/";
+//! 
+//! to whatever directory you downloaded the [MNIST digits data](http://yann.lecun.com/exdb/mnist/)
 
 use std::io::prelude::*;
 use std::io::{BufReader};
@@ -71,7 +76,7 @@ pub fn read_image_file(io_in: &mut dyn Read) -> Array3::<u8> {
     let it_slice = unsafe {::std::slice::from_raw_parts_mut((&toread as *const u32) as *mut u8, ::std::mem::size_of::<u32>() )};
     io_in.read_exact(it_slice).unwrap();
     nbitem = u32::from_be(toread);
-    assert_eq!(nbitem, 60000);
+    assert!(nbitem == 60000 || nbitem == 10000);
     //  read nbrow
     let nbrow : u32;
     let it_slice = unsafe {::std::slice::from_raw_parts_mut((&toread as *const u32) as *mut u8, ::std::mem::size_of::<u32>() )};
@@ -124,7 +129,7 @@ pub fn read_label_file(io_in: &mut dyn Read) -> Array1<u8>{
      let it_slice = unsafe {::std::slice::from_raw_parts_mut((&toread as *const u32) as *mut u8, ::std::mem::size_of::<u32>() )};
      io_in.read_exact(it_slice).unwrap();
      nbitem = u32::from_be(toread);   
-     assert_eq!(nbitem, 60000);
+     assert!(nbitem == 60000 || nbitem == 10000);
      let mut labels_vec = Vec::<u8>::new();
      labels_vec.resize(nbitem as usize, 0);
      io_in.read_exact(&mut labels_vec).unwrap();
@@ -141,19 +146,24 @@ use csv::*;
 use std::time::{Duration, SystemTime};
 use cpu_time::ProcessTime;
 
+
+
+const MNIST_DIGITS_DIR : &'static str = "/home.1/jpboth/Data/MNIST/";
+
 pub fn main() {
     //
     let _ = env_logger::builder().is_test(true).try_init();
     //
-    let image_fname = String::from("/home.1/jpboth/Data/MNIST/train-images-idx3-ubyte");
+    let mut image_fname = String::from(MNIST_DIGITS_DIR);
+    image_fname.push_str("train-images-idx3-ubyte");
     let image_path = PathBuf::from(image_fname.clone());
     let image_file_res = OpenOptions::new().read(true).open(&image_path);
     if image_file_res.is_err() {
         println!("could not open image file : {:?}", image_fname);
         return;
     }
-
-    let label_fname = String::from("/home.1/jpboth/Data/MNIST/train-labels-idx1-ubyte");
+    let mut label_fname = String::from(MNIST_DIGITS_DIR);
+    label_fname.push_str("train-labels-idx1-ubyte");
     let label_path = PathBuf::from(label_fname.clone());
     let label_file_res = OpenOptions::new().read(true).open(&label_path);
     if label_file_res.is_err() {
@@ -161,11 +171,11 @@ pub fn main() {
         return;
     }
     let mut images_as_v:  Vec::<Vec<f32>>;
-    let labels :  Array1::<u8>;
+    let mut labels :  Vec<u8>;
     {
-        let mnist_data  = MnistData::new(image_fname, label_fname).unwrap();
-        let images = mnist_data.get_images();
-        labels = mnist_data.get_labels().clone();
+        let mnist_train_data  = MnistData::new(image_fname, label_fname).unwrap();
+        let images = mnist_train_data.get_images();
+        labels = mnist_train_data.get_labels().to_vec();
         let( _, _, nbimages) = images.dim();
         //
         images_as_v = Vec::<Vec<f32>>::with_capacity(nbimages);
@@ -173,8 +183,38 @@ pub fn main() {
             let v : Vec<f32> = images.slice(s![.., .., k]).iter().map(|v| *v as f32).collect();
             images_as_v.push(v);
         }
+    } // drop mnist_train_data
     // now read test data
-    }  // drop mnist_data
+    let mut image_fname = String::from(MNIST_DIGITS_DIR);
+    image_fname.push_str("t10k-images-idx3-ubyte");
+    let image_path = PathBuf::from(image_fname.clone());
+    let image_file_res = OpenOptions::new().read(true).open(&image_path);
+    if image_file_res.is_err() {
+        println!("could not open image file : {:?}", image_fname);
+        return;
+    }
+    let mut label_fname = String::from(MNIST_DIGITS_DIR);
+    label_fname.push_str("t10k-labels-idx1-ubyte");
+    let label_file_res = OpenOptions::new().read(true).open(&label_path);
+    if label_file_res.is_err() {
+        println!("could not open label file : {:?}", label_fname);
+        return;
+    }
+    {
+        let mnist_test_data  = MnistData::new(image_fname, label_fname).unwrap();
+        let test_images = mnist_test_data.get_images();
+        let mut test_labels = mnist_test_data.get_labels().to_vec();
+        let( _, _, nbimages) = test_images.dim();
+        let mut test_images_as_v = Vec::<Vec<f32>>::with_capacity(nbimages);
+        //
+        for k in 0..nbimages {
+            let v : Vec<f32> = test_images.slice(s![.., .., k]).iter().map(|v| *v as f32).collect();
+            test_images_as_v.push(v);
+        }
+        labels.append(&mut test_labels);
+        images_as_v.append(&mut test_images_as_v);
+    } // drop mnist_test_data
+
     //
     let ef_c = 50;
     let max_nb_connection = 70;
@@ -231,13 +271,13 @@ pub fn main() {
     log::info!("dumping initial embedding in csv file");
     let mut csv_w = Writer::from_path("mnist_init.csv").unwrap();
     // we can use get_embedded_reindexed as we indexed DataId contiguously in hnsw!
-    let _res = write_csv_labeled_array2(&mut csv_w, labels.as_slice().unwrap(), &embedder.get_initial_embedding_reindexed());
+    let _res = write_csv_labeled_array2(&mut csv_w, labels.as_slice(), &embedder.get_initial_embedding_reindexed());
     csv_w.flush().unwrap();
 
     log::info!("dumping in csv file");
     let mut csv_w = Writer::from_path("mnist.csv").unwrap();
     // we can use get_embedded_reindexed as we indexed DataId contiguously in hnsw!
-    let _res = write_csv_labeled_array2(&mut csv_w, labels.as_slice().unwrap(), &embedder.get_embedded_reindexed());
+    let _res = write_csv_labeled_array2(&mut csv_w, labels.as_slice(), &embedder.get_embedded_reindexed());
     csv_w.flush().unwrap();
 }
 
