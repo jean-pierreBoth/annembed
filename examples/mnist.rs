@@ -222,7 +222,7 @@ pub fn main() {
     let nb_layer = 16.min((nbimages as f32).ln().trunc() as usize);
     let cpu_start = ProcessTime::now();
     let sys_now = SystemTime::now();
-    let hnsw = Hnsw::<f32, DistL1>::new(max_nb_connection, nbimages, nb_layer, ef_c, DistL1{});
+    let hnsw = Hnsw::<f32, DistL2>::new(max_nb_connection, nbimages, nb_layer, ef_c, DistL2{});
     // we must pay fortran indexation once!. transform image to a vector
     let data_with_id : Vec<(&Vec<f32>, usize)>= images_as_v.iter().zip(0..images_as_v.len()).collect();
     hnsw.parallel_insert(&data_with_id);
@@ -243,7 +243,7 @@ pub fn main() {
     embed_params.scale_rho = 0.5;
     embed_params.beta = 1.;
     embed_params.grad_step = 3.;
-    embed_params.nb_sampling_by_edge = 20;
+    embed_params.nb_sampling_by_edge = 10;
     embed_params.dmap_init = true;
     log::info!("calling kgraph.init_from_hnsw_all");
     kgraph = kgraph_from_hnsw_all(&hnsw, knbn).unwrap();
@@ -298,7 +298,8 @@ use super::*;
 #[test]
 
 fn test_load_mnist() {
-    let image_fname = String::from("/home.1/jpboth/Data/MNIST/train-images-idx3-ubyte");
+    let mut image_fname = String::from(MNIST_DIGITS_DIR);
+    image_fname.push_str("train-images-idx3-ubyte");
     let image_path = PathBuf::from(image_fname.clone());
     let image_file_res = OpenOptions::new().read(true).open(&image_path);
     if image_file_res.is_err() {
@@ -306,7 +307,8 @@ fn test_load_mnist() {
         return;
     }
 
-    let label_fname = String::from("/home.1/jpboth/Data/MNIST/train-labels-idx1-ubyte");
+    let mut label_fname = String::from(MNIST_DIGITS_DIR);
+    label_fname.push_str("train-labels-idx1-ubyte");
     let label_path = PathBuf::from(label_fname.clone());
     let label_file_res = OpenOptions::new().read(true).open(&label_path);
     if label_file_res.is_err() {

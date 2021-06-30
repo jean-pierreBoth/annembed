@@ -3,13 +3,15 @@
 The crate will provide:
 
 1. Some variations on data embedding tools from t-Sne (2008) to Umap(2018).
-   Our implementation is in fact a mix of the various embedding algorithms
+   Our implementation is a mix of the various embedding algorithms
     recently published and mentioned in References.
 
    - The graph is initialized by the Hnsw nearest neighbour algorithm.  
-     This provides for free sub-sampling in the data to embed by considering only less densely occupied layers (the upper layers). This corresponds generally to a subsampling of 2%-4%, but can give a guarantee as the distance beetween points leaved out the sampling and its nearest sampled neighbour are known.
+     This provides for free, sub-sampling in the data to embed by considering only less densely occupied layers (the upper layers). This corresponds generally to a subsampling of 2%-4%, but can give a guarantee as the distance beetween points leaved out the sampling and its nearest sampled neighbour are known. The hnsw structure enables also an iterative initialization of the embedding by taking into account an increasing number of layers.
   
-   - The preliminary graph built for the embedding uses an exponential kernel (as in Umap) taking into account a local density of points. There is no symetrisation of the graph. (except when initializing the embedding with diffusion maps in this case it is done as in t-sne or LargeVis. We use the diffusion maps algorithm (Lafon-Keller-Coifman), even though we have an exponential kernel.
+   - The preliminary graph built for the embedding uses an exponential function of distances to neighbour nodes (as in Umap). It is possible to modulate the initial edge weight by :
+     - Considering a power of the distance function to neighbours (See documentation in EmbedderParams).  
+     - Taking into account a local density of points. There is no symetrization of the graph. (except when initializing the embedding with diffusion maps in this case it is done as in t-sne or LargeVis). We use the diffusion maps algorithm (Lafon-Keller-Coifman).
 
    - We also use a cross entropy optimization of this initial layout but take into account the initial local density estimate of each point when computing the cauchy weight of an embedded edge.
 
@@ -17,30 +19,36 @@ The crate will provide:
 
 3. Some by-products :
     - an implementation of range approximation and approximated SVD for dense and row compressed matrices as described in Halko-Tropp (Cf. [Tsvd](https://arxiv.org/abs/0909.4061)).
+  
+    - a Diffusion Maps implementation.
 
     - A single-linkage hierarchical clustering function
 
-## *Currently only the data embedding and approximated SVD are implemented*
+## *The crate is in a preliminary state*
+
+Currently only the approximated SVD and a first version of the embedding are implemented. But the mnist example shows how to run the embedding, even in this (instable) state.
 
 ## Results
 
-The results are the very first obtained and are subject to future optimizations.
+These are preliminary results.
 Timings are given for a 4-core i7-2.7 Ghz laptop.
 
 ### Embedder
 
-1. MNIST
+1. MNIST digits database  Cf [mnist-digits](http://yann.lecun.com/exdb/mnist/)
 
-- 60000 digits database with a random uniform initialization.
-It tooks 69s to run, of which 17s were spent in the ann construction.
+It consists in 70000 images of handwritten digits of 784 pixels
 
-![mnist](Images/mnist-S0.2E20G1B17s1-69s.png)
+- initialized by an approximated svd.
+It tooks 50s to run, of which 18s were spent in the ann construction.
 
-- 60000 digits with a svd initialization
+![mnist](Images/mnist-digits-B15S0.5E10G3.k8-50s.jpg)
 
-![mnist](Images/mnist-digits-svd-B13E20rho1G1Nbn7-55s.png)
+- hierarchical initialization
 
-It took 55s of which 18 were spent in the ann construction.
+![mnist](Images/mnist-digits-HB15S0.5E10G3.k8-60s.jpg)
+
+It took 60s of which 18s were spent in the ann construction.
 
 ### Randomized SVD
 
@@ -48,8 +56,11 @@ It took 55s of which 18 were spent in the ann construction.
 
 ## Docs
 
-To build the doc with latex set in your environment
-set RUSTDOCFLAGS=--html-in-header katex-header.html
+The documentation uses Katex (see the *katex_doc* crate) to render some formulas.
+To build the doc with display of equations, set in your environment :  
+
+RUSTDOCFLAGS=--html-in-header katex-header.html  
+
 and run cargo rustdoc -- --html-in-header katex.html
 
 ## References

@@ -22,8 +22,9 @@
 //! 
 //! Default value :  
 //! 
-//!         - β = 1 so that we have exponential weights similar to Umap.
-//!         - S = 1.
+//!  $\beta = 1$ so that we have exponential weights similar to Umap.  
+//! 
+//!  $S = 1.$
 //! 
 //! But it is possible to set β to 2. to get more gaussian weight and reduce also to 0.5.
 //! 
