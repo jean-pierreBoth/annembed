@@ -10,15 +10,18 @@
 //! all its knbn neighbours. So we compute the mean of distances to nearest neighbours 
 //! on knbn + 1 points around current point.
 //!   
-//! let ($d_{i}$) be the sorted distances in increasing order of neighbours  for i=1..k of a node n,
+//! let ($d_{i}$) be the sorted distances in increasing order of neighbours  for i=0..k of a node n,
 //!     $$w_{i} = \exp\left(- \left(\frac{d_{i} - d_{0}}{S * \rho}\right)^{\beta} \right)$$
 //! 
 //! S is a scale factor modulating $\rho$. 
 //! After that weights are normalized to a probability distribution.
 //!
-//! So before normalization $w_{0}$ is always equal to 1. Augmenting β to 2. makes the weight $w_{i}$ decrease faster.
+//! So before normalization $w_{0}$ is always equal to 1. Augmenting β to 2. makes the weight $w_{i}$ decrease faster. 
+//! The least weight of an edge can go under $10^{-5}$ to limit the range of weight and avoid Svd numeric difficulties. 
+//! The code stops with an error in this case.
 //! So after normalization the range of weights from $w_{0}$ to $w_{k}$ is larger. 
-//! Reducing S as similar effect.
+//! Reducing S as similar effect but playing with both $\beta$ and the scale adjustment must not encounter the range constraint on weights.
+//! 
 //! 
 //! Default value :  
 //! 
@@ -31,11 +34,35 @@
 //!    
 //! ## Definition of the weight of an edge of the embedded graph
 //! 
+//! The embedded edge has the usual expression :
+//! $$ w(x,y) = \frac{1}{1+ || \left((x - y)/a_{x} \right)||^b  } $$
+//! 
+//! by default b = 1.
+//! The coefficient $a_{x}$ is deduced from the scale coefficient in the original space with some
+//! restriction to avoid too large fluctuations.
+//! 
+//! 
+//! 
+//! - Initial step of the gradient and number of batches 
+//! 
+//! A number of batch for the Mnist digits data around 10-20 seems sufficient. 
+//! The initial gradient step $\gamma_{0}$ can be chosen around 1. (in the range 1/5 ... 5.). Reasonably
+//! it should satisfy nb_batch $ * \gamma_{0} < 1 $
+//! 
+//! - asked_dimension : default is set to 2.
+//! 
 //! ## The optimization of the embedding
+//! 
+//! The embedding is optimized by minimizing the (Shannon at present time) cross entropy 
+//! between distribution  of original and embedded weight of edges. This minimization is done
+//! by a standard (multithreaded) stochastic gradient with negative sampling for the unobserved edges
+//! (see [Mnih-Teh](https://arxiv.org/abs/1206.6426) or 
+//! [Mikolov](https://proceedings.neurips.cc/paper/2013/file/9aa42b31882ec039965f3c4923ce901b-Paper.pdf))
+//! 
+//! The number of negative edge sampling is set to a fixed value 5.
 //! 
 //! - expression of the gradient
 //! 
-//! - number of batches and initial step of the gradient
 
 
 /// main parameters driving Embeding
@@ -47,15 +74,15 @@ pub struct EmbedderParams {
     pub dmap_init : bool,
     /// exponent used in defining edge weight in original graph. 0.5 or 1.
     pub beta : f64,
-    ///
+    /// exponenent used in embedded space
     pub b : f64,
     /// embedded scale factor. default to 1.
     pub scale_rho : f64,
     /// initial gradient step , default to 1.
     pub grad_step : f64,
-    /// nb sampling by edge in gradient step. default = 5
+    /// nb sampling by edge in gradient step. default = 10
     pub nb_sampling_by_edge : usize,
-    /// number of gradient batch. default to 20
+    /// number of gradient batch. default to 15
     pub nb_grad_batch : usize,
 } // end of EmbedderParams
 
@@ -67,7 +94,7 @@ impl EmbedderParams {
         let beta = 1.;
         let b = 1.;
         let grad_step = 5.;
-        let nb_sampling_by_edge = 15;
+        let nb_sampling_by_edge = 10;
         let scale_rho = 1.;
         let nb_grad_batch = 15;
         EmbedderParams{asked_dim, dmap_init, beta, b, scale_rho, grad_step, nb_sampling_by_edge , nb_grad_batch}
@@ -99,12 +126,12 @@ impl EmbedderParams {
         self.asked_dim = dim;
     }
 
-    /// sets the number of time each edge should be sampled in a gradient batch. Default to 20
+    /// sets the number of time each edge should be sampled in a gradient batch. Default to 10
     pub fn set_nb_edge_sampling(&mut self, nb_sample_by_edge: usize) {
         self.nb_sampling_by_edge = nb_sample_by_edge;
     }
 
-    ///
+    /// get asked embedding dimension
     pub fn get_dimension(&self) -> usize {
         self.asked_dim
     }

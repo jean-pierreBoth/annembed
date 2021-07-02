@@ -52,6 +52,8 @@ It took 60s of which 18s were spent in the ann construction.
 
 ### Randomized SVD
 
+The randomized SVD is based on the paper of [Halko-Tropp](https://epubs.siam.org/doi/abs/10.1137/090771806)
+
 ### Mapper
 
 ## Docs
