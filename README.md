@@ -10,15 +10,15 @@ The crate will provide:
      This provides for free, sub-sampling in the data to embed by considering only less densely occupied layers (the upper layers). This corresponds generally to a subsampling of 2%-4%, but can give a guarantee as the distance beetween points leaved out the sampling and its nearest sampled neighbour are known. The hnsw structure enables also an iterative initialization of the embedding by taking into account an increasing number of layers.
   
    - The preliminary graph built for the embedding uses an exponential function of distances to neighbour nodes (as in Umap). It is possible to modulate the initial edge weight by :
-     - Considering a power of the distance function to neighbours (See documentation in EmbedderParams).  
-     - Taking into account a local density of points. There is no symetrization of the graph. (except when initializing the embedding with diffusion maps in this case it is done as in t-sne or LargeVis). We use the diffusion maps algorithm (Lafon-Keller-Coifman).
+     - Considering a power of the distance function to neighbours (**See documentation in module EmbedderParams**).  
+     - Increase or decrease the impact of the local density of points around each node. There is no symetrization of the graph. (except when initializing the embedding with diffusion maps in this case it is done as in t-sne or LargeVis). We use the diffusion maps algorithm (Lafon-Keller-Coifman).
 
    - We also use a cross entropy optimization of this initial layout but take into account the initial local density estimate of each point when computing the cauchy weight of an embedded edge.
 
 2. An implementation of the Mapper algorithm using the C++ **Ripser** module from U. Bauer
 
 3. Some by-products :
-    - an implementation of range approximation and approximated SVD for dense and row compressed matrices as described in Halko-Tropp (Cf. [Tsvd](https://arxiv.org/abs/0909.4061)).
+    - an implementation of range approximation and approximated SVD for dense and/or row compressed matrices as described in explicited in the svdapprox module and the paper of Halko-Tropp (Cf. [Tsvd](https://arxiv.org/abs/0909.4061)).
   
     - a Diffusion Maps implementation.
 
@@ -26,7 +26,7 @@ The crate will provide:
 
 ## *The crate is in a preliminary state*
 
-Currently only the approximated SVD and a first version of the embedding are implemented. But the mnist example shows how to run the embedding, even in this (instable) state.
+Currently only the approximated SVD and a first version of the embedding are implemented. But the mnist example shows how to run the embedding, even in this (preliminary) state.
 
 ## Results
 

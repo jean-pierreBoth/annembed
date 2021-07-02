@@ -6,7 +6,7 @@
 //!
 //! First we define the local scale $\rho$ around a point.  
 //! It is defined as the mean of distances of points to their nearest neighbour.
-//! The points taken into account to define this mean is the node we consider and
+//! The points taken into account to define $\rho$ are the node we consider and
 //! all its knbn neighbours. So we compute the mean of distances to nearest neighbours 
 //! on knbn + 1 points around current point.
 //!   
@@ -22,7 +22,14 @@
 //! So after normalization the range of weights from $w_{0}$ to $w_{k}$ is larger. 
 //! Reducing S as similar effect but playing with both $\beta$ and the scale adjustment must not encounter the range constraint on weights.
 //! 
+//! It must be noted that setting the scale as described before and renormalizing to get a probability distribution
+//! gives a perplexity nearly equal to the number of neighbours.  
+//! This can be verified by using the logging (implemented using the crates **env_logger** and **log**) and setting 
+//! RUST_LOG=annembed=INFO in your environment. 
+//! Then quantile summaries are given for the distributions of edge distances, edge weights, and perplexity
+//! of nodes. This helps adjusting parameters β, Scale and show their impact on these quantiles.
 //! 
+//!  
 //! Default value :  
 //! 
 //!  $\beta = 1$ so that we have exponential weights similar to Umap.  
