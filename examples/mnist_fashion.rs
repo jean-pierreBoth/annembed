@@ -16,6 +16,8 @@ use std::fs::{OpenOptions};
 use std::path::{PathBuf};
 
 
+use std::io::Cursor;
+use byteorder::{BigEndian, ReadBytesExt};
 
 
 
@@ -66,32 +68,28 @@ impl MnistData {
 } // end of impl MnistData
 
 
+
 pub fn read_image_file(io_in: &mut dyn Read) -> Array3::<u8> {
     // read 4 bytes magic
-    let magic : u32;
     // to read 32 bits in network order!
-    let toread : u32 = 0;
-    let it_slice = unsafe {::std::slice::from_raw_parts_mut((&toread as *const u32) as *mut u8, ::std::mem::size_of::<u32>() )};
-    io_in.read_exact(it_slice).unwrap();
-    magic = u32::from_be(toread);
+    let mut it_slice = vec![0; ::std::mem::size_of::<u32>()];
+    io_in.read_exact(&mut it_slice).unwrap();
+    let magic = Cursor::new(it_slice).read_u32::<BigEndian>().unwrap();
     assert_eq!(magic, 2051);
     // read nbitems
-    let nbitem : u32;
-    let it_slice = unsafe {::std::slice::from_raw_parts_mut((&toread as *const u32) as *mut u8, ::std::mem::size_of::<u32>() )};
-    io_in.read_exact(it_slice).unwrap();
-    nbitem = u32::from_be(toread);
+    let mut it_slice = vec![0; ::std::mem::size_of::<u32>()];
+    io_in.read_exact(&mut it_slice).unwrap();
+    let nbitem =  Cursor::new(it_slice).read_u32::<BigEndian>().unwrap();
     assert!(nbitem == 60000 || nbitem == 10000);
     //  read nbrow
-    let nbrow : u32;
-    let it_slice = unsafe {::std::slice::from_raw_parts_mut((&toread as *const u32) as *mut u8, ::std::mem::size_of::<u32>() )};
-    io_in.read_exact(it_slice).unwrap();
-    nbrow = u32::from_be(toread); 
+    let mut it_slice = vec![0; ::std::mem::size_of::<u32>()];
+    io_in.read_exact(&mut it_slice).unwrap();
+    let nbrow = Cursor::new(it_slice).read_u32::<BigEndian>().unwrap();
     assert_eq!(nbrow, 28);   
     // read nbcolumns
-    let nbcolumn : u32;
-    let it_slice = unsafe {::std::slice::from_raw_parts_mut((&toread as *const u32) as *mut u8, ::std::mem::size_of::<u32>() )};
-    io_in.read_exact(it_slice).unwrap();
-    nbcolumn = u32::from_be(toread);     
+    let mut it_slice = vec![0; ::std::mem::size_of::<u32>()];
+    io_in.read_exact(&mut it_slice).unwrap();
+    let nbcolumn = Cursor::new(it_slice).read_u32::<BigEndian>().unwrap();     
     assert_eq!(nbcolumn,28);   
     // for each item, read a row of nbcolumns u8
     let mut images = Array3::<u8>::zeros((nbrow as usize , nbcolumn as usize, nbitem as usize));
@@ -121,25 +119,22 @@ pub fn read_image_file(io_in: &mut dyn Read) -> Array3::<u8> {
 
 
 pub fn read_label_file(io_in: &mut dyn Read) -> Array1<u8>{
-    let magic : u32;
     // to read 32 bits in network order!
-    let toread : u32 = 0;
-    let it_slice = unsafe {::std::slice::from_raw_parts_mut((&toread as *const u32) as *mut u8, ::std::mem::size_of::<u32>() )};
-    io_in.read_exact(it_slice).unwrap();
-    magic = u32::from_be(toread);
+    let mut it_slice = vec![0; ::std::mem::size_of::<u32>()];
+    io_in.read_exact(&mut it_slice).unwrap();
+    let magic = Cursor::new(it_slice).read_u32::<BigEndian>().unwrap();     
     assert_eq!(magic, 2049);
-     // read nbitems
-     let nbitem : u32;
-     let it_slice = unsafe {::std::slice::from_raw_parts_mut((&toread as *const u32) as *mut u8, ::std::mem::size_of::<u32>() )};
-     io_in.read_exact(it_slice).unwrap();
-     nbitem = u32::from_be(toread);   
-     assert!(nbitem == 60000 || nbitem == 10000);
-     let mut labels_vec = Vec::<u8>::new();
-     labels_vec.resize(nbitem as usize, 0);
-     io_in.read_exact(&mut labels_vec).unwrap();
-     let labels = Array1::from(labels_vec);
-     labels
-    }  // end of fn read_label
+    // read nbitems
+    let mut it_slice = vec![0; ::std::mem::size_of::<u32>()];
+    io_in.read_exact(&mut it_slice).unwrap();
+    let nbitem = Cursor::new(it_slice).read_u32::<BigEndian>().unwrap(); 
+    assert!(nbitem == 60000 || nbitem == 10000);
+    let mut labels_vec = Vec::<u8>::new();
+    labels_vec.resize(nbitem as usize, 0);
+    io_in.read_exact(&mut labels_vec).unwrap();
+    let labels = Array1::from(labels_vec);
+    labels
+}  // end of fn read_label
 
 //============================================================================================
 
