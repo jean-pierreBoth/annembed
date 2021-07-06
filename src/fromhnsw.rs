@@ -314,8 +314,10 @@ pub fn kgraph_from_hnsw_all<T, D, F>(hnsw : &Hnsw<T,D>, nbng : usize) -> std::re
     log::info!("minimal number of neighbours {}", minimum_nbng);
     log::info!("number of points with less than : {} neighbours = {} ", nbng, nb_point_below_nbng);
     if (mean_nbng as f64 / nb_point as f64) < nbng as f64 {
+        log::warn!(" mean number of neighbours obtained : {:2.e}", mean_nbng);
+        log::warn!(" possibly use hnsw.set_keeping_pruned(true)");
         println!(" mean number of neighbours obtained : {:2.e}", mean_nbng);
-        println!(" possibly use hnsw.reset_keeping_pruned(true)");
+        println!(" possibly use hnsw.set_keeping_pruned(true)");
     }
     //
     Ok(KGraph{max_nbng, nbnodes, neighbours, node_set})

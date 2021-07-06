@@ -84,15 +84,15 @@ where
 {
     /// constructor from a graph and asked embedding dimension
     pub fn new(kgraph : &'a KGraph<F>, parameters : EmbedderParams) -> Self {
-        Embedder::<F>{kgraph : Some(kgraph), hkgraph : None, parameters , initial_space:None, initial_embedding : None, embedding:None}
+        Embedder::<F>{kgraph : Some(kgraph), hkgraph : None, parameters , initial_space:None, 
+                initial_embedding : None, embedding:None}
     } // end of new
 
 
     /// construction from a hierarchical graph
     pub fn from_hkgraph(graph_projection : &'a KGraphProjection<F>, parameters : EmbedderParams) -> Self {
-        Embedder::<F>{kgraph : None, hkgraph : Some(graph_projection), parameters , initial_space:None, initial_embedding : None, embedding:None}
-
-
+        Embedder::<F>{kgraph : None, hkgraph : Some(graph_projection), parameters , initial_space:None, 
+                initial_embedding : None, embedding:None}
     } // end of from_hkgraph
 
 
@@ -119,10 +119,12 @@ where
     /// dispatch to one_step embed or hierarchical embedding
     pub fn embed(&mut self) -> Result<usize, usize> {
         if self.kgraph.is_some() {
-            self.one_step_embed()
+            log::info!("doing one step embedding");
+            return self.one_step_embed();
         }
         else {
-            self.h_embed()
+            log::info!("doing 2 step embedding");
+            return self.h_embed();
         }
     } // end of embed
 
@@ -133,6 +135,7 @@ where
             log::error!("Embedder::h_embed , graph projection is none");
             return Err(1);
         }
+        log::debug!("in h_embed");
         // one_step embed of the small graph.
         let graph_projection = self.hkgraph.as_ref().unwrap();
         log::info!(" embedding first (small) graph");
@@ -207,6 +210,7 @@ where
     /// do the embedding
     pub fn one_step_embed(&mut self) -> Result<usize, usize> {
         //
+        log::info!("doing 1 step embedding");
         self.parameters.log();
         let graph_to_embed = self.kgraph.unwrap();
         // construction of initial neighbourhood, scales and proba of edges from distances.
@@ -761,8 +765,8 @@ impl <'a, F> EntropyOptim<'a,F>
 // This function relies on get_scale_from_proba_normalisation function which construct proabability-weighted edge around each node.
 // These 2 function are also the base of module dmap
 //
-fn to_proba_edges<F>(kgraph : & KGraph<F>, scale_rho : f32, beta : f32) -> NodeParams
-    where F : Float + num_traits::cast::FromPrimitive + Send + Sync {
+pub(crate) fn to_proba_edges<F>(kgraph : & KGraph<F>, scale_rho : f32, beta : f32) -> NodeParams
+    where F : Float + num_traits::cast::FromPrimitive {
     //
     let nbnodes = kgraph.get_nb_nodes();
     let mut perplexity_q : CKMS<f32> = CKMS::<f32>::new(0.001);
@@ -847,7 +851,7 @@ fn get_scale_from_proba_normalisation<F> (kgraph : & KGraph<F>, scale_rho : f32,
     if last_dist > first_dist {
         //
         if remap_weight(F::from(last_dist).unwrap(), first_dist, scale, beta )/remap_weight(F::from(first_dist).unwrap(), first_dist, scale, beta) < PROBA_MIN.ln() {
-            log::info!("too large variation of neighbours probablities , reduce beta");
+            log::info!("too large variation of neighbours probablities , increase scale_rho or reduce beta");
             // we could rescale by augmenting scale... or impose an edge weight of PROBA_MIN...
         }
         let mut probas_edge = neighbours

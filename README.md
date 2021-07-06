@@ -61,7 +61,7 @@ The randomized SVD is based on the paper of [Halko-Tropp](https://epubs.siam.org
 The documentation uses Katex (see the *katex_doc* crate) to render some formulas.
 To build the doc with display of equations, set in your environment :  
 
-RUSTDOCFLAGS=--html-in-header katex-header.html  
+RUSTDOCFLAGS="--html-in-header katex-header.html"  
 
 and run cargo rustdoc -- --html-in-header katex.html
 

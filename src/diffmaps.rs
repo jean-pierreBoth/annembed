@@ -1,4 +1,10 @@
-//!  diffusion maps embedding
+//!  (Kind of) Diffusion maps embedding.
+//! 
+//! This module (presently) computes a diffusion embedding for the kernel constructed in Umap like embedding
+//! in module embedder.  
+//! **In particular the kernel set a the diagonal to 0 and nearest neighbour weight to 1.**
+//! 
+//! 
 
 
 
@@ -9,12 +15,16 @@ use ndarray::{Array2};
 use ndarray_linalg::{Scalar};
 
 
-use crate::nodeparam::*;
-use crate::graphlaplace::*;
+use hnsw_rs::prelude::*;
 
+use crate::nodeparam::*;
+use crate::fromhnsw::*;
+use crate::graphlaplace::*;
+use crate::embedder::*;
 
 #[derive(Copy,Clone)]
 pub struct DiffusionParams {
+    /// dimension of embedding
     asked_dim : usize,
     /// embedding time 
     t : Option<f32>,
@@ -25,29 +35,46 @@ impl DiffusionParams {
     pub fn new(asked_dim : usize, t_opt : Option<f32>) -> Self {
         DiffusionParams{asked_dim, t : t_opt}
     }
-    //
+    /// get embedding time
     pub fn get_t(&self) ->  Option<f32> {
         self.t
+    }
+    ///
+    pub fn get_embedding_dimension(&self) -> usize {
+        return self.asked_dim;
     }
 
 } // end of DiffusionParams
 
 
 pub struct DiffusionMaps {
+    /// parameters to use
     params : DiffusionParams,
     /// node parameters coming from graph transformation
-    _node_params: NodeParams,
-
+    _node_params: Option<NodeParams>,
 } // end of DiffusionMaps
 
 
 impl DiffusionMaps {
-    /// do the whole worrk chain : hnsw construction, graph conversion, NodePArams transformation
-    pub fn embed<F>(&mut self, data : &Array2<F>) -> Array2<F>  where
-        F : Float + FromPrimitive {
-    //
-        let (nb_data, _) = data.dim();
-        let embedded = Array2::<F>::zeros((nb_data, self.params.asked_dim));
+    /// iitialization from NodeParams
+    pub fn new(params : DiffusionParams) -> Self {
+        DiffusionMaps{params, _node_params : None}
+    }
+
+    /// do the whole work chain : hnsw construction, graph conversion, NodeParams transformation
+    /// T is the type on which distances in Hnsw are computed,  
+    /// F is f32 or f64 depending on how diffusions Maps is to be computed.
+    pub fn embed_hnsw<T,D,F>(&mut self, hnsw : &Hnsw<T,D>) -> Array2<F>  where
+        T : Clone + Send + Sync,
+        F : Float + FromPrimitive,
+        D : Distance<T> + Send + Sync {
+        //
+        let knbn = hnsw.get_max_nb_connection();
+        let kgraph = kgraph_from_hnsw_all::<T,D,F>(hnsw, knbn as usize).unwrap();
+        // get NodeParams. CAVEAT to_proba_edges apply initial shift!!
+        let nodeparams = to_proba_edges::<F>(&kgraph, 1., 2.);
+        let embedded = get_dmap_embedding::<F>(&nodeparams, self.params.asked_dim, self.params.get_t());        
+        //
         embedded        
     }
 
@@ -101,7 +128,7 @@ pub(crate) fn get_dmap_embedding<F>(initial_space : &NodeParams, asked_dim: usiz
         let row_i = u.row(i);
         let weight_i = (laplacian.degrees[i]/sum_diag).sqrt();
         for j in 0..asked_dim {
-            // divide j value by diagonal and convert to F. TODO could take l_{i}^{t} as in dmap?
+            // divide j value by diagonal and convert to F. take l_{i}^{t} as in dmap
             embedded[[i, j]] = F::from_f32(normalized_lambdas[j+1].pow(time) * row_i[j+1] / weight_i).unwrap();
         }
     }
@@ -110,3 +137,45 @@ pub(crate) fn get_dmap_embedding<F>(initial_space : &NodeParams, asked_dim: usiz
 } // end of get_dmap_initial_embedding
 
 
+//======================================================================================================================
+
+
+
+/// This function runs a parallel insertion of rows of an Array2<T> into a  Hnsw<T,D>
+/// The hnsw structure must have chosen main parameters as the number of connection and layers, but
+/// be empty. 
+/// Returns number of point inserted if success.
+pub fn array2_insert_hnsw<T,D>(data : &Array2<T>, hnsw : &mut Hnsw<T,D>) -> Result<usize, usize>
+         where  T : Clone + Send + Sync,
+                D : Distance<T> + Send + Sync {
+    //
+    if hnsw.get_nb_point() > 0 {
+        log::error!("array2_insert_hnsw , insertion on non empty hnsw structure, nb point : {}", hnsw.get_nb_point());
+        return Err(1);
+    }
+    // we do parallel insertion by blocks of size blocksize
+    let blocksize = 10000;
+    let (nb_row, _) = data.dim(); 
+
+    let nb_block = nb_row / blocksize;
+    for i in 0..nb_block {
+        let start = i*blocksize;
+        let end = i*blocksize + blocksize-1;
+        let to_insert = (start..=end).into_iter().map(|n| (data.row(n).to_slice().unwrap(), n)).collect();
+        hnsw.parallel_insert_slice(&to_insert);
+    }
+    let start = nb_block*blocksize;
+    let to_insert = (start..nb_row).into_iter().map(|n| (data.row(n).to_slice().unwrap(), n)).collect();
+    hnsw.parallel_insert_slice(&to_insert);
+    //
+    Ok(hnsw.get_nb_point())
+}   // end of array2_insert_hnsw
+
+
+//=======================================================================
+
+
+mod tests {
+
+
+}  // end of mod tests

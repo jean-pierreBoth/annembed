@@ -13,7 +13,7 @@ use crate::nodeparam::*;
 
 const FULL_MAT_REPR : usize = 5000;
 
-const FULL_SVD_SIZE_LIMIT : usize = 2000;
+const FULL_SVD_SIZE_LIMIT : usize = 5000;
 
 /// We use a normalized symetric laplacian to go to the svd.
 /// But we want the left eigenvectors of the normalized R(andom)W(alk) laplacian so we must keep track
@@ -50,7 +50,7 @@ impl GraphLaplacian {
 
     fn do_full_svd(&mut self) -> Result<SvdResult<f32>, String> {
         //
-        log::trace!("GraphLaplacian doing full svd");
+        log::info!("GraphLaplacian doing full svd");
         let b = self.sym_laplacian.get_full_mut().unwrap();
         log::trace!("GraphLaplacian ... size nbrow {} nbcol {} ", b.shape()[0], b.shape()[1]);
 
