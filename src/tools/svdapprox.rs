@@ -453,7 +453,7 @@ pub fn adaptative_range_finder_matrep<F>(mat : &MatRepr<F> , epsil:f64, r : usiz
     // to avoid the cost to zeros
     log::debug!("range finder returning a a matrix ({}, {})", m, q_mat.len());
 //    let mut q_as_array2  = Array2::uninit((m, q_mat.len()));      from version 0.15.0 and later
-    let mut q_as_array2  = Array2::maybe_uninit((m, q_mat.len()));     // as sprs wants ndarray 0.14.0
+    let mut q_as_array2  = Array2::uninit((m, q_mat.len()));     // as sprs wants ndarray 0.14.0
     for i in 0..q_mat.len() {
         for j in 0..m {
             q_as_array2[[j,i]] = std::mem::MaybeUninit::new(q_mat[i][j]);

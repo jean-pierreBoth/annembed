@@ -123,7 +123,7 @@ pub(crate) fn get_dmap_embedding<F>(initial_space : &NodeParams, asked_dim: usiz
             _   => 5.0f32.min(0.9f32.ln()/ (normalized_lambdas[2]/normalized_lambdas[1]).ln()),
     };
     log::info!("get_dmap_initial_embedding applying dmap time {:.2e}", time);
-    let sum_diag = laplacian.degrees.into_iter().sum::<f32>(); 
+    let sum_diag = laplacian.degrees.iter().sum::<f32>(); 
     for i in 0..u.nrows() {
         let row_i = u.row(i);
         let weight_i = (laplacian.degrees[i]/sum_diag).sqrt();

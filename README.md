@@ -31,7 +31,7 @@ Currently only the approximated SVD and a first version of the embedding are imp
 ## Results
 
 These are preliminary results.
-Timings are given for a 4-core i7-2.7 Ghz laptop.
+Timings are given for a 8-core i7 @2.3 Ghz laptop.
 
 ### Embedder
 
@@ -40,15 +40,15 @@ Timings are given for a 4-core i7-2.7 Ghz laptop.
 It consists in 70000 images of handwritten digits of 784 pixels
 
 - initialized by an approximated svd.
-It tooks 50s to run, of which 18s were spent in the ann construction.
+It tooks 20s to run, of which 9s were spent in the ann construction.
 
-![mnist](Images/mnist-digits-B15S0.5E10G3.k8-50s.jpg)
+![mnist](Images/mnist-digits-B15S0.5E10G3k8-v2-20s.jpg)
 
 - hierarchical initialization
 
-![mnist](Images/mnist-digits-HB15S0.5E10G3.k8-60s.jpg)
+![mnist](Images/mnist-digits-HB15S0.5E10G3.k8-v2-22s.jpg)
 
-It took 60s of which 18s were spent in the ann construction.
+It took 22s of which 9s were spent in the ann construction.
 
 ### Randomized SVD
 
