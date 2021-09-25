@@ -147,7 +147,7 @@ use cpu_time::ProcessTime;
 
 
 
-const MNIST_FASHION_DIR : &'static str = "/home.1/jpboth/Data/Fashion-MNIST/";
+const MNIST_FASHION_DIR : &'static str = "/home/jpboth/Data/Fashion-MNIST/";
 
 pub fn main() {
     //

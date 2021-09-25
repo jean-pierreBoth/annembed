@@ -1,7 +1,7 @@
 //! Structure and functions to read MNIST digits database
 //! To run the examples change the line :  
 //! 
-//! const MNIST_DIGITS_DIR : &'static str = "/home.1/jpboth/Data/MNIST/";
+//! const MNIST_DIGITS_DIR : &'static str = "/home/jpboth/Data/MNIST/";
 //! 
 //! to whatever directory you downloaded the [MNIST digits data](http://yann.lecun.com/exdb/mnist/)
 
@@ -148,7 +148,7 @@ use cpu_time::ProcessTime;
 
 
 
-const MNIST_DIGITS_DIR : &'static str = "/home.1/jpboth/Data/MNIST/";
+const MNIST_DIGITS_DIR : &'static str = "/home/jpboth/Data/MNIST/";
 
 pub fn main() {
     //

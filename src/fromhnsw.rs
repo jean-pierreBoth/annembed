@@ -609,6 +609,7 @@ impl <F> KGraphProjection<F>
         //
         log::info!("number of points with less than : {} neighbours = {} ", nbng, nb_point_below_nbng);
         let upper_graph = KGraph::<F>{ max_nbng : nbng, nbnodes : upper_graph_neighbours.len() , neighbours : upper_graph_neighbours, node_set : upper_index_set};
+        log::info!("getting stats from reduced graph");
         let _graph_stats = upper_graph.get_kraph_stats();
         //
         // construct the dense whole  graph, lower layers or more populated layers
@@ -657,7 +658,7 @@ impl <F> KGraphProjection<F>
         }  // end for on layers
         // we have both graph and projection
         let whole_graph = KGraph::<F>{ max_nbng : nbng, nbnodes : graph_neighbours.len() , neighbours : graph_neighbours, node_set : index_set};
-        log::trace!("getting stats from large graph");
+        log::info!("getting stats from whole graph");
         let _graph_stats = whole_graph.get_kraph_stats();
         // 
         log::info!("number of points with less than : {} neighbours = {} ", nbng, nb_point_below_nbng);
