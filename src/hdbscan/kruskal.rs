@@ -55,6 +55,7 @@ impl <Ix> UnionFind<Ix>
         }
     }  // end of union
 
+    
     fn get_parent(&self) -> &Vec<Ix> {
         &self.parent
     }
@@ -107,13 +108,13 @@ pub fn kruskal_indices<C>(
     edges: &[(usize, usize, C)],
 ) -> impl Iterator<Item = (usize, usize, C)>
 where
-    C: Clone + Ord,
+    C: Clone + PartialOrd,
 {
     let mut parents = (0..number_of_nodes).collect::<Vec<_>>();
     let mut ranks = Vec::with_capacity(number_of_nodes);
     ranks.resize(number_of_nodes, 1);
     let mut edges = edges.to_vec();
-    edges.sort_by(|a, b| a.2.cmp(&b.2));
+    edges.sort_by(|a, b| a.2.partial_cmp(&b.2).unwrap());
     edges.into_iter().filter_map(move |(a, b, w)| {
         let ra = find(&mut parents, a);
         let rb = find(&mut parents, b);
@@ -132,7 +133,7 @@ where
 pub fn kruskal<N, C>(edges: &[(N, N, C)]) -> impl Iterator<Item = (N, N, C)>
 where
     N: Clone + Hash + Eq,
-    C: Clone + Ord,
+    C: Clone + PartialOrd,
 {
     let mut nodes = IndexSet::new();
     let edges = edges
@@ -164,10 +165,10 @@ use super::*;
     
     
     
-    #[allow(dead_code)]
-    fn log_init_test() {
-        let _ = env_logger::builder().is_test(true).try_init();
-    }  
+#[allow(dead_code)]
+fn log_init_test() {
+    let _ = env_logger::builder().is_test(true).try_init();
+}  
     
 // taken from path-finding
 #[test]

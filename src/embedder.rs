@@ -832,7 +832,7 @@ fn get_scale_from_proba_normalisation<F> (kgraph : & KGraph<F>, scale_rho : f32,
     let mut rho_y_s = Vec::<f32>::with_capacity(neighbours.len() + 1);
     for i in 0..nbgh {
         let y_i = neighbours[i].node; // y_i is a NodeIx = usize
-        rho_y_s.push(kgraph.neighbours[y_i][0].weight.to_f32().unwrap());
+        rho_y_s.push(kgraph.get_neighbours()[y_i][0].weight.to_f32().unwrap());
     } // end of for i
     rho_y_s.push(rho_x);
     let mean_rho = rho_y_s.iter().sum::<f32>() / (rho_y_s.len() as f32);

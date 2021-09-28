@@ -46,7 +46,8 @@ pub struct KGraphStat<F:Float> {
     mean_in_degree : usize,
     /// max incoming degree. Useful to choose between Compressed Storage Mat or dense Array
     max_in_degree : usize,
-    /// range statistics. We assume at this step we can use f32 
+    ///  We maintain quantiles on distances to first neighbours ad f32
+    /// This can serve as an indicator on relative density around a point.
     min_radius_q : CKMS<f32>,
 }  // end of KGraphStat
 
@@ -111,7 +112,7 @@ pub struct KGraph<F> {
     nbnodes: usize,
     /// neighbours\[i\] contains the indexes of neighbours node i sorted by increasing weight edge!
     /// all node indexing is done after indexation in node_set
-    pub neighbours : Vec<Vec<OutEdge<F>>>,
+    neighbours : Vec<Vec<OutEdge<F>>>,
     /// to keep track of current node indexes.
     node_set : IndexSet<DataId>,
 }   // end of struct KGraph
