@@ -11,6 +11,9 @@ use num_traits::cast::FromPrimitive;
 
 use num_traits::float::*;    // tp get FRAC_1_PI from FloatConst
 
+use std::cmp::{Ordering, PartialEq, PartialOrd};
+use std::collections::BinaryHeap;
+
 use hnsw_rs::prelude::*;
 
 use crate::fromhnsw::*;
@@ -72,13 +75,13 @@ impl <NodeIdx : PrimInt, F : Float>  Dendrogram<NodeIdx, F> {
 struct  Edge<F: Float + PartialOrd> {
     nodea : u32,
     nodeb : u32,
-    //
     weight : F,
 }
 
 
-use std::cmp::Ordering;
 
+
+// We can do that beccause we cannot have NaN coming from Hnsw
 fn compare_edge<F:Float + PartialOrd>(edgea : &Edge<F>, edgeb : &Edge<F>) -> Ordering {
     match (edgea.weight, edgeb.weight) {
         (x, y) if x.is_nan() && y.is_nan() => Ordering::Equal,
@@ -86,11 +89,29 @@ fn compare_edge<F:Float + PartialOrd>(edgea : &Edge<F>, edgeb : &Edge<F>) -> Ord
         (_, y) if y.is_nan() => Ordering::Less,
         (_, _) => edgea.weight.partial_cmp(&edgeb.weight).unwrap()
     }
-
 }
 // We need to implement an Ord for edge based on a float representation of Edge weight
 
+impl <F:Float + PartialOrd> PartialEq for Edge<F> {
+    fn eq(&self, other : &Self) -> bool {
+        self.nodea == other.nodea && self.nodeb == other.nodeb
+    }
+}
 
+impl <F:Float + PartialOrd> Eq for Edge<F> {}
+
+impl <F:Float + PartialOrd> PartialOrd for Edge<F> {
+    fn partial_cmp(&self, other : &Self) -> Option<Ordering> {
+        self.weight.partial_cmp(&other.weight)
+    }
+}
+
+
+impl <F:Float + PartialOrd> Ord for Edge<F> {
+    fn cmp(&self, other : &Self) -> Ordering {
+        compare_edge(&self, &other)
+    }
+}
 
 /// The structure driving Single Linkage Clustering
 /// It is constructed from a Hnsw
@@ -104,7 +125,9 @@ pub struct SLclustering<NodeIdx : PrimInt, F : Float> {
 }  // end of  SLclustering
 
 
-impl <'a, NodeIdx : PrimInt, F: PartialOrd + FromPrimitive+Float+Send+Sync+Clone>  SLclustering<NodeIdx, F> {
+impl <'a, NodeIdx : PrimInt, F>  SLclustering<NodeIdx, F> 
+            where F: PartialOrd + FromPrimitive+Float+Send+Sync+Clone {
+    //
     pub fn new<D>(hnsw : &Hnsw<F,D>, nbcluster : usize) -> Self 
             where D : Distance<F> + Send + Sync {
         // 
@@ -133,11 +156,13 @@ impl <'a, NodeIdx : PrimInt, F: PartialOrd + FromPrimitive+Float+Send+Sync+Clone
             }
         }
         let mst_edge_iter = kruskal(&edge_list);
-        for edge in mst_edge_iter {
         // now we transfer edges in a binary_heap 
-
+        let mut edge_heap = BinaryHeap::<Edge<F>>::with_capacity(edge_list.len());
+        for edge in mst_edge_iter {
+            edge_heap.push(Edge{nodea: edge.0, nodeb : edge.1, weight : edge.2});
         }
         // have an iterator of edge traversing tree , in increasing order
+        
         // we initialize clusters with singletons
 
         // we run unification (possibly with density filter)
