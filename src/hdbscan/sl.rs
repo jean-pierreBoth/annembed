@@ -6,6 +6,8 @@
 //! 
 //! 
 
+#![allow(unused)]
+
 use num_traits::int::{PrimInt};
 use num_traits::cast::FromPrimitive;
 

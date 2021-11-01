@@ -1,6 +1,6 @@
 [package]
 name = "annembed"
-version = "0.0.1"
+version = "0.0.2"
 authors = ["jeanpierre.both@gmail.com"]
 repository = "https://github.com/jean-pierreBoth/annembed"
 description = "a Rust implemntation of a dimension reduction à la Umap "
@@ -8,7 +8,7 @@ license = "MIT/Apache-2.0"
 readme = "README.md"
 keywords = ["algorithms", "ann", "embedding", "dimension-reduction", "umap"]
 documentation = "https://docs.rs/annembed"
-edition= "2018"
+edition= "2021"
 
 
 [profile.release]
@@ -48,7 +48,7 @@ num_cpus = {version = "1.8.0"}
 cpu-time = {version = "1.0"}
 
 ndarray = {version = "0.15", features=["rayon", "serde"]}
-ndarray-linalg = {version = "0.14"}
+ndarray-linalg = {version = "0.14", features = ["openblas-static"]}
 lax = {version = "0.2"}
 lapacke = {version = "0.5"}
 sprs = {version = "0.11"}
@@ -56,8 +56,8 @@ sprs = {version = "0.11"}
 clap = {version = "2.29"}
 indexmap = {version = "1.6"}
 # hnsw_rs =  {git = "https://gitlab.com/jpboth/hnswlib-rs.git"}
-#hnsw_rs = {path = "../hnswlib-rs"}
-hnsw_rs = {version = "0.1.13"}
+hnsw_rs = {path = "../hnswlib-rs"}
+#hnsw_rs = {version = "0.1.15"}
 
 # rand utilis
 rand = {version = "0.8"}
@@ -78,18 +78,11 @@ byteorder = {version = "1.4"}
 # decreasing order of log for release build (release_max_level_)  .. idem
 log = { version = "0.4", features = ["max_level_debug", "release_max_level_info"] }
 #log = { version = "0.4"}
-env_logger = { version = "0.8"}
+env_logger = { version = "0.9"}
 
-[features]
-default = ["intel-mkl"]
-intel-mkl = ["ndarray-linalg/intel-mkl"]
-netlib = ["ndarray-linalg/netlib"]
-openblas = ["ndarray-linalg/openblas"]
+
 
 
 # from katex-doc
 [package.metadata.docs.rs]
-rustdoc-args = [
-    "--html-in-header",
-    "annembed-0.0.1/katex.html",
-]
+rustdoc-args = ["--html-in-header", "katex.html"]

@@ -292,7 +292,7 @@ pub fn kgraph_from_hnsw_all<T, D, F>(hnsw : &Hnsw<T,D>, nbng : usize) -> std::re
         // keep only the asked size. Could we keep more ?
         if vec_tmp.len() < nbng {
             nb_point_below_nbng += 1;
-            log::warn!("neighbours must have {} neighbours, point {} got only {}", point_id, max_nbng, vec_tmp.len());
+            log::trace!("neighbours must have {} neighbours, point {} got only {}", max_nbng, point_id, vec_tmp.len());
             if vec_tmp.len() == 0 {
                 let p_id = point.get_point_id();
                 log::warn!(" graph will not be connected, isolated point at layer {}  , pos in layer {} ", p_id.0, p_id.1);
@@ -311,13 +311,14 @@ pub fn kgraph_from_hnsw_all<T, D, F>(hnsw : &Hnsw<T,D>, nbng : usize) -> std::re
     assert_eq!(neighbours.len(), nb_point);
     log::trace!("KGraph::exiting init_from_hnsw_all");
     // now we can fill some statistics on density and incoming degrees for nodes!
-    log::info!("mean number of neighbours obtained = {:.2e}", mean_nbng as f64 / nb_point as f64);
+    log::info!("mean number of neighbours obtained = {:.3e}", mean_nbng as f64 / nb_point as f64);
     log::info!("minimal number of neighbours {}", minimum_nbng);
     log::info!("number of points with less than : {} neighbours = {} ", nbng, nb_point_below_nbng);
-    if (mean_nbng as f64 / nb_point as f64) < nbng as f64 {
-        log::warn!(" mean number of neighbours obtained : {:2.e}", mean_nbng);
+    let mean_nbng = mean_nbng as f64 / nb_point as f64;
+    if mean_nbng < nbng as f64 {
+        log::warn!(" mean number of neighbours obtained : {:.3e}", mean_nbng);
         log::warn!(" possibly use hnsw.set_keeping_pruned(true)");
-        println!(" mean number of neighbours obtained : {:2.e}", mean_nbng);
+        println!(" mean number of neighbours obtained : {:.3e}", mean_nbng);
         println!(" possibly use hnsw.set_keeping_pruned(true)");
     }
     //
@@ -414,11 +415,12 @@ pub fn kgraph_from_hnsw_all<T, D, F>(hnsw : &Hnsw<T,D>, nbng : usize) -> std::re
         log::trace!("KGraph::exiting init_from_hnsw_layer");
         log::trace!("collected {} points", nb_point_collected);
         // now we can fill some statistics on density and incoming degrees for nodes!
-        log::info!("mean number of neighbours obtained = {:.2e}", mean_nbng as f64 / nb_point_collected as f64);
+        let mean_nbng = mean_nbng as f64 / nb_point_collected as f64;
+        log::info!("mean number of neighbours obtained = {:.3e}", mean_nbng);
         log::info!("minimal number of neighbours {}", minimum_nbng);
         log::info!("number of points with less than : {} neighbours = {} ", nbng, nb_point_below_nbng);
-        if (mean_nbng as f64 / nb_point as f64) < nbng as f64 {
-            println!(" mean number of neighbours obtained : {:2.e}", mean_nbng);
+        if mean_nbng < nbng as f64 {
+            println!(" mean number of neighbours obtained : {:.3e}", mean_nbng);
             println!(" possibly use hnsw.reset_keeping_pruned(true)");
         }
         //

@@ -842,8 +842,10 @@ fn get_scale_from_proba_normalisation<F> (kgraph : & KGraph<F>, scale_rho : f32,
     let scale = scale_rho * mean_rho;
     // now we adjust scale so that the ratio of proba of last neighbour to first neighbour do not exceed epsil. CAVEAT
     let first_dist = neighbours[0].weight.to_f32().unwrap();
-    let last_dist = neighbours[nbgh - 1].weight.to_f32().unwrap();
-    assert!(first_dist > 0. && last_dist > 0.);
+    assert!(first_dist > 0.);
+    let last_n = neighbours.iter().rfind(|&n| n.weight.to_f32().unwrap() > 0.).unwrap();
+    let last_dist = last_n.weight.to_f32().unwrap();
+    assert!(last_dist > 0.);
     assert!(last_dist >= first_dist);
     //
     let remap_weight = | w : F , shift : f32, scale : f32 , beta : f32| (-((w.to_f32().unwrap() - shift).max(0.)/ scale).pow(beta)).exp();
