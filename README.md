@@ -7,7 +7,7 @@ The crate will provide:
     recently published and mentioned in References.
 
    - The graph is initialized by the Hnsw nearest neighbour algorithm.  
-     This provides for free, sub-sampling in the data to embed by considering only less densely occupied layers (the upper layers). This corresponds generally to a subsampling of 2%-4%, but can give a guarantee as the distance beetween points leaved out the sampling and its nearest sampled neighbour are known. The hnsw structure enables also an iterative initialization of the embedding by taking into account an increasing number of layers.
+     This provides for free, sub-sampling in the data to embed by considering only less densely occupied layers (the upper layers). This corresponds generally to a subsampling of 2%-4%, but can give a guarantee as the distance beetween points leaved out the sampling and its nearest sampled neighbour are known. The hnsw structure thus enables also an iterative/hierarchical initialization of the embedding by taking into account an increasing number of layers.
   
    - The preliminary graph built for the embedding uses an exponential function of distances to neighbour nodes (as in Umap). It is possible to modulate the initial edge weight by :
      - Considering a power of the distance function to neighbours (**See documentation in module EmbedderParams**).  
@@ -26,7 +26,7 @@ The crate will provide:
 
 ## *The crate is in a preliminary state*
 
-Currently only the approximated SVD and a first version of the embedding are implemented. But the mnist example shows how to run the embedding, even in this (preliminary) state.
+Currently only the approximated SVD and a first version of the embedding (with possible hierarchical inittialization) are implemented. But the mnist example shows how to run the embedding, even in this (preliminary) state.
 
 ## Results
 
@@ -56,14 +56,6 @@ The randomized SVD is based on the paper of [Halko-Tropp](https://epubs.siam.org
 
 ### Mapper
 
-## Docs
-
-The documentation uses Katex (see the *katex_doc* crate) to render some formulas.
-To build the doc with display of equations, set in your environment :  
-
-RUSTDOCFLAGS="--html-in-header katex-header.html"  
-
-and run cargo rustdoc -- --html-in-header katex.html
 
 ## References
 

@@ -1,75 +1,75 @@
 //! This module defines parameters for ann embedding.
-//! 
-//! It is necessary to describe briefly the model used in the embedding:
-//! 
-//! ## Definition of the weight of an edge of the graph to embed
 //!
-//! First we define the local scale $\rho$ around a point.  
-//! It is defined as the mean of distances of points to their nearest neighbour.
-//! The points taken into account to define $\rho$ are the node we consider and
-//! all its knbn neighbours. So we compute the mean of distances to nearest neighbours 
-//! on knbn + 1 points around current point.
-//!   
-//! let ($d_{i}$) be the sorted distances in increasing order of neighbours  for i=0..k of a node n,
-//!     $$w_{i} = \exp\left(- \left(\frac{d_{i} - d_{0}}{S * \rho}\right)^{\beta} \right)$$
-//! 
-//! S is a scale factor modulating $\rho$. 
-//! After that weights are normalized to a probability distribution.
-//!
-//! So before normalization $w_{0}$ is always equal to 1. Augmenting β to 2. makes the weight $w_{i}$ decrease faster. 
-//! The least weight of an edge can go under $10^{-5}$ to limit the range of weight and avoid Svd numeric difficulties. 
-//! The code stops with an error in this case.
-//! So after normalization the range of weights from $w_{0}$ to $w_{k}$ is larger. 
-//! Reducing S as similar effect but playing with both $\beta$ and the scale adjustment must not encounter the range constraint on weights.
-//! 
-//! It must be noted that setting the scale as described before and renormalizing to get a probability distribution
-//! gives a perplexity nearly equal to the number of neighbours.  
-//! This can be verified by using the logging (implemented using the crates **env_logger** and **log**) and setting 
-//! RUST_LOG=annembed=INFO in your environment. 
-//! Then quantile summaries are given for the distributions of edge distances, edge weights, and perplexity
-//! of nodes. This helps adjusting parameters β, Scale and show their impact on these quantiles.
-//! 
-//!  
-//! Default value :  
-//! 
-//!  $\beta = 1$ so that we have exponential weights similar to Umap.  
-//! 
-//!  $S = 1.$
-//! 
-//! But it is possible to set β to 2. to get more gaussian weight and reduce also to 0.5.
-//! 
-//!    
-//! ## Definition of the weight of an edge of the embedded graph
-//! 
-//! The embedded edge has the usual expression :
-//! $$ w(x,y) = \frac{1}{1+ || \left((x - y)/a_{x} \right)||^b  } $$
-//! 
-//! by default b = 1.
-//! The coefficient $a_{x}$ is deduced from the scale coefficient in the original space with some
-//! restriction to avoid too large fluctuations.
-//! 
-//! 
-//! 
-//! - Initial step of the gradient and number of batches 
-//! 
-//! A number of batch for the Mnist digits data around 10-20 seems sufficient. 
-//! The initial gradient step $\gamma_{0}$ can be chosen around 1. (in the range 1/5 ... 5.). Reasonably
-//! it should satisfy nb_batch $ * \gamma_{0} < 1 $
-//! 
-//! - asked_dimension : default is set to 2.
-//! 
-//! ## The optimization of the embedding
-//! 
-//! The embedding is optimized by minimizing the (Shannon at present time) cross entropy 
-//! between distribution  of original and embedded weight of edges. This minimization is done
-//! by a standard (multithreaded) stochastic gradient with negative sampling for the unobserved edges
-//! (see [Mnih-Teh](https://arxiv.org/abs/1206.6426) or 
-//! [Mikolov](https://proceedings.neurips.cc/paper/2013/file/9aa42b31882ec039965f3c4923ce901b-Paper.pdf))
-//! 
-//! The number of negative edge sampling is set to a fixed value 5.
-//! 
-//! - expression of the gradient
-//! 
+#[cfg_attr(doc, katexit::katexit)]
+/// It is necessary to describe briefly the model used in the embedding:
+/// 
+/// ## Definition of the weight of an edge of the graph to embed
+///
+/// First we define the local scale $\rho$ around a point.  
+/// It is defined as the mean of distances of points to their nearest neighbour.
+/// The points taken into account to define $\rho$ are the node we consider and
+/// all its knbn neighbours. So we compute the mean of distances to nearest neighbours 
+/// on knbn + 1 points around current point.
+///   
+/// let ($d_{i}$) be the sorted distances in increasing order of neighbours  for i=0..k of a node n,
+///     $$w_{i} = \exp\left(- \left(\frac{d_{i} - d_{0}}{S * \rho}\right)^{\beta} \right)$$
+/// 
+/// S is a scale factor modulating $\rho$. 
+/// After that weights are normalized to a probability distribution.
+///
+/// So before normalization $w_{0}$ is always equal to 1. Augmenting β to 2. makes the weight $w_{i}$ decrease faster. 
+/// The least weight of an edge can go under $10^{-5}$ to limit the range of weight and avoid Svd numeric difficulties. 
+/// The code stops with an error in this case.
+/// So after normalization the range of weights from $w_{0}$ to $w_{k}$ is larger. 
+/// Reducing S as similar effect but playing with both $\beta$ and the scale adjustment must not encounter the range constraint on weights.
+/// 
+/// It must be noted that setting the scale as described before and renormalizing to get a probability distribution
+/// gives a perplexity nearly equal to the number of neighbours.  
+/// This can be verified by using the logging (implemented using the crates **env_logger** and **log**) and setting 
+/// RUST_LOG=annembed=INFO in your environment. 
+/// Then quantile summaries are given for the distributions of edge distances, edge weights, and perplexity
+/// of nodes. This helps adjusting parameters β, Scale and show their impact on these quantiles.
+/// 
+///  
+/// Default value :  
+/// 
+///  $\beta = 1$ so that we have exponential weights similar to Umap.  
+/// 
+///  $S = 1.$
+/// 
+/// But it is possible to set β to 2. to get more gaussian weight and reduce also to 0.5.
+///    
+/// ## Definition of the weight of an edge of the embedded graph
+/// 
+/// The embedded edge has the usual expression :
+/// $$ w(x,y) = \frac{1}{1+ || \left((x - y)/a_{x} \right)||^b  } $$
+/// 
+/// by default b = 1.
+/// The coefficient $a_{x}$ is deduced from the scale coefficient in the original space with some
+/// restriction to avoid too large fluctuations.
+/// 
+/// 
+/// 
+/// - Initial step of the gradient and number of batches 
+/// 
+/// A number of batch for the Mnist digits data around 10-20 seems sufficient. 
+/// The initial gradient step $\gamma_{0}$ can be chosen around 1. (in the range 1/5 ... 5.). Reasonably
+/// it should satisfy nb_batch $ * \gamma_{0} < 1 $
+/// 
+/// - asked_dimension : default is set to 2.
+/// 
+/// ## The optimization of the embedding
+/// 
+/// The embedding is optimized by minimizing the (Shannon at present time) cross entropy 
+/// between distribution  of original and embedded weight of edges. This minimization is done
+/// by a standard (multithreaded) stochastic gradient with negative sampling for the unobserved edges
+/// (see [Mnih-Teh](https://arxiv.org/abs/1206.6426) or 
+/// [Mikolov](https://proceedings.neurips.cc/paper/2013/file/9aa42b31882ec039965f3c4923ce901b-Paper.pdf))
+/// 
+/// The number of negative edge sampling is set to a fixed value 5.
+/// 
+/// - expression of the gradient
+/// 
 
 
 /// main parameters driving Embeding

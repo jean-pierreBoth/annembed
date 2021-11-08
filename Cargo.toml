@@ -81,8 +81,5 @@ log = { version = "0.4", features = ["max_level_debug", "release_max_level_info"
 env_logger = { version = "0.9"}
 
 
+katexit = {version = "0.1.0"}
 
-
-# from katex-doc
-[package.metadata.docs.rs]
-rustdoc-args = ["--html-in-header", "katex.html"]
