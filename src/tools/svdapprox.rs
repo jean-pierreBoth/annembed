@@ -107,9 +107,10 @@ impl <F:Float+FromPrimitive> RandomGaussianGenerator<F> {
 use sprs::{CsMat};
 
 
-/// We can do range approximation on both dense Array2 and CsMat representation of matrices.
+// We can do range approximation on both dense Array2 and CsMat representation of matrices.
+/// enum coding for the type of representation used for Matrix.
 #[derive(Clone)]
-enum MatMode<F> {
+pub enum MatMode<F> {
     FULL(Array2<F>),
     CSR(CsMat<F>),
 }
@@ -162,6 +163,11 @@ impl <F> MatRepr<F> where
         };
     } // end of get_full_mut
 
+    /// get a reference to matix representation
+    pub fn get_data(&self) -> &MatMode<F> {
+        &self.data
+    } // enf of get_data
+
 
     /// Matrix Vector multiplication. We use raw interface to get Blas.
     pub fn mat_dot_vector(&self, vec : &Array1<F>) -> Array1<F>  {
@@ -184,8 +190,10 @@ impl <F> MatRepr<F> where
 // The matrix Q comes from range_approx so its rank (columns number) will really be small as recommended in csc_mulacc_dense_colmaj doc
 // B = (r,n) with n original data dimension (we can expect n < 1000  and r <= 10
 // We b = tQ*CSR with bt = transpose((transpose(CSR)*Q))
-// We need to clone the result to enforce standard layout
-fn small_transpose_dense_mult_csr<F>(qmat : &Array2<F>, csrmat : &CsMat<F>) -> Array2<F> 
+// We need to clone the result to enforce standard layout.
+
+/// Returns t(qmat)*csrmat int a full matrix. Matrices must have appropriate dimensions for multiplication to avoid panic!
+pub fn small_transpose_dense_mult_csr<F>(qmat : &Array2<F>, csrmat : &CsMat<F>) -> Array2<F> 
     where F: Float + Scalar  + Lapack + ndarray::ScalarOperand + sprs::MulAcc {
     // transpose csrmat (it becomes a cscmat! )
     let cscmat = csrmat.transpose_view();
@@ -282,9 +290,12 @@ impl <'a, F > RangeApprox<'a, F>
         RangeApprox{mat, mode} 
     }
 
-    /// depending on mode, an adaptative algorithm or the fixed rang QR iterations will be called
-    /// For CsMat matrice only the RangeApproxMode::EPSIL is possible, in other case the function will return None..
-    pub fn approximate(&self) -> Option<Array2<F>> {
+    /// This function returns an orthonormal matrix Q such that either  || (I - Q * Qt) * A || < epsil.
+    /// or a fixed rank orthonormal Q such that || (I - Q * Qt) * A || small enough if asked rank is sufficiently large.
+    /// Depending on mode, an adaptative algorithm or the fixed rang QR iterations will be called
+    /// For CsMat matrice only the RangeApproxMode::EPSIL is possible (as we need QR decomposition for Sparse Mat from sprs...),
+    /// in the other case the function will return None.. 
+    pub fn get_approximator(&self) -> Option<Array2<F>> {
         match self.mode {
             RangeApproxMode::EPSIL(precision) => {
                 return Some(adaptative_range_finder_matrep(self.mat, precision.epsil, precision.step, precision.max_rank));
@@ -305,8 +316,10 @@ impl <'a, F > RangeApprox<'a, F>
 
 
 
-/// This algorithm returns a (m,l) matrix approximation the range of input, rank is the asked rank
-/// and nb_iter is a number of iterations
+/// Given a (m,n) matrice A, this algorithm returns a (m,l) orthogonal matrix Q approximation the range of input. 
+/// l is the asked rank and nb_iter is a number of iterations.
+/// 
+/// The matrix Q is such that || A - Q * t(Q) * A || should be small as l increases. (Froebonius norm)
 /// 
 /// It implements the QR iterations as descibed in Algorithm 4.4 from Halko-Tropp
 /// 
@@ -357,16 +370,23 @@ pub fn subspace_iteration<F> (mat : &Array2<F>, rank : usize, nbiter : usize) ->
     //      - check for norm sup of y
     //
 
-/// Returns a matrix Q such that :
-/// ```math 
-/// || mat - Q*Q^{t}*mat || < ε \quad with  \space probability  \space \gt 1. - min(m,n) 10^{-r} 
-/// ```
+#[cfg_attr(doc, katexit::katexit)]
+/// If mat is a (m,n) matrix this function returns an orthonormal matrix Q of dimensions (m,l) such that :
+/// $$ || mat - Q*Q^{t}*mat || < ε$$  with probability at least $$ 1. - min(m,n) 10^{-r} $$
+///  
 ///  - epsil is the l2 norm of the last block of r columns vectors added in Q.
 ///  - r is the rank increment in iterations
 ///  - max_rank is the maximum rank asked for.
 /// 
-///  Iterations stop when the l2 norm of the block of r vectors added is less than epsil or if max_rank has been reached
+/// 
+///  Iterations stop when the l2 norm of the block of r vectors added is less than epsil or if max_rank has been reached. 
 ///  This last stop rule is somewhat easier to define.
+/// 
+/// The main use of this function is the following :     
+/// we define  
+///  $$A = Q^{t}*mat $$ so  A is a (l,n) matrix with l<<n  
+///  - do the the svd of A : A = U*Σ*V  
+///  - aproximate the svd of mat by (Q*U)*Σ*V
 /// 
 /// Algorithm : Adaptive Randomized Range Finder algo 4.2. from Halko-Martinsson-Tropp 2011
 /// 
@@ -452,7 +472,7 @@ pub fn adaptative_range_finder_matrep<F>(mat : &MatRepr<F> , epsil:f64, r : usiz
     //
     // to avoid the cost to zeros
     log::debug!("range finder returning a a matrix ({}, {})", m, q_mat.len());
-//    let mut q_as_array2  = Array2::uninit((m, q_mat.len()));      from version 0.15.0 and later
+    //  method uninit from version 0.15.0 and later
     let mut q_as_array2  = Array2::uninit((m, q_mat.len()));     // as sprs wants ndarray 0.14.0
     for i in 0..q_mat.len() {
         for j in 0..m {
@@ -554,7 +574,7 @@ impl <'a, F> SvdApprox<'a, F>
         //     MatMode::FULL(mat) => { return mat.dot(vec);},
         //     _ => ()
         // }
-        let q_opt = ra.approximate();
+        let q_opt = ra.get_approximator();
         if q_opt.is_some() {
             q = q_opt.unwrap();
         }
@@ -658,7 +678,12 @@ fn do_qr<F> (layout : MatrixLayout, mat : &mut Array2<F>)
         MatrixLayout::C { row, lda } => (row as usize , lda as usize),
         _ => panic!()
     };
-    let tau = F::householder(layout, mat.as_slice_mut().unwrap()).unwrap();
+    let tau_res = F::householder(layout, mat.as_slice_mut().unwrap());
+    if tau_res.is_err() {
+        log::error!("svdapprox::do_qr : a lapack error occurred in F::householder");
+        panic!();
+    }
+    let tau = tau_res.unwrap();
     F::q(layout, mat.as_slice_mut().unwrap(), &tau).unwrap();
 } // end of do_qr
 
@@ -702,7 +727,7 @@ fn log_init_test() {
         let rp = RangePrecision { epsil : 0.05 , step : 5, max_rank : 10};
         let matrepr = MatRepr::from_array2(data.mat);
         let range_approx = RangeApprox::new(&matrepr,  RangeApproxMode::EPSIL(rp));
-        let q = range_approx.approximate().unwrap();
+        let q = range_approx.get_approximator().unwrap();
         log::info!(" q(m,n) {} {} ", q.shape()[0], q.shape()[1]);
         let residue = check_range_approx_repr(&matrepr, &q);
         log::info!(" subspace_iteration nom_l2 {:.2e} residue {:.2e} \n", norm_data, residue);
@@ -717,7 +742,7 @@ fn log_init_test() {
         let rp = RangePrecision { epsil : 0.05 , step : 5, max_rank : 25};
         let matrepr = MatRepr::from_array2(data.mat);
         let range_approx = RangeApprox::new(&matrepr,  RangeApproxMode::EPSIL(rp));
-        let q = range_approx.approximate().unwrap();
+        let q = range_approx.get_approximator().unwrap();
         //
         log::info!(" q(m,n) {} {} ", q.shape()[0], q.shape()[1]);
         let residue = check_range_approx_repr(&matrepr, &q);
@@ -729,12 +754,12 @@ fn log_init_test() {
     fn test_range_approx_subspace_iteration_1() {
         log_init_test();
         //
-        let data = RandomGaussianGenerator::<f64>::new().generate_matrix(Dim([6,50]));
+        let data = RandomGaussianGenerator::<f64>::new().generate_matrix(Dim([12,50]));
         let norm_data = norm_l2(&data.mat.view());
-        let rp = RangeRank { rank : 7 , nbiter : 5};            // check for too large rank asked
+        let rp = RangeRank { rank : 11 , nbiter : 10};            // check for too large rank asked
         let matrepr = MatRepr::from_array2(data.mat);
         let range_approx = RangeApprox::new(&matrepr, RangeApproxMode::RANK(rp));
-        let q = range_approx.approximate().unwrap(); // args are rank , nbiter
+        let q = range_approx.get_approximator().unwrap(); // args are rank , nbiter
         let residue = check_range_approx_repr(&matrepr, &q);
         log::info!(" subspace_iteration nom_l2 {:.2e} residue {:.2e} \n", norm_data, residue);
     } // end of test_range_approx_subspace_iteration_1
@@ -748,7 +773,7 @@ fn log_init_test() {
         let rp = RangeRank { rank : 25 , nbiter : 5};
         let matrepr = MatRepr::from_array2(data.mat);
         let range_approx = RangeApprox::new(&matrepr, RangeApproxMode::RANK(rp));
-        let q = range_approx.approximate().unwrap();
+        let q = range_approx.get_approximator().unwrap();
         let residue = check_range_approx_repr(&matrepr, &q);
         log::info!(" subspace_iteration nom_l2 {:.2e} residue {:.2e} \n", norm_data, residue);
     } // end of test_range_approx_subspace_iteration_2

@@ -48,7 +48,7 @@ num_cpus = {version = "1.8.0"}
 cpu-time = {version = "1.0"}
 
 ndarray = {version = "0.15", features=["rayon", "serde"]}
-ndarray-linalg = {version = "0.14", features = ["openblas-static"]}
+ndarray-linalg = {version = "0.14", features = ["intel-mkl-static"]}
 lax = {version = "0.2"}
 lapacke = {version = "0.5"}
 sprs = {version = "0.11"}
