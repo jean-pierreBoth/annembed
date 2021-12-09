@@ -570,10 +570,6 @@ impl <'a, F> SvdApprox<'a, F>
     pub fn direct_svd(&mut self, parameters : RangeApproxMode) -> Result<SvdResult<F>, String> {
         let ra = RangeApprox::new(self.data, parameters);
         let q;
-        // match self.data {
-        //     MatMode::FULL(mat) => { return mat.dot(vec);},
-        //     _ => ()
-        // }
         let q_opt = ra.get_approximator();
         if q_opt.is_some() {
             q = q_opt.unwrap();
@@ -589,7 +585,6 @@ impl <'a, F> SvdApprox<'a, F>
                                     small_transpose_dense_mult_csr(&q, mat)
                                 },
         };
-
         //
         let layout = MatrixLayout::C { row: b.shape()[0] as i32, lda: b.shape()[1] as i32 };
         let slice_for_svd_opt = b.as_slice_mut();

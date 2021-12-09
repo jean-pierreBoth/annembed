@@ -234,15 +234,15 @@ pub fn main() {
     println!(" ann construction sys time(s) {:?} cpu time {:?}", sys_now.elapsed().unwrap().as_secs(), cpu_time.as_secs());
     hnsw.dump_layer_info();
     //
-    let knbn = 10;
+    let knbn = 5;
     let kgraph : KGraph<f32>;
     let graphprojection: KGraphProjection<f32>;
     //
     let mut embed_params = EmbedderParams::new();
-    embed_params.nb_grad_batch = 30;
-    embed_params.scale_rho = 1.;
+    embed_params.nb_grad_batch = 15;
+    embed_params.scale_rho = 0.5;
     embed_params.beta = 1.;
-    embed_params.grad_step = 0.2;
+    embed_params.grad_step = 2.;
     embed_params.nb_sampling_by_edge = 10;
     embed_params.dmap_init = true;
     log::info!("calling kgraph.init_from_hnsw_all");
@@ -251,7 +251,7 @@ pub fn main() {
     let _kgraph_stats = kgraph.get_kraph_stats();
 
     let mut embedder;
-    let hierarchical = true;
+    let hierarchical = false;
     if !hierarchical {
         embedder = Embedder::new(&kgraph, embed_params);
         let embed_res = embedder.embed();
