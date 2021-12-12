@@ -140,8 +140,8 @@ where
         let graph_projection = self.hkgraph.as_ref().unwrap();
         log::info!(" embedding first (small) graph");
         let mut first_step_parameters = self.parameters;
-        first_step_parameters.nb_grad_batch = 50;
-        first_step_parameters.grad_step = 0.5;
+        first_step_parameters.nb_grad_batch = 40;
+        first_step_parameters.grad_step = 1.;
         let mut embedder_first_step = Embedder::new(graph_projection.get_small_graph(), first_step_parameters);
         let cpu_start = ProcessTime::now();
         let sys_start = SystemTime::now();

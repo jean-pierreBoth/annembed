@@ -226,9 +226,6 @@ pub fn main() {
     // we must pay fortran indexation once!. transform image to a vector
     let data_with_id : Vec<(&Vec<f32>, usize)>= images_as_v.iter().zip(0..images_as_v.len()).collect();
     hnsw.parallel_insert(&data_with_id);
-    // for i in 0..2000 {
-    //     hnsw.insert(data_with_id[i]);
-    // }
     // images as vectors of f32 and send to hnsw
     let cpu_time: Duration = cpu_start.elapsed();
     println!(" ann construction sys time(s) {:?} cpu time {:?}", sys_now.elapsed().unwrap().as_secs(), cpu_time.as_secs());

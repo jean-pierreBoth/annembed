@@ -269,13 +269,13 @@ pub fn main() {
     println!(" ann embed time time {:.2e} s", sys_now.elapsed().unwrap().as_secs());
     // dump
     log::info!("dumping initial embedding in csv file");
-    let mut csv_w = Writer::from_path("mnist_init.csv").unwrap();
+    let mut csv_w = Writer::from_path("mnist_init_digits.csv").unwrap();
     // we can use get_embedded_reindexed as we indexed DataId contiguously in hnsw!
     let _res = write_csv_labeled_array2(&mut csv_w, labels.as_slice(), &embedder.get_initial_embedding_reindexed());
     csv_w.flush().unwrap();
 
     log::info!("dumping in csv file");
-    let mut csv_w = Writer::from_path("mnist.csv").unwrap();
+    let mut csv_w = Writer::from_path("mnist_digits.csv").unwrap();
     // we can use get_embedded_reindexed as we indexed DataId contiguously in hnsw!
     let _res = write_csv_labeled_array2(&mut csv_w, labels.as_slice(), &embedder.get_embedded_reindexed());
     csv_w.flush().unwrap();

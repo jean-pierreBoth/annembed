@@ -56,7 +56,7 @@ sprs = {version = "0.11"}
 clap = {version = "2.29"}
 indexmap = {version = "1.6"}
 # hnsw_rs =  {git = "https://gitlab.com/jpboth/hnswlib-rs.git"}
-#hnsw_rs = {path = "../hnswlib-rs"}
+#hnsw_rs = {path = "../hnswlib-rs", features = ["simdeez_f"]}
 hnsw_rs = {version = "0.1.15"}
 
 # rand utilis

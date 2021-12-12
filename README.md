@@ -28,6 +28,9 @@ The crate will provide:
 
 Currently only the approximated SVD and a first version of the embedding (with possible hierarchical inittialization) are implemented. But the mnist example shows how to run the embedding, even in this (preliminary) state.
 
+## To build on non x86_64 chips
+Just get rid of the features = ["simdeez_f"] in the hnsw_rs cargo dependency as the crate simdeez depends on x86_64
+and wait for the landing of std::simd
 ## Results
 
 These are preliminary results.
@@ -42,14 +45,29 @@ It consists in 70000 images of handwritten digits of 784 pixels
 - initialized by an approximated svd.
 It tooks 20s to run, of which 9s were spent in the ann construction.
 
-![mnist](Images/mnist-digits-B15S0.5E10G3k8-v2-20s.jpg)
+![mnist](Images/mnist-digits-B15S0.5E10G3k8-v3-20s-compressed.jpg)
 
 - hierarchical initialization
 
-![mnist](Images/mnist-digits-HB15S0.5E10G3.k8-v2-22s.jpg)
+![mnist](Images/mnist-digits-HB15S0.5E10G3k8-v3-22s-compressed.jpg)
 
 It took 22s of which 9s were spent in the ann construction.
 
+2. MNIST fashion database Cf[mnist-fashion](https://github.com/zalandoresearch/fashion-mnist/tree/master/data/fashion)
+
+It conssits in 70000 images of clothes.
+
+- initialized by an approximated svd.
+  
+  ![mnist](Images/mnist-fashion-B15S0.5G2E10k5-29s-compressed.jpg)
+
+   time : 29s
+- hierarchical initialization
+
+ ![mnist](Images/mnist-fashion-HB15S0.5G2E10k5-34s-compressed.jpg)
+
+ time : 34s 
+   
 ### Randomized SVD
 
 The randomized SVD is based on the paper of [Halko-Tropp](https://epubs.siam.org/doi/abs/10.1137/090771806)
