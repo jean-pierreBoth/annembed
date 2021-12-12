@@ -26,11 +26,8 @@ The crate will provide:
 
 ## *The crate is in a preliminary state*
 
-Currently only the approximated SVD and a first version of the embedding (with possible hierarchical inittialization) are implemented. But the mnist example shows how to run the embedding, even in this (preliminary) state.
+Currently only the approximated SVD and a first version of the embedding (with possible hierarchical inittialization) are implemented. But the mnist examples shows how to run the embedding, even in this (preliminary) state.
 
-## To build on non x86_64 chips
-Just get rid of the features = ["simdeez_f"] in the hnsw_rs cargo dependency as the crate simdeez depends on x86_64
-and wait for the landing of std::simd
 ## Results
 
 These are preliminary results.
