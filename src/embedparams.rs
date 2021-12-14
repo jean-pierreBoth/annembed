@@ -37,12 +37,12 @@
 /// 
 ///  $S = 1.$
 /// 
-/// But it is possible to set β to 2. to get more gaussian weight and reduce also to 0.5.
+/// But it is possible to set β to 2. to get more gaussian weight or reduce to 0.5.
 ///    
 /// ## Definition of the weight of an edge of the embedded graph
 /// 
 /// The embedded edge has the usual expression :
-/// $$ w(x,y) = \frac{1}{1+ || \left((x - y)/a_{x} \right)||^b  } $$
+/// $$ w(x,y) = \frac{1}{1+ || \left((x - y)/a_{x} \right)||^{2*b}  } $$
 /// 
 /// by default b = 1.
 /// The coefficient $a_{x}$ is deduced from the scale coefficient in the original space with some
@@ -53,8 +53,8 @@
 /// - Initial step of the gradient and number of batches 
 /// 
 /// A number of batch for the Mnist digits data around 10-20 seems sufficient. 
-/// The initial gradient step $\gamma_{0}$ can be chosen around 1. (in the range 1/5 ... 5.). Reasonably
-/// it should satisfy nb_batch $ * \gamma_{0} < 1 $
+/// The initial gradient step $\gamma_{0}$ can be chosen around 1. (in the range 1/5 ... 5.).    
+/// Reasonably it should satisfy nb_batch $ * \gamma_{0} < 1 $
 /// 
 /// - asked_dimension : default is set to 2.
 /// 
