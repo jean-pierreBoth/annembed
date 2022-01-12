@@ -99,8 +99,9 @@ impl GraphLaplacian {
         log::info!("got laplacian, going to approximated svd ... asked_dim :  {}", asked_dim);
         let mut svdapprox = SvdApprox::new(&self.sym_laplacian);
         // TODO adjust epsil ?
-        // we need one dim more beccause we get rid of first eigen vector as in dmap
-        let svdmode = RangeApproxMode::EPSIL(RangePrecision::new(0.1, 25, asked_dim+5));
+        // we need one dim more beccause we get rid of first eigen vector as in dmap, and for slowly decreasing spectrum RANK approx is 
+        // better see Halko-Tropp
+        let svdmode = RangeApproxMode::RANK(RangeRank::new(20, 5));
         let svd_res = svdapprox.direct_svd(svdmode);
         log::trace!("exited svd");
         if !svd_res.is_ok() {

@@ -1,9 +1,9 @@
 [package]
 name = "annembed"
-version = "0.0.2"
+version = "0.0.3"
 authors = ["jeanpierre.both@gmail.com"]
 repository = "https://github.com/jean-pierreBoth/annembed"
-description = "a Rust implemntation of a dimension reduction à la Umap "
+description = "a Rust implementation of a dimension reduction à la Umap "
 license = "MIT/Apache-2.0"
 readme = "README.md"
 keywords = ["algorithms", "ann", "embedding", "dimension-reduction", "umap"]

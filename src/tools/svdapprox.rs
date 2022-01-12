@@ -301,13 +301,13 @@ impl <'a, F > RangeApprox<'a, F>
                 return Some(adaptative_range_finder_matrep(self.mat, precision.epsil, precision.step, precision.max_rank));
             }, 
             RangeApproxMode::RANK(rank) => {
-                // at present time this approximation is only allowed for Array2 matrix representation
                 match &self.mat.data {
-                    MatMode::FULL(array) => { return Some(subspace_iteration(&array,  rank.rank, rank.nbiter));},
-                            _            => { println!("approximate : the mode RANK is only possible with dense matrices");
-                                              return None;
-                                            }
-                }; // end of matchon representation
+                    MatMode::FULL(array) => { return Some(subspace_iteration_full(&array,  rank.rank, rank.nbiter));},
+
+                    MatMode::CSR(csr_mat)  => { 
+                                                return Some(subspace_iteration_csr(&csr_mat, rank.rank, rank.nbiter));
+                                                }
+                }; // end of match on representation
             },
         };
     }  // end of approximate
@@ -323,7 +323,7 @@ impl <'a, F > RangeApprox<'a, F>
 /// 
 /// It implements the QR iterations as descibed in Algorithm 4.4 from Halko-Tropp
 /// 
-pub fn subspace_iteration<F> (mat : &Array2<F>, rank : usize, nbiter : usize) -> Array2<F>
+pub fn subspace_iteration_full<F> (mat : &Array2<F>, rank : usize, nbiter : usize) -> Array2<F>
             where F : Float + Scalar  + Lapack + ndarray::ScalarOperand {
     //
     let mut rng = RandomGaussianGenerator::<F>::new();
@@ -346,15 +346,62 @@ pub fn subspace_iteration<F> (mat : &Array2<F>, rank : usize, nbiter : usize) ->
         ndarray::linalg::general_mat_mul(F::one() , &mat.t(), &y_m_l, F::zero(), &mut y_n_l);
         // qr returns a (n,n)
         do_qr(MatrixLayout::C {row : y_n_l.shape()[0] as i32 ,  lda : y_n_l.shape()[1] as i32}, &mut y_n_l);
-        // data * y_n_l  -> (m,l)
+        // data * y_n_l  -> (m,l)    (m,n)*(n,l) = (m,l)    y_m_l = mat.dot(&mut y_n_l)
         ndarray::linalg::general_mat_mul(F::one() , &mat, &y_n_l, F::zero(), &mut y_m_l);
-        y_m_l = mat.dot(&mut y_n_l);        //  (m,n)*(n,l) = (m,l)
         // qr of y * data
         do_qr(MatrixLayout::C {row : y_m_l.shape()[0] as i32 ,  lda : y_m_l.shape()[1] as i32}, &mut y_m_l);
     }
     // 
     y_m_l
 }  // end of subspace_iteration
+
+
+
+/// Given a (m,n) matrice A, this algorithm returns a (m,l) orthogonal matrix Q approximation the range of input. 
+/// l is the asked rank and nb_iter is a number of iterations.
+/// 
+/// The matrix Q is such that || A - Q * t(Q) * A || should be small as l increases. (Froebonius norm)
+/// 
+/// It implements the QR iterations as descibed in Algorithm 4.4 from Halko-Tropp
+/// 
+pub fn subspace_iteration_csr<F> (csrmat: &CsMat<F>, rank : usize, nbiter : usize) -> Array2<F>
+            where F : Float + Scalar  + Lapack + ndarray::ScalarOperand + sprs::MulAcc {
+    //
+    let mut rng = RandomGaussianGenerator::<F>::new();
+    let data_shape = csrmat.shape();
+    let m = data_shape.0;
+    let n = data_shape.1;
+    let l = m.min(n).min(rank);
+    if rank > l {
+        log::info!("reducing asked rank in subspace_iteration to {}", l);
+    }
+    //
+    let omega = rng.generate_matrix(Dim([data_shape.1, l]));
+    // y is a (m,l) matrix
+    let mut y_m_l = Array2::<F>::zeros((m,l));
+    prod::csr_mulacc_dense_rowmaj(csrmat.view(), omega.mat.view(), y_m_l.view_mut());
+    // y_n_l is a (n,l) matrix
+    let mut y_n_l = Array2::<F>::zeros((n,l));
+    let layout = MatrixLayout::C { row: m as i32, lda: l as i32 };
+    // do first QR decomposition of y and overwrite it
+    do_qr(layout, &mut y_m_l);
+    for _j in 1..nbiter {
+        // data.t() * y
+        y_n_l.fill(F::zero());
+        prod::csc_mulacc_dense_rowmaj(csrmat.transpose_view(), y_m_l.view(), y_n_l.view_mut());
+        // qr returns a (n,n)
+        do_qr(MatrixLayout::C {row : y_n_l.shape()[0] as i32 ,  lda : y_n_l.shape()[1] as i32}, &mut y_n_l);
+        // data * y_n_l  -> (m,l)
+        y_m_l.fill(F::zero());
+        prod::csr_mulacc_dense_rowmaj(csrmat.view(), y_n_l.view(), y_m_l.view_mut());
+        // qr of y * data
+        do_qr(MatrixLayout::C {row : y_m_l.shape()[0] as i32 ,  lda : y_m_l.shape()[1] as i32}, &mut y_m_l);
+    }
+    // 
+    y_m_l
+}  // end of subspace_iteration_matrepr
+
+
 
 
 
@@ -550,8 +597,8 @@ impl <F> SvdResult<F> {
 
 /// Approximated svd.
 /// The first step is to find a range approximation of the matrix.
-/// This step can be done by asking for a required precision or a minimum rank for dense matrices represented by Array2.
-/// For compressed matrices only the precision criterion is possible.
+/// This step can be done by asking for a required precision or a minimum rank for dense matrices represented by Array2
+/// or Csr matrices
 pub struct SvdApprox<'a, F: Scalar> {
     /// matrix we want to approximate range of.
     data : &'a MatRepr<F>,
@@ -751,7 +798,7 @@ fn log_init_test() {
         //
         let data = RandomGaussianGenerator::<f64>::new().generate_matrix(Dim([12,50]));
         let norm_data = norm_l2(&data.mat.view());
-        let rp = RangeRank { rank : 11 , nbiter : 10};            // check for too large rank asked
+        let rp = RangeRank { rank : 11 , nbiter : 7};            // check for too large rank asked
         let matrepr = MatRepr::from_array2(data.mat);
         let range_approx = RangeApprox::new(&matrepr, RangeApproxMode::RANK(rp));
         let q = range_approx.get_approximator().unwrap(); // args are rank , nbiter
@@ -759,27 +806,64 @@ fn log_init_test() {
         log::info!(" subspace_iteration nom_l2 {:.2e} residue {:.2e} \n", norm_data, residue);
     } // end of test_range_approx_subspace_iteration_1
 
+
     #[test]
     fn test_range_approx_subspace_iteration_2() {
         log_init_test();
         //
-        let data = RandomGaussianGenerator::<f64>::new().generate_matrix(Dim([50,500]));
-        let norm_data = norm_l2(&data.mat.view());
-        let rp = RangeRank { rank : 25 , nbiter : 5};
-        let matrepr = MatRepr::from_array2(data.mat);
+        let mut data = RandomGaussianGenerator::<f64>::new().generate_matrix(Dim([30,500])).mat;
+        // reduce rank to 26
+        let new_row = data.row(2).to_owned();
+        data.row_mut(3).assign(&new_row);
+        data.row_mut(5).assign(&new_row);
+        data.row_mut(7).assign(&new_row);
+        data.row_mut(9).assign(&new_row);
+        //
+        let norm_data = norm_l2(&data.view());
+        let rp = RangeRank { rank : 26 , nbiter : 2};
+        let matrepr = MatRepr::from_array2(data);
         let range_approx = RangeApprox::new(&matrepr, RangeApproxMode::RANK(rp));
         let q = range_approx.get_approximator().unwrap();
         let residue = check_range_approx_repr(&matrepr, &q);
         log::info!(" subspace_iteration nom_l2 {:.2e} residue {:.2e} \n", norm_data, residue);
+        assert!(residue < 1.0E-10);
     } // end of test_range_approx_subspace_iteration_2
 
-    // TODO test with m >> n 
-    
-    //      teest for svd
 
 
 #[test]
-fn test_svd_wiki_rank () {
+    fn check_tcsrmult_a() {
+        //
+        log_init_test();
+        //
+        log::info!("\n\n check_tcsrmultA");
+            // matrix taken from wikipedia (4,5)
+        let mat =  ndarray::arr2( & 
+              [[ 1. , 0. , 0. , 0., 2. ],  // row 0
+               [ 0. , 0. , 3. , 0. , 0. ],  // row 1
+               [ 0. , 0. , 0. , 0. , 0. ],  // row 2
+               [ 0. , 2. , 0. , 0. , 0. ]]  // row 3
+        );
+        // get same matri in a csr representation
+        let csr_mat : CsMat<f64> = get_wiki_csr_mat_f64();
+        // A is (4,4)
+        let gmat  = RandomGaussianGenerator::<f64>::new().generate_matrix(Dim([4,4]));
+        let mut prodmat = Array2::<f64>::zeros((5,4));
+        prod::csc_mulacc_dense_colmaj(csr_mat.transpose_view(), gmat.mat.view(), prodmat.view_mut());
+        // compare prod with standard computation
+        let delta = norm_l2(&(mat.t().dot(&gmat.mat) - &prodmat).view());
+        //
+        log::debug!("check on usage , prod norm : {}, delta : {}", norm_l2(&prodmat.view()), delta);
+        assert!(delta < 1.0E-10);
+    } // end of check_tcsrmultA
+
+
+    // TODO test with m >> n 
+    
+// tests for svd
+
+#[test]
+fn test_svd_wiki_rank_full() {
     //
     log_init_test();
     //
@@ -819,13 +903,9 @@ fn test_svd_wiki_rank () {
 } // end of test_svd_wiki
 
 
-#[test]
-
-fn test_svd_wiki_csr_epsil () {
-    //
-    log_init_test();
-    //
-    log::info!("\n\n test_svd_wiki_csr_epsil");
+// get the wiki matrix in CsMat<f32> format
+#[allow(unused)]
+fn get_wiki_csr_mat_f32() -> CsMat<f32> {
     // matrix taken from wikipedia (4,5)
     // let mat =  ndarray::arr2( & 
     //   [[ 1. , 0. , 0. , 0., 2. ],  // row 0
@@ -853,6 +933,54 @@ fn test_svd_wiki_csr_epsil () {
     //
     let trimat = TriMatBase::<Vec<usize>, Vec<f32>>::from_triplets((4,5),rows, cols, values);
     let csr_mat : CsMat<f32> = trimat.to_csr();
+    csr_mat
+}  // end of get_wiki_csr_mat_f32
+
+
+
+#[allow(unused)]
+fn get_wiki_csr_mat_f64() -> CsMat<f64> {
+    // matrix taken from wikipedia (4,5)
+    // let mat =  ndarray::arr2( & 
+    //   [[ 1. , 0. , 0. , 0., 2. ],  // row 0
+    //   [ 0. , 0. , 3. , 0. , 0. ],  // row 1
+    //   [ 0. , 0. , 0. , 0. , 0. ],  // row 2
+    //   [ 0. , 2. , 0. , 0. , 0. ]]  // row 3
+    // );
+    let mut rows = Vec::<usize>::with_capacity(5);
+    let mut cols = Vec::<usize>::with_capacity(5);
+    let mut values = Vec::<f64>::with_capacity(5);
+    rows.push(0);
+    cols.push(0);
+    values.push(1.);
+    rows.push(0);
+    cols.push(4);
+    values.push(2.);
+    // row 1    
+    rows.push(1);
+    cols.push(2);
+    values.push(3.); 
+    // row 3
+    rows.push(3);
+    cols.push(1);
+    values.push(2.);     
+    //
+    let trimat = TriMatBase::<Vec<usize>, Vec<f64>>::from_triplets((4,5),rows, cols, values);
+    let csr_mat : CsMat<f64> = trimat.to_csr();
+    csr_mat
+}  // end of get_wiki_csr_mat_f64
+
+
+
+#[test]
+fn test_svd_wiki_csr_epsil () {
+    //
+    log_init_test();
+    //
+    log::info!("\n\n test_svd_wiki_csr_epsil");
+    //
+    let csr_mat : CsMat<f32> = get_wiki_csr_mat_f32();
+    //
     let matrepr = MatRepr::from_csrmat(csr_mat);
     let mut svdapprox = SvdApprox::new(&matrepr);
     let svdmode = RangeApproxMode::EPSIL(RangePrecision{epsil:0.1 , step:5, max_rank : 10});
@@ -879,6 +1007,46 @@ fn test_svd_wiki_csr_epsil () {
         std::panic!("test_svd_wiki_csr_epsil");
     }
 } // end of test_svd_wiki
+
+
+// test rank approx for a csr representation
+#[test]
+fn test_svd_wiki_csr_rank() {
+    //
+    log_init_test();
+    //
+    log::info!("\n\n test_svd_wiki_csr_rank");
+    //
+    let csr_mat : CsMat<f32> = get_wiki_csr_mat_f32();
+    //
+    let matrepr = MatRepr::from_csrmat(csr_mat);
+    let mut svdapprox = SvdApprox::new(&matrepr);
+    //
+    let svdmode = RangeApproxMode::RANK(RangeRank{rank:4, nbiter:5});
+    let svd_res = svdapprox.direct_svd(svdmode).unwrap();
+    let sigma = ndarray::arr1(&[ 3., (5f32).sqrt() , 2., 0.]);
+    if let Some(computed_s) = svd_res.get_sigma() {
+        log::trace!{ "computed spectrum size {}", computed_s.len()};
+        assert!(computed_s.len() <= sigma.len());
+        assert!(computed_s.len() >= 3);
+        for i in 0..computed_s.len() {
+            log::trace!{"sp  i  exact : {}, computed {}", sigma[i], computed_s[i]};
+            let test;
+            if  sigma[i] > 0. {
+               test =  ((1. - computed_s[i]/sigma[i]).abs() as f32) < 1.0E-5;
+            }
+            else {
+               test =  ((sigma[i]-computed_s[i]).abs()  as f32) < 1.0E-5;
+            };
+            assert!(test);
+        }
+    }
+    else {
+        std::panic!("test_svd_wiki_csr_epsil");
+    }
+}  // end of test_svd_wiki_csr_rank
+
+
 
 
 #[test]
