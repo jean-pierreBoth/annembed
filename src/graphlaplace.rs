@@ -166,7 +166,8 @@ pub(crate) fn get_laplacian(initial_space : &NodeParams) -> GraphLaplacian {
         // The UMAP formula (p_i+p_j - p_i *p_j) implies taking the non null proba when one proba is null,
         // so UMAP initialization is more packed.
         let mut symgraph = (&transition_proba + &transition_proba.view().t()) * 0.5;
-        // now we go to the symetric laplacian D^-1/2 * G * D^-1/2 but get rid of the I - ... cf Jordan
+        // now we go to the symetric laplacian D^-1/2 * G * D^-1/2 but get rid of the I - ... 
+        // cf Yan-Jordan Fast Approximate Spectral Clustering ACM-KDD 2009
         //  compute sum of row and renormalize. See Lafon-Keller-Coifman
         // Diffusions Maps appendix B
         // IEEE TRANSACTIONS ON PATTERN ANALYSIS AND MACHINE INTELLIGENCE,VOL. 28, NO. 11,NOVEMBER 2006
@@ -200,6 +201,7 @@ pub(crate) fn get_laplacian(initial_space : &NodeParams) -> GraphLaplacian {
         let mut values = Vec::<f32>::with_capacity(nbnodes * 2 * max_nbng);
 
         for ((i, j), val) in edge_list.iter() {
+            assert!(i!=j);
             let sym_val;
             if let Some(t_val) = edge_list.get(&(*j, *i)) {
                 sym_val = (val + t_val) * 0.5;
@@ -216,7 +218,7 @@ pub(crate) fn get_laplacian(initial_space : &NodeParams) -> GraphLaplacian {
             values.push(sym_val);
             diagonal[*j] += sym_val;
         }
-        // now we push terms (i,i) in csr
+        // as in FULL Representation we avoided the I diagnoal term which cancels anyway
         // Now we reset non diagonal terms to D^-1/2 G D^-1/2  i.e  val[i,j]/(D[i]*D[j])^1/2
         for i in 0..rows.len() {
             let row = rows[i];

@@ -123,7 +123,7 @@ pub struct MatRepr<F> {
 
 
 impl <F> MatRepr<F> where
-    F: Float + Scalar  + Lapack + ndarray::ScalarOperand + sprs::MulAcc {
+    F: Float + Scalar  + Lapack + ndarray::ScalarOperand + sprs::MulAcc + for<'r> std::ops::MulAssign<&'r F> + Default  {
 
     /// initialize a MatRepr from an Array2
     #[inline]
@@ -163,12 +163,26 @@ impl <F> MatRepr<F> where
         };
     } // end of get_full_mut
 
-    /// get a reference to matix representation
+    pub fn get_csr(&self) -> Result<&CsMat<F>, usize> {
+        match &self.data {
+            MatMode::CSR(mat) => { return Ok(mat) }, 
+            _                  => {return Err(1) }, 
+        };
+    } // end of get_csr
+
+
+    /// get a reference to matrix representation
     pub fn get_data(&self) -> &MatMode<F> {
         &self.data
     } // enf of get_data
 
 
+    /// get a mutable reference to matrix representation
+    pub fn get_data_mut(&mut self) -> &mut MatMode<F> {
+        &mut self.data
+    } // end of get_data_mut
+
+    
     /// Matrix Vector multiplication. We use raw interface to get Blas.
     pub fn mat_dot_vector(&self, vec : &Array1<F>) -> Array1<F>  {
         match &self.data {
@@ -183,6 +197,24 @@ impl <F> MatRepr<F> where
         };
     } // end of matDotVector
 
+    /// just multiplication by beta in a unified way
+    pub fn scale(&mut self, beta : F) {
+        match &mut self.data {
+            MatMode::FULL(mat) => { *mat *= beta;},
+            MatMode::CSR(csmat) =>  { csmat.scale(beta) ;},
+        };
+    } // end of scale
+
+
+    /// return a transposed copy
+    pub fn transpose_owned(&self) -> Self {
+        let transposed = match &self.data {
+                MatMode::FULL(mat)        => { MatRepr::<F>::from_array2(mat.t().to_owned())},
+                // in CSR mode we must reconvert to csr beccause the transposed view is csc
+                MatMode::CSR(csmat) =>  { MatRepr::<F>::from_csrmat(csmat.transpose_view().to_csr())},
+        };
+        transposed
+    }
 } // end of impl block for MatRepr
 
 
@@ -283,7 +315,7 @@ pub struct RangeApprox<'a, F: Scalar> {
 
 /// Lapack is necessary here beccause of QR_ traits coming from Lapack
 impl <'a, F > RangeApprox<'a, F> 
-     where  F : Float + Scalar  + Lapack + ndarray::ScalarOperand  + sprs::MulAcc{
+     where  F : Float + Scalar  + Lapack + ndarray::ScalarOperand  + sprs::MulAcc + for<'r> std::ops::MulAssign<&'r F> + Default {
 
     /// describes the problem, matrix format and range approximation mode asked for.
     pub fn new(mat : &'a MatRepr<F>, mode : RangeApproxMode) -> Self {
@@ -438,7 +470,7 @@ pub fn subspace_iteration_csr<F> (csrmat: &CsMat<F>, rank : usize, nbiter : usiz
 /// Algorithm : Adaptive Randomized Range Finder algo 4.2. from Halko-Martinsson-Tropp 2011
 /// 
 pub fn adaptative_range_finder_matrep<F>(mat : &MatRepr<F> , epsil:f64, r : usize, max_rank : usize) -> Array2<F> 
-        where F : Float + Scalar  + Lapack + ndarray::ScalarOperand + sprs::MulAcc {
+        where F : Float + Scalar  + Lapack + ndarray::ScalarOperand + sprs::MulAcc + for<'r> std::ops::MulAssign<&'r F> + Default {
     //
     log::debug!(" in adaptative_range_finder_matrep");
     //
@@ -606,8 +638,8 @@ pub struct SvdApprox<'a, F: Scalar> {
 
 
 impl <'a, F> SvdApprox<'a, F>  
-     where  F : Float + Lapack + Scalar  + ndarray::ScalarOperand + sprs::MulAcc {
-
+     where  F : Float + Lapack + Scalar  + ndarray::ScalarOperand + sprs::MulAcc + for<'r> std::ops::MulAssign<&'r F> + Default {
+    
     pub fn new(data : &'a MatRepr<F>) -> Self {
         SvdApprox{data}
     }
@@ -1091,6 +1123,27 @@ fn test_svd_wiki_full_epsil () {
     }
 } // end of test_svd_wiki
 
+
+#[test]
+fn check_transpose_owned() {
+    //
+    log_init_test();
+    //
+    let mat = MatRepr::<f32>::from_csrmat(get_wiki_csr_mat_f32());
+    let transposed = mat.transpose_owned();
+    let transposed_csr = transposed.get_csr().unwrap();
+    // check transposed is a csr
+    assert!(transposed_csr.is_csr());
+    // check csr_mat is conserved
+    let check = mat.get_csr().unwrap().get(0,4).unwrap();
+    log::debug!("old value should be 2  : {}", check);
+    assert!((check- 2.).abs() < 1.0E-10); 
+     // check transposed is correct
+     let check = transposed_csr.get(4,0).unwrap(); 
+     log::debug!("transposed value should be 2  : {}", check);
+     assert!((check - 2.).abs() < 1.0E-10); 
+      
+} // end of check_transpose_owned
 
 
 }  // end of module test

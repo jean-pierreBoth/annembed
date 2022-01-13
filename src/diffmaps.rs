@@ -103,7 +103,7 @@ pub(crate) fn get_dmap_embedding<F>(initial_space : &NodeParams, asked_dim: usiz
         panic!("svd spectrum not decreasing");
     }
     // we examine spectrum
-    // our laplacian is without the term I-G , we use directly G symetrized so we consider upper eigenvalues
+    // our laplacian is without the term I of I-G , we use directly G symetrized so we consider upper eigenvalues
     log::info!(" first 3 eigen values {:.2e} {:.2e} {:2e}",lambdas[0], lambdas[1] , lambdas[2]);
     // get info on spectral gap
     log::info!(" last eigenvalue computed rank {} value {:.2e}", lambdas.len()-1, lambdas[lambdas.len()-1]);
