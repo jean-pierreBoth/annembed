@@ -292,8 +292,7 @@ impl RangeRank {
 }  // end of RangeRank
 
 
-/// The enum representing the 2  algorithms for range approximations
-/// It must be noted that for Compressed matrix only the adaptative mode corresponding to the EPSIL target is implemented.
+/// The enum representing the 2 modes (and algorithms) of approximations
 #[derive(Clone, Copy)]
 pub enum RangeApproxMode {
     EPSIL(RangePrecision),
@@ -472,7 +471,7 @@ pub fn subspace_iteration_csr<F> (csrmat: &CsMat<F>, rank : usize, nbiter : usiz
 pub fn adaptative_range_finder_matrep<F>(mat : &MatRepr<F> , epsil:f64, r : usize, max_rank : usize) -> Array2<F> 
         where F : Float + Scalar  + Lapack + ndarray::ScalarOperand + sprs::MulAcc + for<'r> std::ops::MulAssign<&'r F> + Default {
     //
-    log::debug!(" in adaptative_range_finder_matrep");
+    log::debug!("\n  in adaptative_range_finder_matrep, epsil {:.3e}, r : {} , max_rank {}", epsil, r, max_rank);
     //
     let mut rng = RandomGaussianGenerator::new();
     let data_shape = mat.shape();
@@ -494,17 +493,17 @@ pub fn adaptative_range_finder_matrep<F>(mat : &MatRepr<F> , epsil:f64, r : usiz
     // This vectors stores L2-norm of each Y  vector of which there are r
     let mut norms_y : Array1<F> = (0..r).into_iter().map( |i| norm_l2(&y_vec[i].view())).collect();
     assert_eq!(norms_y.len() , r); 
-    println!("{:?}",norms_y);
+    println!(" norms_y : {:.3e}",norms_y);
     //
     let mut norm_sup_y;
     let norm_iter_res = norms_y.iter().max_by(|x,y| x.partial_cmp(y).unwrap());
     if norm_iter_res.is_none() {
         log::error!("svdapprox::adaptative_range_finder_matrep cannot sort norms");
-        println!("{:?}",norms_y);
+        println!("{:.3e}",norms_y);
         std::panic!("adaptative_range_finder_matrep sorting norms failed, most probably some Nan");
     }
     norm_sup_y = norm_iter_res.unwrap();
-    log::debug!(" norm_sup {} ",norm_sup_y);
+    log::debug!(" norm_sup {:.3e} ",norm_sup_y);
     let mut j = 0;
     let mut nb_iter = 0;
     let max_iter = data_shape[0].min(data_shape[1]);
@@ -542,12 +541,12 @@ pub fn adaptative_range_finder_matrep<F>(mat : &MatRepr<F> , epsil:f64, r : usiz
         // we update norm_sup_y
         norms_y[j] = norm_l2(&y_vec[j].view());
         norm_sup_y = norms_y.iter().max_by(|x,y| x.partial_cmp(y).unwrap()).unwrap();
-        log::debug!(" j {} norm_sup {:.3e} ", j, norm_sup_y);
+        log::debug!("  nb_iter {} j {} norm_sup {:.3e} ", nb_iter, j, norm_sup_y);
         // we update j and nb_iter
         j = (j+1)%r;
         nb_iter += 1;
     }
-    log::debug!("adaptative_range_finder_matrep exit iteration {}, norm sup {} ", nb_iter, norm_sup_y);
+    log::debug!("adaptative_range_finder_matrep exit iteration {}, norm sup {:.3e} ", nb_iter, norm_sup_y);
     //
     // to avoid the cost to zeros
     log::debug!("range finder returning a a matrix ({}, {})", m, q_mat.len());
