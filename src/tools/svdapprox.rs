@@ -39,7 +39,8 @@ use rand_xoshiro::rand_core::SeedableRng;
 
 use ndarray::{Dim, Array, Array1, Array2, ArrayBase, Dimension, ArrayView, ArrayViewMut1, ArrayView2 , Ix1, Ix2};
 
-use ndarray_linalg::{Scalar, Lapack};
+// pub to avoid to re-import everywhere explicitly
+pub use ndarray_linalg::{Scalar, Lapack};
 
 use lax::{layout::MatrixLayout, UVTFlag, QR_};
 
@@ -48,7 +49,7 @@ use std::marker::PhantomData;
 use num_traits::float::*;    // tp get FRAC_1_PI from FloatConst
 use num_traits::cast::FromPrimitive;
 
-use sprs::prod;
+use sprs::{prod, CsMat, TriMat};
 
 struct RandomGaussianMatrix<F:Float> {
     mat : Array2::<F>
@@ -104,11 +105,17 @@ impl <F:Float+FromPrimitive> RandomGaussianGenerator<F> {
 //==================================================================================================
 
 
-use sprs::{CsMat};
+
+/// an enum coding for the type of representation
+pub enum MatType {
+    FULL,
+    CSR
+}
+
 
 
 // We can do range approximation on both dense Array2 and CsMat representation of matrices.
-/// enum coding for the type of representation used for Matrix.
+/// enum storing the matrix for our 2 types of matrix representation
 #[derive(Clone)]
 pub enum MatMode<F> {
     FULL(Array2<F>),
@@ -129,6 +136,10 @@ impl <F> MatRepr<F> where
     #[inline]
     pub fn from_array2(mat: Array2<F>) -> MatRepr<F> {
         MatRepr { data : MatMode::FULL(mat) }
+    }
+
+    pub fn from_trimat(trimat : TriMat<F>) -> MatRepr<F> {
+        MatRepr { data : MatMode::CSR(trimat.to_csr()) }
     }
 
     /// initialize a MatRepr from a CsMat
@@ -221,7 +232,7 @@ impl <F> MatRepr<F> where
 // I need a function to compute (once and only once in svd) a product B  = tQ*CSR for Q = (m,r) with r small (<=5) and CSR(m,n)
 // The matrix Q comes from range_approx so its rank (columns number) will really be small as recommended in csc_mulacc_dense_colmaj doc
 // B = (r,n) with n original data dimension (we can expect n < 1000  and r <= 10
-// We b = tQ*CSR with bt = transpose((transpose(CSR)*Q))
+// We compute b = tQ*CSR with bt = transpose((transpose(CSR)*Q))
 // We need to clone the result to enforce standard layout.
 
 /// Returns t(qmat)*csrmat int a full matrix. Matrices must have appropriate dimensions for multiplication to avoid panic!
@@ -253,9 +264,10 @@ pub fn small_transpose_dense_mult_csr<F>(qmat : &Array2<F>, csrmat : &CsMat<F>) 
 /// We can ask for a range approximation of matrix on two modes:
 /// - epsil     : asking for precision l2 norm residual under epsil
 /// - step      : at each iteration, step new base vectors of the range matrix are searched.
-///               around 10 seems adequate. To adapt to rank approximation searched
+///               between 5 and 10 seems adequate. To adapt to rank approximation searched.
+///               Must be greater or equal to 2.
 /// - max_rank  : maximum rank of approximation
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct RangePrecision {
     /// precision asked for. Froebonius norm of the residual
     epsil :f64,
@@ -267,7 +279,15 @@ pub struct RangePrecision {
 
 impl RangePrecision {
     /// epsil : precision required, step : rank increment, max_rank : max rank asked
-    pub fn new(epsil : f64, step : usize, max_rank : usize) -> Self {
+    pub fn new(epsil : f64, step_arg : usize, max_rank : usize) -> Self {
+        let step;
+        if step_arg <= 1 {
+            log::info!("resetting step to 2, 1 is too small");
+            step = 2;
+        }
+        else {
+            step = step_arg;
+        }
         RangePrecision{epsil, step, max_rank}
     }
 
@@ -276,7 +296,7 @@ impl RangePrecision {
 /// We can ask for a range approximation of matrix with a fixed target range
 /// - asking for a range
 ///    It is then necessary to fix the number of QR iterations to be done 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct RangeRank {
     /// asked rank
     rank : usize,
@@ -293,15 +313,15 @@ impl RangeRank {
 
 
 /// The enum representing the 2 modes (and algorithms) of approximations
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub enum RangeApproxMode {
     EPSIL(RangePrecision),
     RANK(RangeRank),
-} /// end of RangeApproxMode
+} // end of RangeApproxMode
 
 
 // Recall that ndArray is C-order row order.
-/// compute an approximate truncated svd
+/// compute an approximate truncated svd.  
 /// The data matrix is supposed given as a (m,n) matrix. m is the number of data and n their dimension.
 pub struct RangeApprox<'a, F: Scalar> {
     /// matrix we want to approximate range of. We s
@@ -314,7 +334,7 @@ pub struct RangeApprox<'a, F: Scalar> {
 
 /// Lapack is necessary here beccause of QR_ traits coming from Lapack
 impl <'a, F > RangeApprox<'a, F> 
-     where  F : Float + Scalar  + Lapack + ndarray::ScalarOperand  + sprs::MulAcc + for<'r> std::ops::MulAssign<&'r F> + Default {
+     where  F : Float + Scalar + Lapack + ndarray::ScalarOperand  + sprs::MulAcc + for<'r> std::ops::MulAssign<&'r F> + num_traits::MulAdd + Default {
 
     /// describes the problem, matrix format and range approximation mode asked for.
     pub fn new(mat : &'a MatRepr<F>, mode : RangeApproxMode) -> Self {
@@ -357,6 +377,8 @@ impl <'a, F > RangeApprox<'a, F>
 pub fn subspace_iteration_full<F> (mat : &Array2<F>, rank : usize, nbiter : usize) -> Array2<F>
             where F : Float + Scalar  + Lapack + ndarray::ScalarOperand {
     //
+    log::debug!("in svdapprox::subspace_iteration_full rank: {:?}, nbiter : {:?}", rank, nbiter);
+    //
     let mut rng = RandomGaussianGenerator::<F>::new();
     let data_shape = mat.shape();
     let m = data_shape[0];
@@ -384,7 +406,7 @@ pub fn subspace_iteration_full<F> (mat : &Array2<F>, rank : usize, nbiter : usiz
     }
     // 
     y_m_l
-}  // end of subspace_iteration
+}  // end of subspace_iteration_full
 
 
 
@@ -397,6 +419,8 @@ pub fn subspace_iteration_full<F> (mat : &Array2<F>, rank : usize, nbiter : usiz
 /// 
 pub fn subspace_iteration_csr<F> (csrmat: &CsMat<F>, rank : usize, nbiter : usize) -> Array2<F>
             where F : Float + Scalar  + Lapack + ndarray::ScalarOperand + sprs::MulAcc {
+    //
+    log::debug!("in svdapprox::subspace_iteration_csr rank: {:?}, nbiter : {:?}", rank, nbiter);
     //
     let mut rng = RandomGaussianGenerator::<F>::new();
     let data_shape = csrmat.shape();
@@ -453,7 +477,8 @@ pub fn subspace_iteration_csr<F> (csrmat: &CsMat<F>, rank : usize, nbiter : usiz
 /// $$ || mat - Q*Q^{t}*mat || < ε$$  with probability at least $$ 1. - min(m,n) 10^{-r} $$
 ///  
 ///  - epsil is the l2 norm of the last block of r columns vectors added in Q.
-///  - r is the rank increment in iterations
+///  - r is the number of random vectors sampled to initialize the orthogonalization process.
+///    A rule of thumb is to use r between 5 ad 10. The higher the more cpu is required.
 ///  - max_rank is the maximum rank asked for.
 /// 
 /// 
@@ -471,7 +496,7 @@ pub fn subspace_iteration_csr<F> (csrmat: &CsMat<F>, rank : usize, nbiter : usiz
 pub fn adaptative_range_finder_matrep<F>(mat : &MatRepr<F> , epsil:f64, r : usize, max_rank : usize) -> Array2<F> 
         where F : Float + Scalar  + Lapack + ndarray::ScalarOperand + sprs::MulAcc + for<'r> std::ops::MulAssign<&'r F> + Default {
     //
-    log::debug!("\n  in adaptative_range_finder_matrep, epsil {:.3e}, r : {} , max_rank {}", epsil, r, max_rank);
+    log::debug!("\n  in adaptative_range_finder_matrep, mat shape {:?}, epsil {:.3e}, r : {} , max_rank {}", mat.shape(), epsil, r, max_rank);
     //
     let mut rng = RandomGaussianGenerator::new();
     let data_shape = mat.shape();
@@ -507,8 +532,9 @@ pub fn adaptative_range_finder_matrep<F>(mat : &MatRepr<F> , epsil:f64, r : usiz
     let mut j = 0;
     let mut nb_iter = 0;
     let max_iter = data_shape[0].min(data_shape[1]);
+    let stop_val = *norm_sup_y * F::from_f64(stop_val).unwrap();
     //
-    while norm_sup_y > &F::from_f64(stop_val).unwrap() && nb_iter <= max_iter && q_mat.len() < max_rank {
+    while norm_sup_y > &stop_val && nb_iter <= max_iter && q_mat.len() < max_rank {
         // numerical stabilization
         if q_mat.len() > 0 {
             orthogonalize_with_q(&q_mat[0..q_mat.len()], &mut y_vec[j].view_mut());
@@ -541,7 +567,7 @@ pub fn adaptative_range_finder_matrep<F>(mat : &MatRepr<F> , epsil:f64, r : usiz
         // we update norm_sup_y
         norms_y[j] = norm_l2(&y_vec[j].view());
         norm_sup_y = norms_y.iter().max_by(|x,y| x.partial_cmp(y).unwrap()).unwrap();
-        log::debug!("  nb_iter {} j {} norm_sup {:.3e} ", nb_iter, j, norm_sup_y);
+        log::debug!("  nb_iter {} j {} norm_sup {:.3e}", nb_iter, j, norm_sup_y);
         // we update j and nb_iter
         j = (j+1)%r;
         nb_iter += 1;
@@ -637,7 +663,7 @@ pub struct SvdApprox<'a, F: Scalar> {
 
 
 impl <'a, F> SvdApprox<'a, F>  
-     where  F : Float + Lapack + Scalar  + ndarray::ScalarOperand + sprs::MulAcc + for<'r> std::ops::MulAssign<&'r F> + Default {
+     where  F : Float + Lapack + Scalar  + ndarray::ScalarOperand + sprs::MulAcc + for<'r> std::ops::MulAssign<&'r F> + num_traits::MulAdd + Default {
     
     pub fn new(data : &'a MatRepr<F>) -> Self {
         SvdApprox{data}
@@ -764,6 +790,7 @@ fn do_qr<F> (layout : MatrixLayout, mat : &mut Array2<F>)
 
 //=========================================================================
 
+#[cfg(test)]
 mod tests {
 
 //    cargo test svdapprox  -- --nocapture
@@ -772,7 +799,6 @@ mod tests {
 #[allow(unused)]
 use super::*;
 
-#[allow(unused)]
 use sprs::{CsMat, TriMatBase};
 
 #[allow(dead_code)]
@@ -1002,6 +1028,15 @@ fn get_wiki_csr_mat_f64() -> CsMat<f64> {
 }  // end of get_wiki_csr_mat_f64
 
 
+fn get_wiki_array2_f64() -> Array2<f64> {
+    let mat =  ndarray::arr2( & 
+              [[ 1. , 0. , 0. , 0., 2. ],  // row 0
+              [ 0. , 0. , 3. , 0. , 0. ],  // row 1
+              [ 0. , 0. , 0. , 0. , 0. ],  // row 2
+              [ 0. , 2. , 0. , 0. , 0. ]]  // row 3
+        );
+    mat
+} // end of get_wiki_array2_f64
 
 #[test]
 fn test_svd_wiki_csr_epsil () {
@@ -1121,6 +1156,26 @@ fn test_svd_wiki_full_epsil () {
         std::panic!("test_svd_wiki_epsil");
     }
 } // end of test_svd_wiki
+
+
+
+#[test]
+fn check_small_transpose_dense_mult_csr() {
+   //
+    log_init_test();
+    // get wiki (4,5) matrix
+    let csr_mat = get_wiki_csr_mat_f64();
+    let gmat  = RandomGaussianGenerator::<f64>::new().generate_matrix(Dim([4,4]));
+    // compute transpose(gmat.mat) *csr_mat
+    let mult_res = small_transpose_dense_mult_csr(&gmat.mat,& csr_mat);
+    // brute force
+    let brute_res = &gmat.mat.t().dot(&get_wiki_array2_f64());
+    let delta = norm_l2(&(mult_res - brute_res).view());
+    //
+    log::debug!("check_small_transpose_dense_mult_csr, delta : {}", delta);
+    assert!(delta < 1.0E-10);
+} // end of check_small_transpose_dense_mult_csr
+
 
 
 #[test]

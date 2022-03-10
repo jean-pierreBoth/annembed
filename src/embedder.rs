@@ -778,15 +778,22 @@ pub(crate) fn to_proba_edges<F>(kgraph : & KGraph<F>, scale_rho : f32, beta : f3
     let neighbour_hood = kgraph.get_neighbours();
     let mut max_nbng = 0;
     for i in 0..neighbour_hood.len() {
-        let node_param = get_scale_from_proba_normalisation(kgraph, scale_rho, beta, &neighbour_hood[i]);
-        scale_q.insert(node_param.scale);
-        perplexity_q.insert(node_param.get_perplexity());
-        // coose random edge to audit
-        let j = thread_rng().gen_range(0..node_param.edges.len());
-        weight_q.insert(node_param.edges[j].weight);
-        max_nbng = node_param.edges.len().max(max_nbng);
-        assert_eq!(node_param.edges.len(), neighbour_hood[i].len());
-        node_params.push(node_param);
+        if neighbour_hood[i].len() > 0 {
+            let node_param = get_scale_from_proba_normalisation(kgraph, scale_rho, beta, &neighbour_hood[i]);
+            scale_q.insert(node_param.scale);
+            perplexity_q.insert(node_param.get_perplexity());
+            // coose random edge to audit
+            let j = thread_rng().gen_range(0..node_param.edges.len());
+            weight_q.insert(node_param.edges[j].weight);
+            max_nbng = node_param.edges.len().max(max_nbng);
+            assert_eq!(node_param.edges.len(), neighbour_hood[i].len());
+            node_params.push(node_param);
+        }
+        else {
+            println!("to_proba_edges , node rank {}, has no neighbour, use hnsw.set_keeping_pruned(true)", i);
+            log::error!("to_proba_edges , node rank {}, has no neighbour, use hnsw.set_keeping_pruned(true)", i);
+            std::process::exit(1);
+        }
     }
     // dump info on quantiles
     println!("\n constructed initial space");
@@ -827,6 +834,7 @@ fn get_scale_from_proba_normalisation<F> (kgraph : & KGraph<F>, scale_rho : f32,
     //
 //        log::trace!("in get_scale_from_proba_normalisation");
     let nbgh = neighbours.len();
+    assert!(nbgh > 0);
     // determnine mean distance to nearest neighbour at local scale, reason why we need kgraph as argument.
     let rho_x = neighbours[0].weight.to_f32().unwrap();
     let mut rho_y_s = Vec::<f32>::with_capacity(neighbours.len() + 1);
