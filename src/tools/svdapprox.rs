@@ -49,7 +49,7 @@ use std::marker::PhantomData;
 use num_traits::float::*;    // tp get FRAC_1_PI from FloatConst
 use num_traits::cast::FromPrimitive;
 
-use sprs::{prod, CsMat, TriMat};
+use sprs::{prod, CsMat, TriMat, CsMatView};
 
 struct RandomGaussianMatrix<F:Float> {
     mat : Array2::<F>
@@ -225,7 +225,16 @@ impl <F> MatRepr<F> where
                 MatMode::CSR(csmat) =>  { MatRepr::<F>::from_csrmat(csmat.transpose_view().to_csr())},
         };
         transposed
-    }
+    }  // end of transpose_owned
+
+    /// return L2 norm
+    pub fn norm_l2(&self) -> F {
+        match &self.data {
+            MatMode::FULL(mat) => { return norm_l2(&mat.view());},
+            MatMode::CSR(csmat) => { return norm_l2_csmat(&csmat.view())},
+        }
+    } // end of norm_l2
+
 } // end of impl block for MatRepr
 
 
@@ -347,21 +356,29 @@ impl <'a, F > RangeApprox<'a, F>
     /// For CsMat matrice only the RangeApproxMode::EPSIL is possible (as we need QR decomposition for Sparse Mat from sprs...),
     /// in the other case the function will return None.. 
     pub fn get_approximator(&self) -> Option<Array2<F>> {
-        match self.mode {
+        let approximator = match self.mode {
             RangeApproxMode::EPSIL(precision) => {
-                return Some(adaptative_range_finder_matrep(self.mat, precision.epsil, precision.step, precision.max_rank));
+                adaptative_range_finder_matrep(self.mat, precision.epsil, precision.step, precision.max_rank)
             }, 
             RangeApproxMode::RANK(rank) => {
                 match &self.mat.data {
-                    MatMode::FULL(array) => { return Some(subspace_iteration_full(&array,  rank.rank, rank.nbiter));},
+                    MatMode::FULL(array) => { subspace_iteration_full(&array,  rank.rank, rank.nbiter)},
 
                     MatMode::CSR(csr_mat)  => { 
-                                                return Some(subspace_iteration_csr(&csr_mat, rank.rank, rank.nbiter));
+                                                subspace_iteration_csr(&csr_mat, rank.rank, rank.nbiter)
                                                 }
-                }; // end of match on representation
+                } // end of match on representation
             },
         };
-    }  // end of approximate
+        //
+        if log::log_enabled!(log::Level::Debug) {
+            let delta = check_range_approx_repr(self.mat, &approximator);
+            let initial_l2 = self.mat.norm_l2();
+            log::debug!("get_approximator , l2 norm = {:.3e}, delta = {:.3e} ", initial_l2, delta);
+        }
+        //
+        Some(approximator)
+    }  // end of get_approximator
 
 }  // end of impl RangeApprox
 
@@ -373,7 +390,10 @@ impl <'a, F > RangeApprox<'a, F>
 /// The matrix Q is such that || A - Q * t(Q) * A || should be small as l increases. (Froebonius norm)
 /// 
 /// It implements the QR iterations as descibed in Algorithm 4.4 from Halko-Tropp
+/// - nbiter = 1 or 2 should be sufficient
 /// 
+// TODO Oversampling between 5 and 10 ?
+// Nota : if nbiter == 0 We get Tropp Algo 4.1 or Algo 2.1 of Wei-Zhang-Chen
 pub fn subspace_iteration_full<F> (mat : &Array2<F>, rank : usize, nbiter : usize) -> Array2<F>
             where F : Float + Scalar  + Lapack + ndarray::ScalarOperand {
     //
@@ -518,17 +538,16 @@ pub fn adaptative_range_finder_matrep<F>(mat : &MatRepr<F> , epsil:f64, r : usiz
     // This vectors stores L2-norm of each Y  vector of which there are r
     let mut norms_y : Array1<F> = (0..r).into_iter().map( |i| norm_l2(&y_vec[i].view())).collect();
     assert_eq!(norms_y.len() , r); 
-    println!(" norms_y : {:.3e}",norms_y);
+    log::debug!(" norms_y : {:.3e}",norms_y);
     //
     let mut norm_sup_y;
     let norm_iter_res = norms_y.iter().max_by(|x,y| x.partial_cmp(y).unwrap());
     if norm_iter_res.is_none() {
         log::error!("svdapprox::adaptative_range_finder_matrep cannot sort norms");
-        println!("{:.3e}",norms_y);
+        log::error!(" norms_y : {:.3e}",norms_y);
         std::panic!("adaptative_range_finder_matrep sorting norms failed, most probably some Nan");
     }
     norm_sup_y = norm_iter_res.unwrap();
-    log::debug!(" norm_sup {:.3e} ",norm_sup_y);
     let mut j = 0;
     let mut nb_iter = 0;
     let max_iter = data_shape[0].min(data_shape[1]);
@@ -555,6 +574,7 @@ pub fn adaptative_range_finder_matrep<F>(mat : &MatRepr<F> , epsil:f64, r : usiz
         // we orthogonalize new y with all q's i.e q_mat
         orthogonalize_with_q(&q_mat, &mut y_j_p1.view_mut());
         // the new y will takes the place of old y at rank j%r so we always have the last r y that have been sampled
+        assert_eq!(y_vec[j].len(), y_j_p1.len());
         y_vec[j].assign(&y_j_p1);
         // we orthogonalize old y's with new q_j.  CAVEAT Can be made // if necessary 
         for k in 0..r {
@@ -567,7 +587,11 @@ pub fn adaptative_range_finder_matrep<F>(mat : &MatRepr<F> , epsil:f64, r : usiz
         // we update norm_sup_y
         norms_y[j] = norm_l2(&y_vec[j].view());
         norm_sup_y = norms_y.iter().max_by(|x,y| x.partial_cmp(y).unwrap()).unwrap();
-        log::debug!("  nb_iter {} j {} norm_sup {:.3e}", nb_iter, j, norm_sup_y);
+        if log::log_enabled!(log::Level::Debug) {
+            if nb_iter % 10 == 0 { 
+                log::debug!("  nb_iter {} j {} norm_sup {:.3e}", nb_iter, j, norm_sup_y);
+            }
+        }
         // we update j and nb_iter
         j = (j+1)%r;
         nb_iter += 1;
@@ -746,7 +770,15 @@ impl <'a, F> SvdApprox<'a, F>
 pub fn norm_l2<D:Dimension, F:Scalar>(v : &ArrayView<F, D>) -> F {
     let s : F = v.into_iter().map(|x| (*x)*(*x)).sum::<F>();
     s.sqrt()
-}
+} // end of norm_l2
+
+
+/// compute L2 norm of a CsMat
+pub fn norm_l2_csmat<F:Scalar>(m : &CsMatView<F>) -> F {
+    let s : F = m.data().into_iter().map(|x| (*x)*(*x)).sum::<F>();
+    s.sqrt()
+} // end of norm_l2_csmat
+
 
 
 /// return  y - projection of y on space spanned by q's vectors.
