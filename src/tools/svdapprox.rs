@@ -371,7 +371,7 @@ impl <'a, F > RangeApprox<'a, F>
             },
         };
         //
-        if log::log_enabled!(log::Level::Debug) {
+        if log::log_enabled!(log::Level::Trace) {
             let delta = check_range_approx_repr(self.mat, &approximator);
             let initial_l2 = self.mat.norm_l2();
             log::debug!("get_approximator , l2 norm = {:.3e}, delta = {:.3e} ", initial_l2, delta);
@@ -514,7 +514,8 @@ pub fn subspace_iteration_csr<F> (csrmat: &CsMat<F>, rank : usize, nbiter : usiz
 /// Algorithm : Adaptive Randomized Range Finder algo 4.2. from Halko-Martinsson-Tropp 2011
 /// 
 pub fn adaptative_range_finder_matrep<F>(mat : &MatRepr<F> , epsil:f64, r : usize, max_rank : usize) -> Array2<F> 
-        where F : Float + Scalar  + Lapack + ndarray::ScalarOperand + sprs::MulAcc + for<'r> std::ops::MulAssign<&'r F> + Default {
+        where F : Float + Scalar  + Lapack + ndarray::ScalarOperand + sprs::MulAcc + 
+                    num_traits::MulAdd +for<'r> std::ops::MulAssign<&'r F> + Default {
     //
     log::debug!("\n  in adaptative_range_finder_matrep, mat shape {:?}, epsil {:.3e}, r : {} , max_rank {}", mat.shape(), epsil, r, max_rank);
     //
@@ -560,11 +561,10 @@ pub fn adaptative_range_finder_matrep<F>(mat : &MatRepr<F> , epsil:f64, r : usiz
         }
         // get norm of current y vector
         let n_j =  norm_l2(&y_vec[j].view());
-        if n_j < Float::epsilon() {
-            log::debug!("exiting at nb_iter {} with n_j {:.3e} ", nb_iter, n_j);
+        if n_j < ndarray_linalg::Scalar::sqrt(F::epsilon()) {
+            log::info!("adaptative_range_finder_matrep returning  at nb_iter {} with n_j {:.3e} and rank {:?} ", nb_iter, n_j, q_mat.len());
             break;
         }
-//        log::trace!("j {} n_j {:.3e} ", j, n_j);
         let q_j = &y_vec[j] / n_j;
         // we add q_j to q_mat so we consumed on y vector
         q_mat.push(q_j.clone());
@@ -588,8 +588,9 @@ pub fn adaptative_range_finder_matrep<F>(mat : &MatRepr<F> , epsil:f64, r : usiz
         norms_y[j] = norm_l2(&y_vec[j].view());
         norm_sup_y = norms_y.iter().max_by(|x,y| x.partial_cmp(y).unwrap()).unwrap();
         if log::log_enabled!(log::Level::Debug) {
-            if nb_iter % 10 == 0 { 
-                log::debug!("  nb_iter {} j {} norm_sup {:.3e}", nb_iter, j, norm_sup_y);
+            if nb_iter % (max_rank /10) == 0 { 
+                let mean_norm_y = norms_y.sum() / F::from_usize(r).unwrap();        
+                log::debug!("  nb_iter {} j {} norm_sup {:.3e} norm_mean {:.3e} ", nb_iter, j, norm_sup_y, mean_norm_y);
             }
         }
         // we update j and nb_iter
@@ -614,8 +615,10 @@ pub fn adaptative_range_finder_matrep<F>(mat : &MatRepr<F> , epsil:f64, r : usiz
 
 /// just to check a range approximation
 pub fn check_range_approx<F:Float+ Scalar> (a_mat : &ArrayView2<F>, q_mat: &ArrayView2<F>) -> F {
+    log::debug!("in svdapprox check_range_approx");
     let residue = a_mat - & q_mat.dot(&q_mat.t()).dot(a_mat);
     let norm_residue = norm_l2(&residue.view());
+    log::debug!("exiting svdapprox check_range_approx");
     norm_residue
 }
 
@@ -849,6 +852,7 @@ fn log_init_test() {
         assert_eq!(array[[0,1]], 3);
     } // end of test_arrayview_mut
 
+
     #[test]
     fn test_range_approx_randomized_1() {
         log_init_test();
@@ -863,6 +867,7 @@ fn log_init_test() {
         let residue = check_range_approx_repr(&matrepr, &q);
         log::info!(" subspace_iteration nom_l2 {:.2e} residue {:.2e} \n", norm_data, residue);
     } // end of test_range_approx_1
+
 
     #[test]
     fn test_range_approx_randomized_2() {
@@ -919,6 +924,62 @@ fn log_init_test() {
     } // end of test_range_approx_subspace_iteration_2
 
 
+    #[test]
+    fn test_range_approx_epsil() {
+        log_init_test();
+        //
+        let m = 3003;
+        let n = 3003;
+        let rank = 200;
+        let asked_rank = 500;  // we check we exit at rank = 200
+        let u =  RandomGaussianGenerator::<f64>::new().generate_matrix(Dim([m,m])).mat;
+        let v =  RandomGaussianGenerator::<f64>::new().generate_matrix(Dim([n,n])).mat;
+        // a rank deficient matrix (m,n)
+        let mut p = Array2::<f64>::zeros((m,n));
+        for i in 0..rank.min(m).min(n) {
+            p[[i,i]] = 1.;
+        }
+        let mat = u.dot(&p.dot(&v));
+        let norm_data = norm_l2(&mat.view());
+        //
+        let rp = RangePrecision { epsil : 0.05 , step : 8, max_rank : asked_rank};
+        let matrepr = MatRepr::from_array2(mat);
+        let range_approx = RangeApprox::new(&matrepr,  RangeApproxMode::EPSIL(rp));
+        let q = range_approx.get_approximator().unwrap();
+        log::info!(" q(m,n) {} {} ", q.shape()[0], q.shape()[1]);
+        let residue = check_range_approx_repr(&matrepr, &q);
+        log::info!(" subspace_iteration nom_l2 {:.2e} residue {:.2e} \n", norm_data, residue);
+    }  // end of test_range_approx_epsil
+
+
+    #[test]
+    fn test_range_approx_rank() {
+        log_init_test();
+        //
+        let m = 503;
+        let n = 503;
+        let rank = 20;
+
+        let u =  RandomGaussianGenerator::<f64>::new().generate_matrix(Dim([m,m])).mat;
+        let v =  RandomGaussianGenerator::<f64>::new().generate_matrix(Dim([n,n])).mat;
+        // a rank deficient matrix (m,n)
+        let mut p = Array2::<f64>::zeros((m,n));
+        for i in 0..rank.min(m).min(n) {
+            p[[i,i]] = 1.;
+        }
+        let mat = u.dot(&p.dot(&v));
+        let norm_data = norm_l2(&mat.view());
+        //
+        let rp = RangeRank { rank : 25 , nbiter : 4};
+        let matrepr = MatRepr::from_array2(mat);
+        let range_approx = RangeApprox::new(&matrepr,  RangeApproxMode::RANK(rp));
+        let q = range_approx.get_approximator().unwrap();
+        log::info!(" q(m,n) {} {} ", q.shape()[0], q.shape()[1]);
+        let residue = check_range_approx_repr(&matrepr, &q);
+        log::info!(" subspace_iteration nom_l2 {:.2e} residue {:.2e} \n", norm_data, residue);
+        assert!(residue < 1.0E-5);
+    }  // end of test_range_approx_epsil
+
 
 #[test]
     fn check_tcsrmult_a() {
@@ -967,7 +1028,7 @@ fn test_svd_wiki_rank_full() {
     //
     let matrepr = MatRepr::from_array2(mat);
     let mut svdapprox = SvdApprox::new(&matrepr);
-    let svdmode = RangeApproxMode::RANK(RangeRank{rank:4, nbiter:5});
+    let svdmode = RangeApproxMode::RANK(RangeRank{rank:2, nbiter:5});
     let svd_res = svdapprox.direct_svd(svdmode).unwrap();
     //
     let sigma = ndarray::arr1(&[ 3., (5f64).sqrt() , 2., 0.]);
