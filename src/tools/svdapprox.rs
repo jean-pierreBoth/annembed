@@ -522,12 +522,17 @@ pub fn adaptative_range_finder_matrep<F>(mat : &MatRepr<F> , epsil:f64, r : usiz
     let mut rng = RandomGaussianGenerator::new();
     let data_shape = mat.shape();
     let m = data_shape[0];  // nb rows
+
     // q_mat and y_mat store vector of interest as rows to take care of Rust order.
     let mut q_mat = Vec::<Array1<F>>::new();         // q_mat stores vectors of size m
+    // adjust stop_val so that stopping ccriteria provide a relative approximation
     let stop_val  = epsil/(10. * (2. * f64::FRAC_1_PI()).sqrt());
     // 
     // we store omaga_i vector as row vector as Rust has C order it is easier to extract rows !!
-    let omega = rng.generate_matrix(Dim([data_shape[1], r]));    //  omega is (n, r)
+    let mut omega = rng.generate_matrix(Dim([data_shape[1], r]));    //  omega is (n, r)
+    // normalize gaussian so that a each y_i is of norm 1.
+    let coeff_norm = F::from(1. / (data_shape[1] as f64).sqrt()).unwrap();
+    omega.mat *= coeff_norm;
     // We could store Y = data * omega as matrix (m,r), but as we use Y column,
     // we store Y (as Q) as a Vec of Array1<f64>
     let mut y_vec =  Vec::<Array1<F>>::with_capacity(r);
@@ -569,7 +574,8 @@ pub fn adaptative_range_finder_matrep<F>(mat : &MatRepr<F> , epsil:f64, r : usiz
         // we add q_j to q_mat so we consumed on y vector
         q_mat.push(q_j.clone());
         // we make another y, first we sample a new omega_j vector of size n
-        let omega_j_p1 = rng.generate_stdn_vect(Ix1(data_shape[1]));
+        let mut omega_j_p1 = rng.generate_stdn_vect(Ix1(data_shape[1]));
+        omega_j_p1 *= coeff_norm;
         let mut y_j_p1 = mat.mat_dot_vector(&omega_j_p1);
         // we orthogonalize new y with all q's i.e q_mat
         orthogonalize_with_q(&q_mat, &mut y_j_p1.view_mut());
@@ -588,7 +594,7 @@ pub fn adaptative_range_finder_matrep<F>(mat : &MatRepr<F> , epsil:f64, r : usiz
         norms_y[j] = norm_l2(&y_vec[j].view());
         norm_sup_y = norms_y.iter().max_by(|x,y| x.partial_cmp(y).unwrap()).unwrap();
         if log::log_enabled!(log::Level::Debug) {
-            if nb_iter % (max_rank /10) == 0 { 
+            if nb_iter % (max_rank /10).max(1) == 0 { 
                 let mean_norm_y = norms_y.sum() / F::from_usize(r).unwrap();        
                 log::debug!("  nb_iter {} j {} norm_sup {:.3e} norm_mean {:.3e} ", nb_iter, j, norm_sup_y, mean_norm_y);
             }
@@ -616,7 +622,7 @@ pub fn adaptative_range_finder_matrep<F>(mat : &MatRepr<F> , epsil:f64, r : usiz
 /// just to check a range approximation
 pub fn check_range_approx<F:Float+ Scalar> (a_mat : &ArrayView2<F>, q_mat: &ArrayView2<F>) -> F {
     log::debug!("in svdapprox check_range_approx");
-    let residue = a_mat - & q_mat.dot(&q_mat.t()).dot(a_mat);
+    let residue = a_mat - & q_mat.dot(&q_mat.t().dot(a_mat));
     let norm_residue = norm_l2(&residue.view());
     log::debug!("exiting svdapprox check_range_approx");
     norm_residue

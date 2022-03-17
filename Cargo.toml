@@ -48,9 +48,8 @@ num_cpus = {version = "1.8.0"}
 cpu-time = {version = "1.0"}
 
 ndarray = {version = "0.15", features=["rayon", "serde"]}
-ndarray-linalg = {version = "0.14", features = ["intel-mkl-static"]}
+ndarray-linalg = {version = "0.14"}
 lax = {version = "0.2"}
-lapacke = {version = "0.5"}
 sprs = {version = "0.11"}
 
 clap = {version = "2.29"}
@@ -76,10 +75,16 @@ byteorder = {version = "1.4"}
 
 # decreasing order of log for debug build : (max_level_)trace debug info warn error off
 # decreasing order of log for release build (release_max_level_)  .. idem
-log = { version = "0.4", features = ["max_level_debug", "release_max_level_info"] }
-#log = { version = "0.4"}
+#log = { version = "0.4", features = ["max_level_debug", "release_max_level_info"] }
+log = { version = "0.4"}
 env_logger = { version = "0.9"}
 
 
 katexit = {version = "0.1.0"}
 
+[features]
+
+default = ["openblas-static"]
+openblas-static = ["ndarray-linalg/openblas-static"]
+
+intel-mkl = ["ndarray-linalg/intel-mkl-static"]
