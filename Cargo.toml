@@ -78,7 +78,10 @@ byteorder = {version = "1.4"}
 #log = { version = "0.4", features = ["max_level_debug", "release_max_level_info"] }
 log = { version = "0.4"}
 env_logger = { version = "0.9"}
+openblas-src = { version = "0.10", default-features = false}
 
+# hack to avoid interaction bug with intel-mkl
+anyhow = { version = "<=1.0.48" }
 
 katexit = {version = "0.1.0"}
 
@@ -87,6 +90,6 @@ katexit = {version = "0.1.0"}
 
 default = []
 
-openblas-system = ["ndarray-linalg/openblas-system"]
+intel-mkl-static = ["ndarray/blas", "openblas-src/system","ndarray-linalg/intel-mkl-static"]
 
-openblas-static = ["ndarray-linalg/openblas-static"]
+openblas-static = ["ndarray/blas", "ndarray-linalg/openblas-static"]
