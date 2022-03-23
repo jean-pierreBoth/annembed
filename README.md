@@ -33,7 +33,7 @@ Currently only the approximated SVD and a first version of the embedding (with p
 These are preliminary results.
 Timings are given for a 8-core i7 @2.3 Ghz laptop.
 
-### Embedder
+### Embedder examples
 
 1. MNIST digits database  Cf [mnist-digits](http://yann.lecun.com/exdb/mnist/)
 
@@ -71,6 +71,15 @@ The randomized SVD is based on the paper of [Halko-Tropp](https://epubs.siam.org
 
 ### Mapper
 
+
+## Installation
+
+compile with : 
+
+* cargo build --release --features "openblas-static" to link with openblas
+  
+* cargo build --release --features "intel-mkl-static" to link with mkl intel's library 
+    (intel mkl will be automatically dowloaded, see README.md of crate ndarray-linalg)
 
 ## References
 
