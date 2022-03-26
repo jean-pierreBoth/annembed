@@ -230,7 +230,7 @@ impl <F> MatRepr<F> where
     /// return frobenius norm
     pub fn norm_frobenius(&self) -> F {
         match &self.data {
-            MatMode::FULL(mat) => { return norm_frobenius(&mat.view());},
+            MatMode::FULL(mat) => { return norm_frobenius_full(&mat.view());},
             MatMode::CSR(csmat) => { return norm_frobenius_csmat(&csmat.view())},
         }
     } // end of norm_frobenius
@@ -374,7 +374,7 @@ impl <'a, F > RangeApprox<'a, F>
         if log::log_enabled!(log::Level::Debug) {
             log::debug!("\n checking approximation");
             let delta = check_range_approx_repr(self.mat, &approximator);
-            let initial_l2 = estimate_first_singular_value_repr(self.mat);
+            let initial_l2 = norm_frobenius_repr(self.mat);
             log::debug!("get_approximator , l2 norm = {:.3e}, delta L2 norm = {:.3e} ", initial_l2, delta);
         }
         //
@@ -541,7 +541,7 @@ pub fn adaptative_range_finder_matrep<F>(mat : &MatRepr<F> , epsil:f64, r : usiz
         y_vec.push(y_tmp);
     }
     // This vectors stores L2-norm of each Y  vector of which there are r
-    let mut norms_y : Array1<F> = (0..r).into_iter().map( |i| norm_frobenius(&y_vec[i].view())).collect();
+    let mut norms_y : Array1<F> = (0..r).into_iter().map( |i| norm_frobenius_full(&y_vec[i].view())).collect();
     assert_eq!(norms_y.len() , r); 
     log::debug!(" norms_y : {:.3e}",norms_y);
     //
@@ -564,7 +564,7 @@ pub fn adaptative_range_finder_matrep<F>(mat : &MatRepr<F> , epsil:f64, r : usiz
             orthogonalize_with_q(&q_mat[0..q_mat.len()], &mut y_vec[j].view_mut());
         }
         // get norm of current y vector
-        let n_j =  norm_frobenius(&y_vec[j].view());
+        let n_j =  norm_frobenius_full(&y_vec[j].view());
         if n_j < ndarray_linalg::Scalar::sqrt(F::epsilon()) {
             log::info!("adaptative_range_finder_matrep returning  at nb_iter {} with n_j {:.3e} and rank {:?} ", nb_iter, n_j, q_mat.len());
             break;
@@ -590,7 +590,7 @@ pub fn adaptative_range_finder_matrep<F>(mat : &MatRepr<F> , epsil:f64, r : usiz
             }
         }
         // we update norm_sup_y
-        norms_y[j] = norm_frobenius(&y_vec[j].view());
+        norms_y[j] = norm_frobenius_full(&y_vec[j].view());
         norm_sup_y = norms_y.iter().max_by(|x,y| x.partial_cmp(y).unwrap()).unwrap();
         if log::log_enabled!(log::Level::Debug) {
             if nb_iter % (max_rank /10).max(1) == 0 { 
@@ -624,9 +624,10 @@ pub fn check_range_approx<F> (a_mat : &ArrayView2<F>, q_mat: &ArrayView2<F>) -> 
     //
     log::debug!("in svdapprox check_range_approx full matrix");
     let residue = a_mat - & q_mat.dot(&q_mat.t().dot(a_mat));
-    let norm_residue = estimate_first_singular_value_fullmat(&residue.view());
+    // estimate_first_singular_value_fullmat too expensive
+    let norm_residue = norm_frobenius_full(&residue.view());
     log::debug!("exiting svdapprox check_range_approx full");
-    norm_residue
+    norm_residue.to_f64().unwrap()
 }
 
 
@@ -643,8 +644,9 @@ pub fn check_range_approx_repr<F> (a_mat : &MatRepr<F>, q_mat: &Array2<F>) -> f6
         MatMode::CSR(csr_mat)   =>  {  
                         let b = transpose_dense_mult_csr(q_mat, csr_mat);
                         let residue = csr_mat.to_dense() - &(q_mat.dot(&b));
-                        let norm_residue = estimate_first_singular_value_fullmat(&residue.view());
-                        norm_residue
+                        // estimate_first_singular_value_fullmat too expensive
+                        let norm_residue = norm_frobenius_full(&residue.view());
+                        norm_residue.to_f64().unwrap()
                     },
    };
    norm_residue
@@ -654,9 +656,19 @@ pub fn check_range_approx_repr<F> (a_mat : &MatRepr<F>, q_mat: &Array2<F>) -> f6
 
 //================================ SVD part ===============================
 
-/// result of svd.
-/// For original data (m,n) with m the number of data vectors and n their dimension returns
-/// U and Vt with eigenvectors stored in column, so projected data are accessed by rows
+
+#[cfg_attr(doc, katexit::katexit)]
+///
+/// result of svd of the matrix A of dimensions (m,n)  m = number of rows, n number of columns.
+/// with m the number of data vectors and n their dimension.  
+/// 
+/// Returns s, U and Vt such that $$  A = U \cdot S \cdot Vt $$ with :
+/// 
+/// -s Array of size r containing singular values (corresponding to approximation up to rank r)
+/// -U  array (m,r). Each row is a projection of data on a space of rank r.
+/// -Vt array (r,n) with eigenvectors stored in column, so projected data are accessed by rows so that
+/// $$  A = U \cdot S \cdot Vt   $$
+/// 
 pub struct SvdResult<F> {
     /// eigenvalues
     pub   s : Option<Array1<F>>,
@@ -779,17 +791,38 @@ impl <'a, F> SvdApprox<'a, F>
 
 /// compute Frobenius norm of an array. It is also l2 norm for a vector. (but not for a Matrix)
 #[inline]
-pub fn norm_frobenius<D:Dimension, F:Scalar>(v : &ArrayView<F, D>) -> F {
+pub fn norm_frobenius_full<D:Dimension, F:Scalar>(v : &ArrayView<F, D>) -> F {
     let s : F = v.into_iter().map(|x| (*x)*(*x)).sum::<F>();
     s.sqrt()
 } // end of norm_frobenius
 
 
-/// compute L2 norm of a CsMat
+/// compute Frobenius norm of a CsMat
 pub fn norm_frobenius_csmat<F:Scalar>(m : &CsMatView<F>) -> F {
     let s : F = m.data().into_iter().map(|x| (*x)*(*x)).sum::<F>();
     s.sqrt()
 } // end of norm_frobenius_csmat
+
+
+
+
+/// estimate the first singular_value of mat given as a MatRepr
+pub fn norm_frobenius_repr<F>(mat : &MatRepr<F>) -> F 
+    where F : Float + FromPrimitive + ndarray_linalg::Scalar + ndarray::ScalarOperand + 
+                ndarray_linalg::Lapack + sprs::MulAcc {
+        //
+    let norm_l2 = match &mat.data {
+        MatMode::FULL(mat)      =>  {
+                                        let norm_l2 = norm_frobenius_full(&mat.view());
+                                        norm_l2
+                                    },
+        MatMode::CSR(csr_mat)   => {
+                                        let norm_l2 = norm_frobenius_csmat(&csr_mat.view());
+                                        norm_l2
+                                    },
+    };
+    norm_l2
+} // end of norm_frobenius_repr
 
 
 
@@ -1179,9 +1212,9 @@ fn test_singular_value_csmat() {
         let mut prodmat = Array2::<f64>::zeros((5,4));
         prod::csc_mulacc_dense_colmaj(csr_mat.transpose_view(), gmat.mat.view(), prodmat.view_mut());
         // compare prod with standard computation
-        let delta = norm_frobenius(&(mat.t().dot(&gmat.mat) - &prodmat).view());
+        let delta = norm_frobenius_full(&(mat.t().dot(&gmat.mat) - &prodmat).view());
         //
-        log::debug!("check on usage , prod norm : {}, delta : {}", norm_frobenius(&prodmat.view()), delta);
+        log::debug!("check on usage , prod norm : {}, delta : {}", norm_frobenius_full(&prodmat.view()), delta);
         assert!(delta < 1.0E-10);
     } // end of check_tcsrmultA
 
@@ -1472,7 +1505,7 @@ fn check_transpose_dense_mult_csr() {
     let mult_res = transpose_dense_mult_csr(&gmat.mat,& csr_mat);
     // brute force
     let brute_res = &gmat.mat.t().dot(&get_wiki_array2_f64());
-    let delta_frobenius = norm_frobenius(&(mult_res.clone() - brute_res).view());
+    let delta_frobenius = norm_frobenius_full(&(mult_res.clone() - brute_res).view());
     let delta_l2 = estimate_first_singular_value_fullmat(&(mult_res - brute_res).view());
     //
     log::debug!("check_transpose_dense_mult_csr, delta_frobenius : {:3.e}   delta_l2 : {:.3e}", delta_frobenius, delta_l2);
