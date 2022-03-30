@@ -28,6 +28,10 @@ The crate will provide:
 
 Currently only the approximated SVD and a first version of the embedding (with possible hierarchical inittialization) are implemented. But the mnist examples shows how to run the embedding, even in this (preliminary) state.
 
+## Building
+
+ The crate provides 2 features to choose between openblas-static and intel-mkl-static.  
+So **--features "openblas-static"** or  **--features "openblas-static"** or must be passed to cargo to compile. Alternatively define the default in Cargo.toml.
 ## Results
 
 These are preliminary results.
