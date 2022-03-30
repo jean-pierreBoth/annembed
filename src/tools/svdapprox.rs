@@ -162,22 +162,22 @@ impl <F> MatRepr<F> where
         match &self.data {
             MatMode::FULL(_) =>  { return false },
             MatMode::CSR(_) =>  { return true },
-        };
+        }
     } // end of is_csr
 
 
     /// returns a mutable reference to full matrice if data is given as full matrix, an Error otherwise
     pub fn get_full_mut(&mut self) -> Result<&mut Array2<F>, usize> {
         match &mut self.data {
-            MatMode::FULL(mat) => { return Ok(mat) }, 
-            _                  => {return Err(1) }, 
+            MatMode::FULL(mat) => { return Ok(mat); }, 
+            _                  => {return Err(1); }, 
         };
     } // end of get_full_mut
 
     pub fn get_csr(&self) -> Result<&CsMat<F>, usize> {
         match &self.data {
-            MatMode::CSR(mat) => { return Ok(mat) }, 
-            _                  => {return Err(1) }, 
+            MatMode::CSR(mat) => { return Ok(mat); }, 
+            _                  => {return Err(1); }, 
         };
     } // end of get_csr
 
@@ -1500,7 +1500,7 @@ fn check_transpose_dense_mult_csr() {
     log_init_test();
     // get wiki (4,5) matrix
     let csr_mat = get_wiki_csr_mat_f64();
-    let gmat  = RandomGaussianGenerator::<f64>::new().generate_matrix(Dim([4,4]));
+    let gmat  = RandomGaussianGenerator::<f64>::new().generate_matrix(Dim([4,7]));
     // compute transpose(gmat.mat) *csr_mat
     let mult_res = transpose_dense_mult_csr(&gmat.mat,& csr_mat);
     // brute force
@@ -1534,6 +1534,31 @@ fn check_transpose_owned() {
      assert!((check - 2.).abs() < 1.0E-10); 
       
 } // end of check_transpose_owned
+
+
+#[test]
+fn check_sprs_degrees() {
+    //
+    log_init_test();
+    //
+    let csr_mat = get_wiki_csr_mat_f64();
+    //
+    let degrees_out = csr_mat.degrees();
+    assert_eq!(degrees_out, [1, 1, 0, 1]);
+    log::debug!("csr dims {:?}",csr_mat.outer_dims());
+    let tview = csr_mat.transpose_view();
+    log::debug!("csr_mat : {:?}", csr_mat);
+    log::debug!("tview : {:?}", tview);
+    log::debug!("tvie outer dims {:?}", tview.outer_dims());
+    let degrees_in = csr_mat.transpose_view().degrees();
+    log::debug!("degrees in : {:?}", degrees_in);
+    log::debug!("degrees out : {:?}", degrees_out);
+    let transposed = tview.to_csr();
+    let degrees_in = transposed.degrees();
+    log::debug!("degrees out transposed: {:?}", degrees_in);
+    assert_eq!(degrees_in, [0, 1, 1, 0, 1]);
+}  // end of check_sprs_degrees
+
 
 
 }  // end of module test
