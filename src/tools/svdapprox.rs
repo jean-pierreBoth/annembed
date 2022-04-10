@@ -252,17 +252,16 @@ pub fn transpose_dense_mult_csr<F>(qmat : &Array2<F>, csrmat : &CsMat<F>) -> Arr
     let (qm_r, qm_c) = qmat.dim();             // we expect qm_c to be <= 10 as it corresponds to a rank approximated matrix
     let (csc_r , csc_c) = cscmat.shape();
     assert_eq!(csc_c, qm_r);
-            //  let mut bt = Array2::<F>::zeros((csc_r, qm_c));
-    let mut b =  Array2::<F>::zeros((qm_c, csc_r));
+    let mut bt = Array2::<F>::zeros((csc_r, qm_c));
+//    let mut b =  Array2::<F>::zeros((qm_c, csc_r));
     // we transpose to get the right dimension in csc_mulacc_dense_colmaj (see the documentation for t() in ndarray)
-    b.swap_axes(0,1);
-    prod::csc_mulacc_dense_colmaj(cscmat, qmat.view(), b.view_mut());
+//    b.swap_axes(0,1);
+    prod::csc_mulacc_dense_colmaj(cscmat, qmat.view(), bt.view_mut());
     log::trace!("transpose_dense_mult_csr returning  ({},{}) matrix", csc_r, qm_c);
             // We want a Owned matrix in the STANDARD LAYOUT!! 
             // Array::from_shape_vec(bt.t().raw_dim(), bt.t().iter().cloned().collect()).unwrap()
     // we retranspose ! 
-    b.swap_axes(0,1);
-    b
+    bt.reversed_axes().as_standard_layout().to_owned()
 } // end of small_dense_mult_csr
 
 
@@ -586,11 +585,13 @@ pub fn adaptative_range_finder_matrep<F>(mat : &MatRepr<F> , epsil:f64, r : usiz
             if k != j {
                 // avoid k = j as the j vector is the new one
                 let prodq_y = &q_j * q_j.view().dot(&y_vec[k]);
-                y_vec[k] -= &prodq_y;
+                y_vec[k] -= &prodq_y;       
             }
         }
         // we update norm_sup_y
-        norms_y[j] = norm_frobenius_full(&y_vec[j].view());
+        for i in 0..r {
+            norms_y[i] = norm_frobenius_full(&y_vec[i].view());
+        }
         norm_sup_y = norms_y.iter().max_by(|x,y| x.partial_cmp(y).unwrap()).unwrap();
         if log::log_enabled!(log::Level::Debug) {
             if nb_iter % (max_rank /10).max(1) == 0 { 
