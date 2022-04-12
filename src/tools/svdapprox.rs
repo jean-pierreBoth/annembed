@@ -370,7 +370,7 @@ impl <'a, F > RangeApprox<'a, F>
             },
         };
         //
-        if log::log_enabled!(log::Level::Debug) {
+        if log::log_enabled!(log::Level::Trace) {
             log::debug!("\n checking approximation");
             let delta = check_range_approx_repr(self.mat, &approximator);
             let initial_l2 = norm_frobenius_repr(self.mat);
@@ -412,7 +412,8 @@ pub fn subspace_iteration_full<F> (mat : &Array2<F>, rank : usize, nbiter : usiz
     let layout = MatrixLayout::C { row: m as i32, lda: l as i32 };
     // do first QR decomposition of y and overwrite it
     do_qr(layout, &mut y_m_l);
-    for _j in 1..nbiter {
+    for j in 1..nbiter {
+        log::debug!("svdapprox::subspace_iteration_full iter : {}", j);
         // data.t() * y
         ndarray::linalg::general_mat_mul(F::one() , &mat.t(), &y_m_l, F::zero(), &mut y_n_l);
         // qr returns a (n,n)
@@ -458,7 +459,8 @@ pub fn subspace_iteration_csr<F> (csrmat: &CsMat<F>, rank : usize, nbiter : usiz
     let layout = MatrixLayout::C { row: m as i32, lda: l as i32 };
     // do first QR decomposition of y and overwrite it
     do_qr(layout, &mut y_m_l);
-    for _j in 1..nbiter {
+    for j in 1..nbiter {
+        log::debug!("svdapprox::subspace_iteration_csr iter : {}", j);
         // data.t() * y
         y_n_l.fill(F::zero());
         prod::csc_mulacc_dense_rowmaj(csrmat.transpose_view(), y_m_l.view(), y_n_l.view_mut());
@@ -525,6 +527,10 @@ pub fn adaptative_range_finder_matrep<F>(mat : &MatRepr<F> , epsil:f64, r : usiz
     let mut q_mat = Vec::<Array1<F>>::new();         // q_mat stores vectors of size m
     // adjust stop_val so that stopping ccriteria provide a relative approximation
     let stop_val  = epsil/(10. * (2. / f64::FRAC_1_PI()).sqrt());
+    log::debug!(" adaptative_range_finder_matrep stop_val : {}", stop_val);
+    let proba_failure = 1.0E-3;
+    let block_iter = ((m as f64/ proba_failure).ln()/ 10.0f64.ln()) as usize;
+    log::info!(" adaptative_range_finder_matrep suggestion for block_iter {} ", block_iter);
     // 
     // we store omaga_i vector as row vector as Rust has C order it is easier to extract rows !!
     let mut omega = rng.generate_matrix(Dim([data_shape[1], r]));    //  omega is (n, r)
