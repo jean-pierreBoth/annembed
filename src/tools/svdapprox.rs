@@ -31,13 +31,12 @@
 
 
 
-
 use rand_distr::{Distribution, StandardNormal};
 use rand_xoshiro::Xoshiro256PlusPlus;
 use rand_xoshiro::rand_core::SeedableRng;
 
 
-use ndarray::{Dim, Array, Array1, Array2, ArrayBase, Dimension, ArrayView, ArrayViewMut1, ArrayView2 , Ix1, Ix2};
+use ndarray::{Dim, Array, Array1, Array2, ArrayBase, Dimension, ArrayView, ArrayView1, ArrayViewMut1, ArrayView2 , Ix1, Ix2};
 
 // pub to avoid to re-import everywhere explicitly
 pub use ndarray_linalg::{Scalar, Lapack};
@@ -48,6 +47,9 @@ use std::marker::PhantomData;
 
 use num_traits::float::*;    // tp get FRAC_1_PI from FloatConst
 use num_traits::cast::FromPrimitive;
+
+use rayon::iter::{IntoParallelIterator, ParallelIterator};
+use parking_lot::RwLock;
 
 use sprs::{prod, CsMat, TriMat, CsMatView};
 
@@ -130,7 +132,7 @@ pub struct MatRepr<F> {
 
 
 impl <F> MatRepr<F> where
-    F: Float + Scalar  + Lapack + ndarray::ScalarOperand + sprs::MulAcc + for<'r> std::ops::MulAssign<&'r F> + Default  {
+    F: Float + Scalar  + Lapack + ndarray::ScalarOperand + sprs::MulAcc + for<'r> std::ops::MulAssign<&'r F> + Default + std::marker::Sync {
 
     /// initialize a MatRepr from an Array2
     #[inline]
@@ -195,7 +197,7 @@ impl <F> MatRepr<F> where
 
     
     /// Matrix Vector multiplication. We use raw interface to get Blas.
-    pub fn mat_dot_vector(&self, vec : &Array1<F>) -> Array1<F>  {
+    pub fn mat_dot_vector(&self, vec : &ArrayView1<F>) -> Array1<F>  {
         match &self.data {
             MatMode::FULL(mat) => { return mat.dot(vec);},
             MatMode::CSR(csmat) =>  {
@@ -342,7 +344,7 @@ pub struct RangeApprox<'a, F: Scalar> {
 
 /// Lapack is necessary here beccause of QR_ traits coming from Lapack
 impl <'a, F > RangeApprox<'a, F> 
-     where  F : Float + Scalar + Lapack + ndarray::ScalarOperand  + sprs::MulAcc + for<'r> std::ops::MulAssign<&'r F> + num_traits::MulAdd + Default {
+     where  F : Send + Sync + Float + Scalar + Lapack + ndarray::ScalarOperand  + sprs::MulAcc + for<'r> std::ops::MulAssign<&'r F> + num_traits::MulAdd + Default {
 
     /// describes the problem, matrix format and range approximation mode asked for.
     pub fn new(mat : &'a MatRepr<F>, mode : RangeApproxMode) -> Self {
@@ -514,7 +516,7 @@ pub fn subspace_iteration_csr<F> (csrmat: &CsMat<F>, rank : usize, nbiter : usiz
 /// Algorithm : Adaptive Randomized Range Finder algo 4.2. from Halko-Martinsson-Tropp 2011
 /// 
 pub fn adaptative_range_finder_matrep<F>(mat : &MatRepr<F> , epsil:f64, r : usize, max_rank : usize) -> Array2<F> 
-        where F : Float + Scalar  + Lapack + ndarray::ScalarOperand + sprs::MulAcc + 
+        where F : Float + Scalar  + Lapack + ndarray::ScalarOperand + sprs::MulAcc + Sync + Send +
                     num_traits::MulAdd +for<'r> std::ops::MulAssign<&'r F> + Default {
     //
     log::debug!("\n  in adaptative_range_finder_matrep, mat shape {:?}, epsil {:.3e}, r : {} , max_rank {}", mat.shape(), epsil, r, max_rank);
@@ -539,14 +541,13 @@ pub fn adaptative_range_finder_matrep<F>(mat : &MatRepr<F> , epsil:f64, r : usiz
     omega.mat *= coeff_norm;
     // We could store Y = data * omega as matrix (m,r), but as we use Y column,
     // we store Y (as Q) as a Vec of Array1<f64>
-    let mut y_vec =  Vec::<Array1<F>>::with_capacity(r);
-    for j in 0..r {
+    let y_vec : Vec<RwLock<Array1<F>>> = (0..r).map(|j| {
+        // we need to_owned to get a slice later
         let c = omega.mat.column(j).to_owned();
-        let y_tmp = mat.mat_dot_vector(&c);
-        y_vec.push(y_tmp);
-    }
+        RwLock::new(mat.mat_dot_vector(&c.view())) }).collect();
+
     // This vectors stores L2-norm of each Y  vector of which there are r
-    let mut norms_y : Array1<F> = (0..r).into_iter().map( |i| norm_frobenius_full(&y_vec[i].view())).collect();
+    let mut norms_y : Array1<F> = (0..r).into_iter().map( |i| norm_frobenius_full(&y_vec[i].read().view())).collect();
     assert_eq!(norms_y.len() , r); 
     log::debug!(" norms_y : {:.3e}",norms_y);
     //
@@ -566,37 +567,37 @@ pub fn adaptative_range_finder_matrep<F>(mat : &MatRepr<F> , epsil:f64, r : usiz
     while norm_sup_y > &stop_val && nb_iter <= max_iter && q_mat.len() < max_rank {
         // numerical stabilization
         if q_mat.len() > 0 {
-            orthogonalize_with_q(&q_mat[0..q_mat.len()], &mut y_vec[j].view_mut());
+            orthogonalize_with_q(&q_mat[0..q_mat.len()], &mut y_vec[j].write().view_mut());
         }
         // get norm of current y vector
-        let n_j =  norm_frobenius_full(&y_vec[j].view());
+        let n_j =  norm_frobenius_full(&y_vec[j].read().view());
         if n_j < ndarray_linalg::Scalar::sqrt(F::epsilon()) {
             log::info!("adaptative_range_finder_matrep returning  at nb_iter {} with n_j {:.3e} and rank {:?} ", nb_iter, n_j, q_mat.len());
             break;
         }
-        let q_j = &y_vec[j] / n_j;
+        let q_j = &y_vec[j].write().view_mut()/ n_j;
         // we add q_j to q_mat so we consumed on y vector
         q_mat.push(q_j.clone());
         // we make another y, first we sample a new omega_j vector of size n
         let mut omega_j_p1 = rng.generate_stdn_vect(Ix1(data_shape[1]));
         omega_j_p1 *= coeff_norm;
-        let mut y_j_p1 = mat.mat_dot_vector(&omega_j_p1);
+        let mut y_j_p1 = mat.mat_dot_vector(&omega_j_p1.view());
         // we orthogonalize new y with all q's i.e q_mat
         orthogonalize_with_q(&q_mat, &mut y_j_p1.view_mut());
         // the new y will takes the place of old y at rank j%r so we always have the last r y that have been sampled
-        assert_eq!(y_vec[j].len(), y_j_p1.len());
-        y_vec[j].assign(&y_j_p1);
-        // we orthogonalize old y's with new q_j.  CAVEAT Can be made // if necessary 
-        for k in 0..r {
+        assert_eq!(y_vec[j].read().len(), y_j_p1.len());
+        y_vec[j].write().assign(&y_j_p1);
+        // we orthogonalize old y's with new q_j.
+        (0..r).into_par_iter().for_each(|k| {
             if k != j {
                 // avoid k = j as the j vector is the new one
-                let prodq_y = &q_j * q_j.view().dot(&y_vec[k]);
-                y_vec[k] -= &prodq_y;       
+                let prodq_y = &q_j * q_j.view().dot(&y_vec[k].read().view());
+                *y_vec[k].write() -= &prodq_y;    
             }
-        }
+        });
         // we update norm_sup_y
         for i in 0..r {
-            norms_y[i] = norm_frobenius_full(&y_vec[i].view());
+            norms_y[i] = norm_frobenius_full(&y_vec[i].read().view());
         }
         norm_sup_y = norms_y.iter().max_by(|x,y| x.partial_cmp(y).unwrap()).unwrap();
         if log::log_enabled!(log::Level::Debug) {
@@ -718,7 +719,7 @@ pub struct SvdApprox<'a, F: Scalar> {
 
 
 impl <'a, F> SvdApprox<'a, F>  
-     where  F : Float + Lapack + Scalar  + ndarray::ScalarOperand + sprs::MulAcc + for<'r> std::ops::MulAssign<&'r F> + num_traits::MulAdd + Default {
+     where  F : Send + Sync + Float + Lapack + Scalar  + ndarray::ScalarOperand + sprs::MulAcc + for<'r> std::ops::MulAssign<&'r F> + num_traits::MulAdd + Default {
     
     pub fn new(data : &'a MatRepr<F>) -> Self {
         SvdApprox{data}
