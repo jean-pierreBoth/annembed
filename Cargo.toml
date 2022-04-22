@@ -92,3 +92,5 @@ default = []
 intel-mkl-static = ["ndarray/blas","ndarray-linalg/intel-mkl-static"]
 
 openblas-static = ["ndarray/blas", "ndarray-linalg/openblas-static"]
+
+openblas-system = []

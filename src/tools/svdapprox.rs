@@ -397,7 +397,7 @@ impl <'a, F > RangeApprox<'a, F>
 // TODO Oversampling between 5 and 10 ?
 // Nota : if nbiter == 0 We get Tropp Algo 4.1 or Algo 2.1 of Wei-Zhang-Chen
 pub fn subspace_iteration_full<F> (mat : &Array2<F>, rank : usize, nbiter : usize) -> Array2<F>
-            where F : Float + Scalar  + Lapack + ndarray::ScalarOperand {
+            where F : Send + Sync + Float + Scalar  + Lapack + ndarray::ScalarOperand {
     //
     let mut rng = RandomGaussianGenerator::<F>::new();
     let data_shape = mat.shape();
@@ -439,7 +439,7 @@ pub fn subspace_iteration_full<F> (mat : &Array2<F>, rank : usize, nbiter : usiz
 /// It implements the QR iterations as descibed in Algorithm 4.4 from Halko-Tropp
 /// 
 pub fn subspace_iteration_csr<F> (csrmat: &CsMat<F>, rank : usize, nbiter : usize) -> Array2<F>
-            where F : Float + Scalar  + Lapack + ndarray::ScalarOperand + sprs::MulAcc {
+            where F : Send + Sync + Float + Scalar  + Lapack + ndarray::ScalarOperand + sprs::MulAcc {
     //
     log::debug!("in svdapprox::subspace_iteration_csr rank: {:?}, nbiter : {:?}", rank, nbiter);
     //
@@ -616,11 +616,12 @@ pub fn adaptative_range_finder_matrep<F>(mat : &MatRepr<F> , epsil:f64, r : usiz
     log::debug!("range finder returning a a matrix ({}, {})", m, q_mat.len());
     //  method uninit from version 0.15.0 and later
     let mut q_as_array2  = Array2::uninit((m, q_mat.len()));     // as sprs wants ndarray 0.14.0
-    for i in 0..q_mat.len() {
-        for j in 0..m {
+    for j in 0..m {
+        for i in 0..q_mat.len() {
             q_as_array2[[j,i]] = std::mem::MaybeUninit::new(q_mat[i][j]);
         }
     }
+    log::debug!("\n exiting adaptative_range_finder_matrep"); 
     // we return an array2 where each row is a data of reduced dimension
     unsafe{ q_as_array2.assume_init()}
 } // end of adaptative_range_finder_csmat
@@ -728,6 +729,7 @@ impl <'a, F> SvdApprox<'a, F>
     /// direct svd from Algo 5.1 of Halko-Tropp
     /// Returns an error if either the preliminary range_approximation or the partial svd failed, else returns a SvdResult
     pub fn direct_svd(&mut self, parameters : RangeApproxMode) -> Result<SvdResult<F>, String> {
+        log::debug!("in SvdApprox::direct_svd");
         let ra = RangeApprox::new(self.data, parameters);
         let q;
         let q_opt = ra.get_approximator();
@@ -741,9 +743,9 @@ impl <'a, F> SvdApprox<'a, F>
         let mut b = match &self.data.data {
             MatMode::FULL(mat) => { q.t().dot(mat)},
             MatMode::CSR(mat)  => { 
-                                    log::trace!("direct_svd got csr matrix");
-                                    transpose_dense_mult_csr(&q, mat)
-                                },
+                log::trace!("direct_svd got csr matrix");
+                transpose_dense_mult_csr(&q, mat)
+            },
         };
         //
         let layout = MatrixLayout::C { row: b.shape()[0] as i32, lda: b.shape()[1] as i32 };
@@ -786,6 +788,8 @@ impl <'a, F> SvdApprox<'a, F>
             s_vt = None;
         }
         //
+        log::debug!("end of SvdApprox::do_svd");
+        //
         Ok(SvdResult{s : Some(s), u : s_u, vt : s_vt})
     } // end of do_svd
 
@@ -821,13 +825,13 @@ pub fn norm_frobenius_repr<F>(mat : &MatRepr<F>) -> F
         //
     let norm_l2 = match &mat.data {
         MatMode::FULL(mat)      =>  {
-                                        let norm_l2 = norm_frobenius_full(&mat.view());
-                                        norm_l2
-                                    },
+            let norm_l2 = norm_frobenius_full(&mat.view());
+            norm_l2
+        },
         MatMode::CSR(csr_mat)   => {
-                                        let norm_l2 = norm_frobenius_csmat(&csr_mat.view());
-                                        norm_l2
-                                    },
+            let norm_l2 = norm_frobenius_csmat(&csr_mat.view());
+            norm_l2
+        },
     };
     norm_l2
 } // end of norm_frobenius_repr
@@ -1523,7 +1527,7 @@ fn check_transpose_dense_mult_csr() {
 
 
 #[test]
-fn check_transpose_owned() {
+fn check_transpose_owned_and_view() {
     //
     log_init_test();
     //
@@ -1536,11 +1540,28 @@ fn check_transpose_owned() {
     let check = mat.get_csr().unwrap().get(0,4).unwrap();
     log::debug!("old value should be 2  : {}", check);
     assert!((check- 2.).abs() < 1.0E-10); 
-     // check transposed is correct
-     let check = transposed_csr.get(4,0).unwrap(); 
-     log::debug!("transposed value should be 2  : {}", check);
-     assert!((check - 2.).abs() < 1.0E-10); 
-      
+    // check transposed is correct
+    let check = transposed_csr.get(4,0).unwrap(); 
+    log::debug!("transposed value should be 2  : {}", check);
+    assert!((check - 2.).abs() < 1.0E-10); 
+    // now chech transpose_view
+    let csr = get_wiki_csr_mat_f32();
+    let transposed_csr = csr.transpose_view();
+    // check we get indexes transposed
+    let check = transposed_csr.get(4,0).unwrap(); 
+    log::debug!("transposed in transposed view value should be 2  : {}", check);
+    assert!((check - 2.).abs() < 1.0E-10); 
+    let row = 0;
+    let col_range = transposed_csr.indptr().outer_inds_sz(row);
+    log::debug!("transposed view row i : {}, col_range : {:?}", row, col_range);            
+    let col_range = transposed_csr.indptr().outer_inds_sz(row);
+    // check indptr did not change
+    assert_eq!(col_range, 0..2);
+    for k in col_range {
+        let j = transposed_csr.indices()[k];
+        let w = transposed_csr.data()[k];
+        log::debug!("transposed view of row  : {}, k  : {}, col {}, w {}", row, k, j ,w);
+    }
 } // end of check_transpose_owned
 
 
