@@ -231,31 +231,28 @@ pub fn main() {
     println!(" ann construction sys time(s) {:?} cpu time {:?}", sys_now.elapsed().unwrap().as_secs(), cpu_time.as_secs());
     hnsw.dump_layer_info();
     //
-    let knbn = 5;
-    let kgraph : KGraph<f32>;
-    let graphprojection: KGraphProjection<f32>;
-    //
     let mut embed_params = EmbedderParams::new();
     embed_params.nb_grad_batch = 15;
-    embed_params.scale_rho = 0.5;
+    embed_params.scale_rho = 0.6;
     embed_params.beta = 1.;
     embed_params.grad_step = 2.;
     embed_params.nb_sampling_by_edge = 10;
     embed_params.dmap_init = true;
-    log::info!("calling kgraph.init_from_hnsw_all");
-    kgraph = kgraph_from_hnsw_all(&hnsw, knbn).unwrap();
-    log::info!("minimum number of neighbours {}", kgraph.get_max_nbng());
-    let _kgraph_stats = kgraph.get_kraph_stats();
 
     let mut embedder;
+    let kgraph;
+    let graphprojection;
     let hierarchical = false;
     if !hierarchical {
+        let knbn = 5;
+        kgraph = kgraph_from_hnsw_all(&hnsw, knbn).unwrap();
         embedder = Embedder::new(&kgraph, embed_params);
         let embed_res = embedder.embed();
         assert!(embed_res.is_ok()); 
         assert!(embedder.get_embedded().is_some());
     }
     else {
+        let knbn = 5;
         log::info!("trying graph projection");
         graphprojection =  KGraphProjection::<f32>::new(&hnsw, knbn, 1);
         embedder = Embedder::from_hkgraph(&graphprojection, embed_params);
@@ -276,7 +273,27 @@ pub fn main() {
     // we can use get_embedded_reindexed as we indexed DataId contiguously in hnsw!
     let _res = write_csv_labeled_array2(&mut csv_w, labels.as_slice(), &embedder.get_embedded_reindexed());
     csv_w.flush().unwrap();
-}
+
+    // Get some statistics on induced graph. This is not related to the embedding process
+    let knbn = 25;
+    let kgraph : KGraph<f32>;
+    log::info!("calling kgraph.init_from_hnsw_all");
+    kgraph = kgraph_from_hnsw_all(&hnsw, knbn).unwrap();
+    log::info!("minimum number of neighbours {}", kgraph.get_max_nbng());
+    log::info!("dimension estimation...");
+    let sampling_size = 10000;
+    let cpu_start = ProcessTime::now();
+    let sys_now = SystemTime::now();
+    let dim_stat = kgraph.estimate_intrinsic_dim(sampling_size);
+    let cpu_time: Duration = cpu_start.elapsed();
+    println!(" dimension estimation sys time(ms) : {:.3e},  cpu time(ms) {:.3e}", sys_now.elapsed().unwrap().as_millis(), cpu_time.as_millis());
+    if dim_stat.is_ok() {
+        let dim_stat = dim_stat.unwrap();
+        log::info!(" dimension estimation with nbpoints : {}, dim : {:.3e}, sigma = {:.3e}", 
+                    sampling_size, dim_stat.0, dim_stat.1);
+    }
+    let _kgraph_stats = kgraph.get_kraph_stats();
+} // end of main
 
 
 //============================================================================================

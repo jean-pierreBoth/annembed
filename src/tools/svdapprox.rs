@@ -386,6 +386,7 @@ impl <'a, F > RangeApprox<'a, F>
 
 
 
+/// 
 /// Given a (m,n) matrice A, this algorithm returns a (m,l) orthogonal matrix Q approximation the range of input. 
 /// l is the asked rank and nb_iter is a number of iterations.
 /// 
@@ -430,7 +431,7 @@ pub fn subspace_iteration_full<F> (mat : &Array2<F>, rank : usize, nbiter : usiz
 }  // end of subspace_iteration_full
 
 
-
+///
 /// Given a (m,n) matrice A, this algorithm returns a (m,l) orthogonal matrix Q approximation the range of input. 
 /// l is the asked rank and nb_iter is a number of iterations.
 /// 
@@ -495,6 +496,7 @@ pub fn subspace_iteration_csr<F> (csrmat: &CsMat<F>, rank : usize, nbiter : usiz
     //
 
 #[cfg_attr(doc, katexit::katexit)]
+///
 /// If mat is a (m,n) matrix this function returns an orthonormal matrix Q of dimensions (m,l) such that :
 /// $$ || mat - Q*Q^{t}*mat || < ε$$  with probability at least $$ 1. - min(m,n) 10^{-r} $$
 ///  

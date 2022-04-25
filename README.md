@@ -14,11 +14,18 @@ The crate will provide:
      - Increase or decrease the impact of the local density of points around each node. There is no symetrization of the graph. (except when initializing the embedding with diffusion maps in this case it is done as in t-sne or LargeVis). We use the diffusion maps algorithm (Lafon-Keller-Coifman).
 
    - We also use a cross entropy optimization of this initial layout but take into account the initial local density estimate of each point when computing the cauchy weight of an embedded edge.
+   
+
 
 2. An implementation of the Mapper algorithm using the C++ **Ripser** module from U. Bauer
 
 3. Some by-products :
     - an implementation of range approximation and approximated SVD for dense and/or row compressed matrices as described in explicited in the svdapprox module and the paper of Halko-Tropp (Cf. [Tsvd](https://arxiv.org/abs/0909.4061)).
+    The *adaptative_range_finder_matrep* algorithm is less precise than *subspace_iteration_csr* (which uses QR stabilization)
+    but can work on larger matrices for example on sparse matrices with a million rows.
+
+    - An estimation of the data intrinsic dimension as described in:  
+            Levina E. and Bickel P.J NIPS 2004.  See [paper](https://www.stat.berkeley.edu/~bickel/mldim.pdf).
   
     - a Diffusion Maps implementation.
 
@@ -26,12 +33,12 @@ The crate will provide:
 
 ## *The crate is in a preliminary state*
 
-Currently only the approximated SVD and a first version of the embedding (with possible hierarchical inittialization) are implemented. But the mnist examples shows how to run the embedding, even in this (preliminary) state.
+Currently only the approximated SVD and a first version of the embedding (with possible hierarchical inittialization) and dimension estimation are implemented. But the mnist examples shows how to run the embedding, even in this (preliminary) state.
 
 ## Building
 
- The crate provides 3 features to choose between openblas-static, intel-mkl-static and openblas-system. 
-So **--features "openblas-static"** , **--features "openblas-static"** or **--features "openblas-system"** must be passed to cargo to compile. Alternatively define the default in Cargo.toml.
+ The crate provides 3 features to choose between openblas-static, intel-mkl-static. 
+So **--features "openblas-static"** , **--features "intel-mkl-static"** must be passed to cargo to compile. Alternatively define the default in Cargo.toml.
 ## Results
 
 These are preliminary results.

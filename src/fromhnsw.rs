@@ -3,6 +3,8 @@
 //! 
 //! 
 
+use anyhow::{anyhow};
+
 use num_traits::{Float};
 use num_traits::cast::FromPrimitive;
 
@@ -11,6 +13,7 @@ use indexmap::set::*;
 use std::cmp::Ordering;
 
 use std::sync::Arc;
+use rand::thread_rng;
 
 use quantiles::{ckms::CKMS};     // we could use also greenwald_khanna
 
@@ -18,7 +21,8 @@ use quantiles::{ckms::CKMS};     // we could use also greenwald_khanna
 use hnsw_rs::prelude::*;
 use hnsw_rs::hnsw::{DataId};
 
-use crate::nodeparam::*;
+use crate::tools::{dimension::*,nodeparam::*};
+use rand::distributions::{Distribution};
 
 // morally F should be f32 and f64.  
 // The solution from ndArray is F : Float + AddAssign + SubAssign + MulAssign + DivAssign + RemAssign + Display + Debug + LowerExp + UpperExp + (ScalarOperand + LinalgScalar) + Send + Sync.   
@@ -150,10 +154,69 @@ impl <F> KGraph<F>
         &self.neighbours
     }
 
-    /// get out edges from node
-    pub fn get_out_edges(&self, node : NodeIdx) -> &Vec<OutEdge<F>> {
+    /// get out edges from node given its index
+    pub fn get_out_edges_by_idx(&self, node : NodeIdx) -> &Vec<OutEdge<F>> {
         &self.neighbours[node]
     }
+
+
+    /// given a DataId returns list of edges from corresponding point or None if error occurs
+    pub fn get_out_edges_by_data_id(&self,  data_id: &DataId) -> Result<&Vec<OutEdge<F>>, anyhow::Error> {
+        let idx = self.get_idx_from_dataid(data_id);
+        if idx.is_none() {
+            return Err(anyhow!("bad data_id"));
+        }
+        //
+        let idx = idx.unwrap();
+        return Ok(self.get_out_edges_by_idx(idx));
+    } // end of get_out_edges_by_data_id
+
+
+    /// estimate intrinsic dimension around a point given by its data_id.
+    /// We implement the method described in :  
+    ///     Maximum likelyhood estimation of intrinsic dimension.
+    ///     Levina E. and Bickel P.J NIPS 2004.  <https://www.stat.berkeley.edu/~bickel/mldim.pdf>
+    /// 
+    pub fn intrinsic_dim_at_data_id(&self, data_id : &DataId) -> Result<f64,anyhow::Error>   {
+        //
+        let edges_res = self.get_out_edges_by_data_id(data_id);
+        if edges_res.is_err() {
+            return Err(edges_res.err().unwrap());
+        }
+        let edges: &Vec<OutEdge<F>> = edges_res.unwrap();
+        intrinsic_dimension_from_edges::<F>(edges)
+    } // end of intrinsic_dim
+
+
+    /// estimate intrinsic dimension by sampling sampling_size points aroun which we estimate intrinsic
+    /// dimension
+    /// TODO : get an histogram of dimensions
+    pub fn estimate_intrinsic_dim(&self, sampling_size: usize) ->  Result<(f64,f64),anyhow::Error> {
+        // we sample points, ignoring the probability to sample twice or more the ame point.
+        // TODO sampling without replacement?
+        let mut dims = Vec::<f64>::with_capacity(sampling_size);
+        let nb_nodes = self.get_nb_nodes();
+        let mut rng = thread_rng();
+        let between = rand_distr::Uniform::from(0..nb_nodes);
+        // TODO to be parallelized if necessary
+        for _ in 0..sampling_size {
+            let node = between.sample(&mut rng);
+            let edges = &self.neighbours[node];
+            let dim = intrinsic_dimension_from_edges(edges);
+            if dim.is_ok() {
+                dims.push(dim.unwrap());
+            }
+        }
+        if dims.len() == 0 {
+            return Err(anyhow!("could not sample points"));
+        }
+        let mean_dim : f64 = dims.iter().sum::<f64>()/dims.len() as f64;
+        let mut sigma = dims.iter().fold(0., |acc, d| acc + (d-mean_dim)*(d-mean_dim));
+        sigma = (sigma/dims.len() as f64).sqrt();
+        println!(" dimension : {:.3e}, sigma : {:.3e}", mean_dim, sigma);
+        return Ok((mean_dim, sigma));
+    } // end of intrinsic_dim_smapled
+
 
     /// As data can come from hnsw with arbitrary data id not on [0..nb_data] we reindex
     /// them for array computation.  
@@ -251,9 +314,8 @@ pub fn kgraph_from_hnsw_all<T, D, F>(hnsw : &Hnsw<T,D>, nbng : usize) -> std::re
     let max_nb_conn = hnsw.get_max_nb_connection() as usize;    // morally this the k of knn bu we have that for each layer
     // check consistency between max_nb_conn and nbng
     if max_nb_conn <= nbng {
-        log::error!("init_from_hnsw_all: number of neighbours must be greater than hnsw max_nb_connection : {} ", max_nb_conn);
-        println!("init_from_hnsw_all: number of neighbours must be greater than hnsw max_nb_connection : {} ", max_nb_conn);
-        return Err(1);
+        log::info!("init_from_hnsw_all: number of neighbours must be less than hnsw max_nb_connection : {} ", max_nb_conn);
+        println!("init_from_hnsw_all: number of neighbours must be less than hnsw max_nb_connection : {} ", max_nb_conn);
     }
     let point_indexation = hnsw.get_point_indexation();
     let nb_point = point_indexation.get_nb_point();
@@ -767,7 +829,6 @@ fn fix_points_with_no_projection<T,F>(proj_data : &mut HashMap<NodeIdx, OutEdge<
 
 
 
-// ================================================================================
 
 
 mod tests {
@@ -784,8 +845,11 @@ use rand::prelude::*;
 
 #[allow(dead_code)]
 fn log_init_test() {
-    let _ = env_logger::builder().is_test(true).try_init();
-}  
+    let res = env_logger::builder().is_test(true).try_init();
+    if res.is_err() {
+        panic!("could not init log");
+    }
+}  // end of log_init_test
 
 
 #[allow(unused)]
@@ -812,6 +876,7 @@ fn test_full_hnsw() {
     let dim = 30;
     let knbn = 10;
     //
+    log::debug!("test_full_hnsw");
     println!("\n\n test_serial nb_elem {:?}", nb_elem);
     //
     let data = gen_rand_data_f32(nb_elem, dim);
@@ -830,6 +895,19 @@ fn test_full_hnsw() {
     let kgraph : KGraph<f32> = kgraph_from_hnsw_all(&hns, knbn).unwrap();
     log::info!("minimum number of neighbours {}", kgraph.get_max_nbng());
     let _kgraph_stats = kgraph.get_kraph_stats();
+    // make a test for dimension estimation
+    let id = 10;
+    let dimension = kgraph.intrinsic_dim_at_data_id(&id).unwrap();
+    println!("dimension around point : {}, dim = {:.3e}", id, dimension);
+    log::info!("dimension around point : {}, dim = {:.3e}", id, dimension);
+    let id = 100;
+    let dimension = kgraph.intrinsic_dim_at_data_id(&id).unwrap();
+    println!("dimension around point : {}, dim = {:.3e}", id, dimension);
+    log::info!("dimension around point : {}, dim = {:.3e}", id, dimension);
+    let id = 200;
+    let dimension = kgraph.intrinsic_dim_at_data_id(&id).unwrap();
+    println!("dimension around point : {}, dim = {:.3e}", id, dimension);
+    log::info!("dimension around point : {}, dim = {:.3e}", id, dimension);
 }  // end of test_full_hnsw
 
 

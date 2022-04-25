@@ -7,9 +7,8 @@ use sprs::{CsMat, TriMatBase};
 
 use lax::{layout::MatrixLayout, UVTFlag, SVDDC_};
 
-use crate::tools::svdapprox::*;
+use crate::tools::{svdapprox::*,nodeparam::*};
 
-use crate::nodeparam::*;
 
 const FULL_MAT_REPR : usize = 5000;
 

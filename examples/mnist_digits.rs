@@ -245,14 +245,13 @@ pub fn main() {
     embed_params.grad_step = 3.;
     embed_params.nb_sampling_by_edge = 10;
     embed_params.dmap_init = true;
-    log::info!("calling kgraph.init_from_hnsw_all");
-    kgraph = kgraph_from_hnsw_all(&hnsw, knbn).unwrap();
-    log::info!("minimum number of neighbours {}", kgraph.get_max_nbng());
-    let _kgraph_stats = kgraph.get_kraph_stats();
-
+    //
     let mut embedder;
     let hierarchical = true;
     if !hierarchical {
+        log::info!("calling kgraph.init_from_hnsw_all");
+        kgraph = kgraph_from_hnsw_all(&hnsw, knbn).unwrap();
+        log::info!("minimum number of neighbours {}", kgraph.get_max_nbng());
         embedder = Embedder::new(&kgraph, embed_params);
         let embed_res = embedder.embed();
         assert!(embed_res.is_ok()); 
@@ -279,7 +278,27 @@ pub fn main() {
     // we can use get_embedded_reindexed as we indexed DataId contiguously in hnsw!
     let _res = write_csv_labeled_array2(&mut csv_w, labels.as_slice(), &embedder.get_embedded_reindexed());
     csv_w.flush().unwrap();
-}
+    //
+    // Get some statistics on induced graph. This is not related to the embedding process
+    //
+    let knbn = 25;
+    let kgraph : KGraph<f32>;
+    log::info!("calling kgraph.init_from_hnsw_all");
+    kgraph = kgraph_from_hnsw_all(&hnsw, knbn).unwrap();
+    log::info!("minimum number of neighbours {}", kgraph.get_max_nbng());
+    log::info!("dimension estimation...");
+    let cpu_start = ProcessTime::now();
+    let sys_now = SystemTime::now();
+    let sampling_size = 10000;
+    let dim_stat = kgraph.estimate_intrinsic_dim(sampling_size);
+    let cpu_time: Duration = cpu_start.elapsed();
+    println!(" dimension estimation sys time(ms) : {:.3e},  cpu time(ms) {:?}", sys_now.elapsed().unwrap().as_millis(), cpu_time.as_millis());
+    if dim_stat.is_ok() {
+        let dim_stat = dim_stat.unwrap();
+        log::info!(" dimension estimation with nbpoints : {}, dim : {:.3e}, sigma = {:.3e}", 
+                    sampling_size, dim_stat.0, dim_stat.1);
+    }
+}  // end of main digits
 
 
 //============================================================================================

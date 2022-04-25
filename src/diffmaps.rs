@@ -17,7 +17,7 @@ use ndarray_linalg::{Scalar};
 
 use hnsw_rs::prelude::*;
 
-use crate::nodeparam::*;
+use crate::tools::nodeparam::*;
 use crate::fromhnsw::*;
 use crate::graphlaplace::*;
 use crate::embedder::*;

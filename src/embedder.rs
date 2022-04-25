@@ -43,9 +43,8 @@ use cpu_time::ProcessTime;
 use hnsw_rs::prelude::*;
 use crate::fromhnsw::*;
 use crate::embedparams::*;
-use crate::nodeparam::*;
 use crate::diffmaps::*;
-use crate::tools::dichotomy::*;
+use crate::tools::{dichotomy::*,nodeparam::*};
 
 /// do not consider probabilities under PROBA_MIN, thresolded!!
 const PROBA_MIN: f32 = 1.0E-5;
@@ -874,7 +873,7 @@ fn get_scale_from_proba_normalisation<F> (kgraph : & KGraph<F>, scale_rho : f32,
         log::trace!("scale : {:.2e} , first neighbour proba {:2e}, last neighbour proba {:2e} proba gap {:.2e}", scale, probas_edge[0].weight, 
                         probas_edge[probas_edge.len() - 1].weight,
                         proba_range);
-        assert!(proba_range >= PROBA_MIN, "proba range {:.2e} too low edge proba, try a new run or reduce beta", proba_range);
+        assert!(proba_range >= PROBA_MIN, "proba range {:.2e} too low edge proba, increase scale_rho or reduce beta", proba_range);
         //
         let sum = probas_edge.iter().map(|e| e.weight).sum::<f32>();
         for i in 0..nbgh {
