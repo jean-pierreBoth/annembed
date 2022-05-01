@@ -10,24 +10,24 @@ use crate::tools::nodeparam::*;
 ///     Maximum likelyhood estimation of intrinsic dimension.
 ///     Levina E. and Bickel P.J NIPS 2004.  <https://www.stat.berkeley.edu/~bickel/mldim.pdf>
 /// 
-pub fn intrinsic_dimension_from_edges<F>(edges : &Vec<OutEdge<F>>) ->  Result<f64,anyhow::Error> 
+pub(crate) fn intrinsic_dimension_from_edges<F>(edges : &Vec<OutEdge<F>>) ->  Result<f64,anyhow::Error> 
                 where F : Float  {
     let k_first: usize;
     let k_last : usize;
-    if edges.len() > 20 {
+    if edges.len() >= 20 {
         // bickel use 10..20 as default
-        k_first = 10;
-        k_last = 20;
+        k_first = 5;
+        k_last = 19;
     }
     else if edges.len() > 3 {
         k_last = edges.len() - 1;
         k_first = 2;
     }
     else {
+        log::error!("intrinsic_dimension_from_edges not enough edges");
         return Err(anyhow!("not enough neighbours"));
     }
     //
-    log::debug!("intrinsic_dim, k_first :{},  k_last : {}", k_first, k_last);
     let mut density : f64 = 0.;
     let d_estimate = |k| {
         let mut aux = 0.;
@@ -37,12 +37,31 @@ pub fn intrinsic_dimension_from_edges<F>(edges : &Vec<OutEdge<F>>) ->  Result<f6
             }
             aux += (edges[k].weight.to_f64().unwrap()/edges[j].weight.to_f64().unwrap()).ln();
         }
-        let density_k = (k as f64 - 1.)/aux;
-        log::debug!("density_k : {:.3e}", density_k);
-        return density_k;
+        if aux <= 0. {
+            // we must take care of case with equal distances that give 0!!
+//            log::debug!("density_k : aux {:.3e} , k = {}", aux, k);
+            return -1.;
+        }
+        else {
+            let density_k = (k as f64 - 1.)/aux;
+         //   log::debug!("density_k : {:.3e}", density_k);
+            return density_k;
+        }
     };
+    let mut nb_pos : u32 = 0;
     for k in k_first..=k_last {
-        density += d_estimate(k);
+        let d = d_estimate(k);
+        if d > 0. {
+            density += d_estimate(k);
+            nb_pos += 1;
+        }
     }
-    Ok(density / (k_last - k_first + 1) as f64)
+    if nb_pos > 0 {
+        density = density / nb_pos as f64;
+//        log::debug!("intrinsic_dimension_from_edges k_first : {}, k_last : {}, density : {:.3e}", k_first, k_last, density);
+        return Ok(density);
+    }
+    else {
+        return Err(anyhow!("not positive distances"));
+    }
 } // end of intrinsic_dimension_from_edges

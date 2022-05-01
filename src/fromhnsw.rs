@@ -188,9 +188,16 @@ impl <F> KGraph<F>
     } // end of intrinsic_dim
 
 
-    /// estimate intrinsic dimension by sampling sampling_size points aroun which we estimate intrinsic
-    /// dimension
-    /// TODO : get an histogram of dimensions
+    /// We implement the method described in :  
+    ///     Maximum likelyhood estimation of intrinsic dimension.
+    ///     Levina E. and Bickel P.J NIPS 2004.  <https://www.stat.berkeley.edu/~bickel/mldim.pdf>.  
+    /// 
+    /// We estimate dimension by sampling sampling_size points around which we estimate intrinsic
+    /// dimension and returs mean and standard deviation if we do not encounter error.
+    ///   
+    /// **Note : As recommended in the Paper cited, the estimation needs more than 20 neighbours around each point.**
+    ///        We provide an estimation even if this condition is not fulfilled but it is less robust.
+    // TODO : get an histogram of dimensions
     pub fn estimate_intrinsic_dim(&self, sampling_size: usize) ->  Result<(f64,f64),anyhow::Error> {
         // we sample points, ignoring the probability to sample twice or more the ame point.
         // TODO sampling without replacement?
@@ -208,14 +215,15 @@ impl <F> KGraph<F>
             }
         }
         if dims.len() == 0 {
+            log::error!("could not sample dimension");
             return Err(anyhow!("could not sample points"));
         }
         let mean_dim : f64 = dims.iter().sum::<f64>()/dims.len() as f64;
         let mut sigma = dims.iter().fold(0., |acc, d| acc + (d-mean_dim)*(d-mean_dim));
         sigma = (sigma/dims.len() as f64).sqrt();
-        println!(" dimension : {:.3e}, sigma : {:.3e}", mean_dim, sigma);
+        log::debug!(" mean dimension : {:.3e}, sigma : {:.3e}, nb_points used: {}", mean_dim, sigma, dims.len());
         return Ok((mean_dim, sigma));
-    } // end of intrinsic_dim_smapled
+    } // end of estimate_intrinsic_dim
 
 
     /// As data can come from hnsw with arbitrary data id not on [0..nb_data] we reindex
@@ -866,7 +874,8 @@ fn gen_rand_data_f32(nb_elem: usize , dim:usize) -> Vec<Vec<f32>> {
 }
 
 
-/// test conversion of full hnsw to KGraph
+/// test conversion of full hnsw to KGraph and dimension estimation. 
+/// mean intrinsic dimension should be around 30 as it is the dimension we use generate random unifrom data 
 #[test]
 fn test_full_hnsw() {
     //
@@ -874,7 +883,7 @@ fn test_full_hnsw() {
     //
     let nb_elem = 20000;
     let dim = 30;
-    let knbn = 10;
+    let knbn = 20;
     //
     log::debug!("test_full_hnsw");
     println!("\n\n test_serial nb_elem {:?}", nb_elem);
@@ -899,15 +908,12 @@ fn test_full_hnsw() {
     let id = 10;
     let dimension = kgraph.intrinsic_dim_at_data_id(&id).unwrap();
     println!("dimension around point : {}, dim = {:.3e}", id, dimension);
-    log::info!("dimension around point : {}, dim = {:.3e}", id, dimension);
-    let id = 100;
-    let dimension = kgraph.intrinsic_dim_at_data_id(&id).unwrap();
-    println!("dimension around point : {}, dim = {:.3e}", id, dimension);
-    log::info!("dimension around point : {}, dim = {:.3e}", id, dimension);
-    let id = 200;
-    let dimension = kgraph.intrinsic_dim_at_data_id(&id).unwrap();
-    println!("dimension around point : {}, dim = {:.3e}", id, dimension);
-    log::info!("dimension around point : {}, dim = {:.3e}", id, dimension);
+    log::info!("\n dimension around point : {}, dim = {:.3e}", id, dimension);
+    //
+    let dimension =  kgraph.estimate_intrinsic_dim(10000);
+    assert!(dimension.is_ok());
+    let dimension = dimension.unwrap();
+    log::info!("\n estimation of dimension : {:.3e}, sigma : {:.3e} ", dimension.0 , dimension.1);
 }  // end of test_full_hnsw
 
 

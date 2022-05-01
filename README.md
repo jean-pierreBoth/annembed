@@ -30,10 +30,6 @@ The crate provides:
 
 ## *The crate is still in a preliminary state*
 
-Currently the approximated SVD and a first version of the embedding (with possible hierarchical inittialization) and dimension estimation are implemented. But the mnist examples shows how to run the embedding, even in this (preliminary) state.
-
-
-
 It will provide a single-linkage hierarchical clustering function and an implementation of the Mapper algorithm using the C++ **Ripser** module from U. Bauer.
 
 ## Building
@@ -62,6 +58,8 @@ It tooks 20s to run, of which 9s were spent in the ann construction.
 
 It took 22s of which 9s were spent in the ann construction.
 
+- The estimated intrinsic dimension of the data is 17.7 with standard deviation depending on points: 6.
+
 2. MNIST fashion database Cf[mnist-fashion](https://github.com/zalandoresearch/fashion-mnist/tree/master/data/fashion)
 
 It conssits in 70000 images of clothes.
@@ -79,10 +77,17 @@ It conssits in 70000 images of clothes.
 
  time : 34s 
    
+- The estimated intrinsic dimension of the data is 20.9 with standard deviation depending on points : 11.8
+
+
 ### Randomized SVD
 
-The randomized SVD is based on the paper of [Halko-Tropp](https://epubs.siam.org/doi/abs/10.1137/090771806)
+The randomized SVD is based on the paper of [Halko-Tropp](https://epubs.siam.org/doi/abs/10.1137/090771806).
+The implemntation covers full matrices or matrices in compressed row storage as provided in the *sprs* crate.
 
+We implement two approximations of the SVD.
+       - *subspace_iteration_csr* , corresponds to algo 4.4 in Tropp paper. It uses QR stabilization.  
+       - *adaptative_range_finder_matrep* correponds to algo 4.2 in Tropp paper.  The algorithm is less precise than *subspace_iteration_csr* but can work on larger matrices for example on sparse matrices with a million rows.
 ### Mapper
 
 
@@ -93,7 +98,7 @@ compile with :
 * cargo build --release --features "openblas-static" to link statically with rust downloaded openblas
   
 * cargo build --release --features "intel-mkl-static" to link with mkl intel's library 
-    (intel mkl will be automatically dowloaded, see README.md of crate ndarray-linalg)
+    (intel mkl will be automatically downloaded, see README.md of crate ndarray-linalg)
 
 * cargo build --release  --features "openblas-system" will try to link with system openblas and system lapacke
   (see the build.rs to modify it if needed)
