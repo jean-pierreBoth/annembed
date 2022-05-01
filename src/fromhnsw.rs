@@ -279,7 +279,9 @@ impl <F> KGraph<F>
             max_in_degree = max_in_degree.max(in_degrees[i]);
             mean_in_degree += in_degrees[i] as f32;
         }
-        mean_in_degree /= in_degrees.len() as f32;
+        if in_degrees.len() > 0 {
+            mean_in_degree /= in_degrees.len() as f32;
+        }
         //
         println!("\n ==========================");
         println!("\n minimal graph statistics \n");
@@ -536,21 +538,31 @@ impl <F> KGraphProjection<F>
     pub fn new<T, D>(hnsw : &Hnsw<T,D>, nbng : usize, layer : usize) -> Self 
                     where T : Clone + Send + Sync,
                           D: Distance<T> + Send + Sync {
-        log::trace!("Projection new ");
+        log::debug!("KGraphProjection new  layer : {}", layer);
         let mut nb_point_to_collect = 0;
         let mut nb_point_below_nbng = 0;
         let max_nb_conn = hnsw.get_max_nb_connection() as usize;
         let max_level_observed = hnsw.get_max_level_observed() as usize;
-        log::trace!("max level observed : {}", max_level_observed);
+        log::debug!("max level observed : {}", max_level_observed);
         // check number of points kept in
+        if layer >= max_level_observed {
+            log::error!("KGraphProjection::new, layer argument greater than nb_layer!!, layer : {}", layer);
+            println!("KGraphProjection::new, layer argument greater than nb_layer!!, layer : {}", layer);
+
+        }
         for l in (layer..=max_level_observed).rev() {
             nb_point_to_collect += hnsw.get_point_indexation().get_layer_nb_point(l);
+            log::trace!(" layer : {}, nb points to collect : {}", l, nb_point_to_collect);
+        }
+        if nb_point_to_collect <= 0 {
+            log::error!("!!!!!!!!!!!! KGraphProjection cannot collect points !!!!!!!!!!!!!, check layer argument");
+            println!("!!!!!!!!!!!! KGraphProjection cannot collect points !!!!!!!!!!!!!, check layer argument");
         }
         // let _points = Vec::<std::sync::Arc<Point<F>>>::with_capacity(nb_point_to_collect);
         // let _distances = Array2::<F>::zeros((nb_point_to_collect,nb_point_to_collect));
         //
         let layer_u8 = layer as u8;
-        log::info!("Projection : number of point to collect : {}", nb_point_to_collect);
+        log::debug!("Projection : number of point to collect : {}", nb_point_to_collect);
         let mut upper_graph_neighbours = Vec::<Vec<OutEdge<F>>>::with_capacity(nb_point_to_collect);
         for _i in 0..nb_point_to_collect {
             upper_graph_neighbours.push(Vec::<OutEdge<F>>::new());
@@ -855,7 +867,7 @@ use rand::prelude::*;
 fn log_init_test() {
     let res = env_logger::builder().is_test(true).try_init();
     if res.is_err() {
-        panic!("could not init log");
+        println!("could not init log");
     }
 }  // end of log_init_test
 
@@ -993,7 +1005,7 @@ fn test_graph_projection() {
     hns.parallel_insert(&data_with_id);
     hns.dump_layer_info();
     //
-    let _graph_projection = KGraphProjection::<f32>::new(&hns, layer , knbn);
+    let _graph_projection = KGraphProjection::<f32>::new(&hns, knbn , layer);
 
 
 } // end of test_graph_projection
