@@ -80,7 +80,7 @@ It conssits in 70000 images of clothes.
 
 ### Usage
 ```rust
-    // allocation of a Hnsw structure
+    // allocation of a Hnsw structure to store data
     let ef_c = 50;
     let max_nb_connection = 70;
     let nbimages = images_as_v.len();
@@ -89,11 +89,10 @@ It conssits in 70000 images of clothes.
     let data_with_id : Vec<(&Vec<f32>, usize)>= images_as_v.iter().zip(0..images_as_v.len()).collect();
     // data insertion in the hnsw structure
     hnsw.parallel_insert(&data_with_id);
-    // allocation of an embedder and 
+    // choice of embedding parameters 
     let mut embed_params = EmbedderParams::new();
-    // choice of embedding parameters
     embed_params.nb_grad_batch = 15;
-    embed_params.scale_rho = 0.5;
+    embed_params.scale_rho = 1.;
     embed_params.beta = 1.;
     embed_params.grad_step = 3.;
     embed_params.nb_sampling_by_edge = 10;
@@ -113,7 +112,7 @@ The implementation covers dense matrices or matrices in compressed row storage a
 Two algorithms for range approximation used in approximated SVD are:
 - *subspace_iteration_csr* , corresponds to algo 4.4 in Tropp paper. It uses QR stabilization.  
 - *adaptative_range_finder_matrep* correponds to algo 4.2 in Tropp paper.  The algorithm is less precise than *subspace_iteration_csr*  but can work on larger matrices for example on sparse matrices with a million rows.
-### Mapper
+
 
 
 ## Installation
