@@ -1,26 +1,23 @@
 # A data embedding tool and related data analysis or clustering
 
-The crate provides:
+The crate provides, **in the form of a library**:
 
 1. Some variations on data embedding tools from t-Sne (2008) to Umap(2018).
-   Our implementation is a mix of the various embedding algorithms
-    recently published and mentioned in References.
+   Our implementation is a mix of the various embedding algorithms mentioned in References.
 
-   - The graph is initialized by the Hnsw nearest neighbour algorithm.  
+   - The graph is initialized by the Hnsw nearest neighbour algorithm as implemented in: [hnsw_rs](https://crates.io/crates/hnsw_rs) 
      This provides for free, sub-sampling in the data to embed by considering only less densely occupied layers (the upper layers). This corresponds generally to a subsampling of 2%-4%, but can give a guarantee as the distance beetween points leaved out the sampling and its nearest sampled neighbour are known. The hnsw structure thus enables also an iterative/hierarchical initialization of the embedding by taking into account an increasing number of layers.
   
-   - The preliminary graph built for the embedding uses an exponential function of distances to neighbour nodes (as in Umap). It is possible to modulate the initial edge weight by :
-     - Considering a power of the distance function to neighbours (**See documentation in module EmbedderParams**).  
-     - Increase or decrease the impact of the local density of points around each node. There is no symetrization of the graph. (except when initializing the embedding with diffusion maps in this case it is done as in t-sne or LargeVis). We use the diffusion maps algorithm (Lafon-Keller-Coifman).
+   - The preliminary graph built for the embedding uses an exponential function of distances to neighbour nodes (as in Umap),but keeps a      probability normalization constraint with respect to neighbours (as in T-sne).
+    It is possible to modulate the initial edge weight by :
+      - Considering a power of the distance function to neighbours (**See documentation in module EmbedderParams**).  
+      - Increase or decrease the impact of the local density of points around each node. There is no symetrization of the graph. (except when initializing the embedding with diffusion maps in this case it is done as in t-sne or LargeVis). We use the diffusion maps algorithm (Lafon-Keller-Coifman).
 
    - We also use a cross entropy optimization of this initial layout but take into account the initial local density estimate of each point when computing the cauchy weight of an embedded edge.
    
  2. Some by-products :
    
     - an implementation of range approximation and approximated SVD for dense and/or row compressed matrices as described in explicited in the svdapprox module and the paper of Halko-Tropp (Cf. [Tsvd](https://arxiv.org/abs/0909.4061)).
-  
-        - The *adaptative_range_finder_matrep* algorithm is less precise than *subspace_iteration_csr* (which uses QR stabilization)
-        but can work on larger matrices for example on sparse matrices with a million rows.
 
     - An estimation of the data intrinsic dimension as described in:  
             Levina E. and Bickel P.J NIPS 2004.  See [paper](https://www.stat.berkeley.edu/~bickel/mldim.pdf).
@@ -28,9 +25,9 @@ The crate provides:
     - a Diffusion Maps implementation.
 
 
-## *The crate is still in a preliminary state*
+## *Future work*
 
-It will provide a single-linkage hierarchical clustering function and an implementation of the Mapper algorithm using the C++ **Ripser** module from U. Bauer.
+The crate will provide a single-linkage hierarchical clustering function and an implementation of the Mapper algorithm using the C++ **Ripser** module from U. Bauer.
 
 ## Building
 
@@ -42,6 +39,8 @@ These are preliminary results.
 Timings are given for a 8-core i7 @2.3 Ghz laptop.
 
 ### Embedder examples
+
+Sources of examples are in corresponding directory.
 
 1. MNIST digits database  Cf [mnist-digits](http://yann.lecun.com/exdb/mnist/)
 
@@ -79,15 +78,41 @@ It conssits in 70000 images of clothes.
    
 - The estimated intrinsic dimension of the data is 20.9 with standard deviation depending on points : 11.8
 
-
+### Usage
+```rust
+    // allocation of a Hnsw structure
+    let ef_c = 50;
+    let max_nb_connection = 70;
+    let nbimages = images_as_v.len();
+    let nb_layer = 16.min((nbimages as f32).ln().trunc() as usize);
+    let hnsw = Hnsw::<f32, DistL2>::new(max_nb_connection, nbimages, nb_layer, ef_c, DistL2{});
+    let data_with_id : Vec<(&Vec<f32>, usize)>= images_as_v.iter().zip(0..images_as_v.len()).collect();
+    // data insertion in the hnsw structure
+    hnsw.parallel_insert(&data_with_id);
+    // allocation of an embedder and 
+    let mut embed_params = EmbedderParams::new();
+    // choice of embedding parameters
+    embed_params.nb_grad_batch = 15;
+    embed_params.scale_rho = 0.5;
+    embed_params.beta = 1.;
+    embed_params.grad_step = 3.;
+    embed_params.nb_sampling_by_edge = 10;
+    embed_params.dmap_init = true;
+    // conversion of the hnsw to a graph structure
+    let knbn = 8;
+    let kgraph = kgraph_from_hnsw_all(&hnsw, knbn).unwrap();
+    // allocation of the embedder and embedding
+    embedder = Embedder::new(&kgraph, embed_params);
+    let embed_res = embedder.embed();
+```
 ### Randomized SVD
 
 The randomized SVD is based on the paper of [Halko-Tropp](https://epubs.siam.org/doi/abs/10.1137/090771806).
-The implemntation covers full matrices or matrices in compressed row storage as provided in the *sprs* crate.
+The implementation covers dense matrices or matrices in compressed row storage as provided in the *sprs* crate.
 
-We implement two approximations of the SVD.
-       - *subspace_iteration_csr* , corresponds to algo 4.4 in Tropp paper. It uses QR stabilization.  
-       - *adaptative_range_finder_matrep* correponds to algo 4.2 in Tropp paper.  The algorithm is less precise than *subspace_iteration_csr* but can work on larger matrices for example on sparse matrices with a million rows.
+Two algorithms for range approximation used in approximated SVD are:
+- *subspace_iteration_csr* , corresponds to algo 4.4 in Tropp paper. It uses QR stabilization.  
+- *adaptative_range_finder_matrep* correponds to algo 4.2 in Tropp paper.  The algorithm is less precise than *subspace_iteration_csr*  but can work on larger matrices for example on sparse matrices with a million rows.
 ### Mapper
 
 
@@ -100,8 +125,7 @@ compile with :
 * cargo build --release --features "intel-mkl-static" to link with mkl intel's library 
     (intel mkl will be automatically downloaded, see README.md of crate ndarray-linalg)
 
-* cargo build --release  --features "openblas-system" will try to link with system openblas and system lapacke
-  (see the build.rs to modify it if needed)
+
 ## References
 
 - Visualizing data using t_sne.
