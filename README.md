@@ -5,7 +5,7 @@ The crate provides, **in the form of a library**:
 1. Some variations on data embedding tools from t-Sne (2008) to Umap(2018).
    Our implementation is a mix of the various embedding algorithms mentioned in References.
 
-   - The graph is initialized by the Hnsw nearest neighbour algorithm as implemented in: [hnsw_rs](https://crates.io/crates/hnsw_rs) 
+   - The graph is initialized by the Hnsw nearest neighbour algorithm as implemented in: [hnsw_rs](https://crates.io/crates/hnsw_rs).   
      This provides for free, sub-sampling in the data to embed by considering only less densely occupied layers (the upper layers). This corresponds generally to a subsampling of 2%-4%, but can give a guarantee as the distance beetween points leaved out the sampling and its nearest sampled neighbour are known. The hnsw structure thus enables also an iterative/hierarchical initialization of the embedding by taking into account an increasing number of layers.
   
    - The preliminary graph built for the embedding uses an exponential function of distances to neighbour nodes (as in Umap),but keeps a      probability normalization constraint with respect to neighbours (as in T-sne).
@@ -32,7 +32,7 @@ The crate will provide a single-linkage hierarchical clustering function and an 
 ## Building
 
  The crate provides 2 features to choose between openblas-static, intel-mkl-static as defined in the  **ndarray-linalg** crate. 
-So **--features "openblas-static"** , **--features "intel-mkl-static"** must be passed to cargo to compile. Alternatively define the default in Cargo.toml.
+So **--features "openblas-static"** or  **--features "intel-mkl-static"** must be passed to cargo to compile. Alternatively define the default in Cargo.toml.
 ## Results
 
 These are preliminary results.
@@ -42,7 +42,7 @@ Timings are given for a 8-core i7 @2.3 Ghz laptop.
 
 Sources of examples are in corresponding directory.
 
-1. MNIST digits database  Cf [mnist-digits](http://yann.lecun.com/exdb/mnist/)
+1. **MNIST digits database**  Cf [mnist-digits](http://yann.lecun.com/exdb/mnist/)
 
 It consists in 70000 images of handwritten digits of 784 pixels
 
@@ -57,9 +57,10 @@ It tooks 20s to run, of which 9s were spent in the ann construction.
 
 It took 22s of which 9s were spent in the ann construction.
 
-- The estimated intrinsic dimension of the data is 17.7 with standard deviation depending on points: 6.
+- The estimated intrinsic dimension of the data is 18.5 with standard deviation depending on points: 7.2
+  taking into account sorted neighbours around each point between the 9-th and 20-th first ranks.
 
-2. MNIST fashion database Cf[mnist-fashion](https://github.com/zalandoresearch/fashion-mnist/tree/master/data/fashion)
+1. **MNIST fashion database** Cf [mnist-fashion](https://github.com/zalandoresearch/fashion-mnist/tree/master/data/fashion)
 
 It conssits in 70000 images of clothes.
 
@@ -76,8 +77,7 @@ It conssits in 70000 images of clothes.
 
  time : 34s 
    
-- The estimated intrinsic dimension of the data is 20.9 with standard deviation depending on points : 11.8
-
+- The estimated intrinsic dimension of the data is 21.9 with standard deviation depending on points : 12.2 taking into account sorted neighbours around each point between the 9-th and 20-th first ranks.
 ### Usage
 ```rust
     // allocation of a Hnsw structure to store data

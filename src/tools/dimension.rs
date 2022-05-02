@@ -16,7 +16,7 @@ pub(crate) fn intrinsic_dimension_from_edges<F>(edges : &Vec<OutEdge<F>>) ->  Re
     let k_last : usize;
     if edges.len() >= 20 {
         // bickel use 10..20 as default
-        k_first = 5;
+        k_first = 8;
         k_last = 19;
     }
     else if edges.len() > 3 {
