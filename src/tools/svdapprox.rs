@@ -500,9 +500,9 @@ pub fn subspace_iteration_csr<F> (csrmat: &CsMat<F>, rank : usize, nbiter : usiz
 /// If mat is a (m,n) matrix this function returns an orthonormal matrix Q of dimensions (m,l) such that :
 /// $$ || mat - Q*Q^{t}*mat || < ε$$  with probability at least $$ 1. - min(m,n) 10^{-r} $$
 ///  
-///  - epsil is the l2 norm of the last block of r columns vectors added in Q.
+///  - ε is the l2 norm of the last block of r columns vectors added in Q.
 ///  - r is the number of random vectors sampled to initialize the orthogonalization process.
-///    A rule of thumb is to use r between 5 ad 10. The higher the more cpu is required.
+///    A rule of thumb is to use r between 5 and 10. The higher the more cpu is required.
 ///  - max_rank is the maximum rank asked for.
 /// 
 /// 

@@ -175,7 +175,7 @@ impl <F> KGraph<F>
     /// estimate intrinsic dimension around a point given by its data_id.
     /// We implement the method described in :  
     ///     Maximum likelyhood estimation of intrinsic dimension.
-    ///     Levina E. and Bickel P.J NIPS 2004.  <https://www.stat.berkeley.edu/~bickel/mldim.pdf>
+    ///     Levina E. and Bickel P.J NIPS 2004.  [Levina-Bickel](https://www.stat.berkeley.edu/~bickel/mldim.pdf)
     /// 
     pub fn intrinsic_dim_at_data_id(&self, data_id : &DataId) -> Result<f64,anyhow::Error>   {
         //
@@ -190,7 +190,7 @@ impl <F> KGraph<F>
 
     /// We implement the method described in :  
     ///     Maximum likelyhood estimation of intrinsic dimension.
-    ///     Levina E. and Bickel P.J NIPS 2004.  <https://www.stat.berkeley.edu/~bickel/mldim.pdf>.  
+    ///     Levina E. and Bickel P.J NIPS 2004.  [Levina-Bickel](https://www.stat.berkeley.edu/~bickel/mldim.pdf).  
     /// 
     /// We estimate dimension by sampling sampling_size points around which we estimate intrinsic
     /// dimension and returs mean and standard deviation if we do not encounter error.

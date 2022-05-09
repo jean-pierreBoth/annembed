@@ -8,7 +8,7 @@ use crate::tools::nodeparam::*;
 
 /// We implement the method described in :  
 ///     Maximum likelyhood estimation of intrinsic dimension.
-///     Levina E. and Bickel P.J NIPS 2004.  <https://www.stat.berkeley.edu/~bickel/mldim.pdf>
+///     Levina E. and Bickel P.J NIPS 2004.  [Levina-Bickel](https://www.stat.berkeley.edu/~bickel/mldim.pdf)
 /// 
 pub(crate) fn intrinsic_dimension_from_edges<F>(edges : &Vec<OutEdge<F>>) ->  Result<f64,anyhow::Error> 
                 where F : Float  {
