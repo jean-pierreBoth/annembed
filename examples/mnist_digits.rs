@@ -296,7 +296,9 @@ pub fn main() {
     if dim_stat.is_ok() {
         let dim_stat = dim_stat.unwrap();
         log::info!(" dimension estimation with nbpoints : {}, dim : {:.3e}, sigma = {:.3e}", 
-                    sampling_size, dim_stat.0, dim_stat.1);
+            sampling_size, dim_stat.0, dim_stat.1);
+        println!(" dimension estimation with nbpoints : {}, dim : {:.3e}, sigma = {:.3e}", 
+            sampling_size, dim_stat.0, dim_stat.1); 
     }
 }  // end of main digits
 

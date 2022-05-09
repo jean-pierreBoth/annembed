@@ -1,6 +1,6 @@
 [package]
 name = "annembed"
-version = "0.0.3"
+version = "0.0.4"
 authors = ["jeanpierre.both@gmail.com"]
 repository = "https://github.com/jean-pierreBoth/annembed"
 description = "a Rust implementation of a dimension reduction à la Umap "

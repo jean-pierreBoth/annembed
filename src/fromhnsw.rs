@@ -926,6 +926,7 @@ fn test_full_hnsw() {
     assert!(dimension.is_ok());
     let dimension = dimension.unwrap();
     log::info!("\n estimation of dimension : {:.3e}, sigma : {:.3e} ", dimension.0 , dimension.1);
+    println!("\n estimation of dimension : {:.3e}, sigma : {:.3e} ", dimension.0 , dimension.1);
 }  // end of test_full_hnsw
 
 
