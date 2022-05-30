@@ -1003,12 +1003,10 @@ mod tests {
 //    cargo test svdapprox  -- --nocapture
 //    RUST_LOG=annembed::tools::svdapprox=TRACE cargo test svdapprox  -- --nocapture
 
-#[allow(unused)]
 use super::*;
 
 use sprs::{CsMat, TriMatBase};
 
-#[allow(dead_code)]
 fn log_init_test() {
     let _ = env_logger::builder().is_test(true).try_init();
 }  
@@ -1310,7 +1308,7 @@ fn test_svd_wiki_rank_full() {
 
 
 // get the wiki matrix in CsMat<f32> format
-#[allow(unused)]
+#[cfg(test)]
 fn get_wiki_csr_mat_f32() -> CsMat<f32> {
     // matrix taken from wikipedia (4,5)
     // let mat =  ndarray::arr2( & 
@@ -1344,7 +1342,7 @@ fn get_wiki_csr_mat_f32() -> CsMat<f32> {
 
 
 
-#[allow(unused)]
+#[cfg(test)]
 fn get_wiki_csr_mat_f64() -> CsMat<f64> {
     // matrix taken from wikipedia (4,5)
     // let mat =  ndarray::arr2( & 
