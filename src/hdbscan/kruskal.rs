@@ -157,15 +157,14 @@ where
 //===============================================================================================================
 
 
+#[cfg(test)]
 mod tests {
 
-#[allow(unused)]
 use super::*;
     
     
     
     
-#[allow(dead_code)]
 fn log_init_test() {
     let _ = env_logger::builder().is_test(true).try_init();
 }  

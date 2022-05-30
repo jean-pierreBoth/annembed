@@ -128,7 +128,7 @@ pub struct SLclustering<NodeIdx : PrimInt, F : Float> {
 
 
 impl <'a, NodeIdx : PrimInt, F>  SLclustering<NodeIdx, F> 
-            where F: PartialOrd + FromPrimitive+Float+Send+Sync+Clone {
+            where F: PartialOrd + FromPrimitive+ Float+ Send+ Sync+ Clone+ std::fmt::UpperExp {
     //
     pub fn new<D>(hnsw : &Hnsw<F,D>, nbcluster : usize) -> Self 
             where D : Distance<F> + Send + Sync {

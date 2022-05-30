@@ -8,6 +8,11 @@ use anyhow::{anyhow};
 use num_traits::{Float};
 use num_traits::cast::FromPrimitive;
 
+// to dump to ripser
+use std::fs::{OpenOptions};
+use std::path::{Path};
+use std::io::{Write,BufWriter};
+
 use indexmap::set::*;
 
 use std::cmp::Ordering;
@@ -126,7 +131,7 @@ pub struct KGraph<F> {
 
 
 impl <F> KGraph<F> 
-    where F : FromPrimitive + Float 
+    where F : FromPrimitive + Float + std::fmt::UpperExp
 {
     /// allocates a graph with expected size nbnodes and nbng neighbours 
     pub fn new() -> Self {
@@ -241,11 +246,40 @@ impl <F> KGraph<F>
         return self.node_set.get_index_of(data_id)
     }
 
-    /// usefule after embedding to get back to original indexes.
+    /// useful after embedding to get back to original indexes.
 #[allow(unused)]
     pub(crate) fn get_indexset(&self) -> &IndexSet<DataId> {
         &self.node_set
-    }
+    } // end of get_indexset
+
+
+
+    /// dump a Graph in a format corresponding to sprs::TriMatI to serve as input to Bauer's ripser module.
+    /// The dump corresponds to Ripser working on a distance matrix given in sparse format. See Ripser Code.
+    pub fn to_ripser_sparse_dist(&self, fname : &str) -> Result<(), anyhow::Error> {
+        let path = Path::new(fname);
+        log::debug!("in to_ripser_sparse_dist : fname : {}", path.display());
+        let fileres = OpenOptions::new().write(true).create(true).open(path);
+        let file;
+        if fileres.is_ok() {
+            file = fileres.unwrap();
+        }
+        else {
+            return Err(anyhow!("could not open file : {}", path.display()));
+        }
+        let mut bufwriter = BufWriter::new(file);
+        //
+        for i in 0..self.nbnodes {
+            for n in &self.neighbours[i] {
+                write!(bufwriter, "{},{},{:.5E}\n", i, n.node, n.weight)?;
+            }
+        }
+        //
+        log::debug!("to_ripser_sparse_dist finished");
+        Ok(()) 
+    }  // end of to_ripser_sparse_dist
+
+
 
     /// Fills in KGraphStat from KGraph
     pub fn get_kraph_stats(&self) -> KGraphStat<F> {
@@ -528,7 +562,7 @@ pub struct KGraphProjection<F> {
 
 
 impl <F> KGraphProjection<F>
-    where F : Float + FromPrimitive {
+    where F : Float + FromPrimitive + std::fmt::UpperExp {
 
     //  - first we construct graph consisting in upper (less populated) layers
     //  - Then we project : for points of others layers store the shorter edge from point to graph just constructed
@@ -557,6 +591,7 @@ impl <F> KGraphProjection<F>
         if nb_point_to_collect <= 0 {
             log::error!("!!!!!!!!!!!! KGraphProjection cannot collect points !!!!!!!!!!!!!, check layer argument");
             println!("!!!!!!!!!!!! KGraphProjection cannot collect points !!!!!!!!!!!!!, check layer argument");
+            std::process::exit(1);
         }
         // let _points = Vec::<std::sync::Arc<Point<F>>>::with_capacity(nb_point_to_collect);
         // let _distances = Array2::<F>::zeros((nb_point_to_collect,nb_point_to_collect));
@@ -851,19 +886,20 @@ fn fix_points_with_no_projection<T,F>(proj_data : &mut HashMap<NodeIdx, OutEdge<
 
 
 
+#[cfg(test)]
 mod tests {
 
 //    cargo test fromhnsw  -- --nocapture
 //    cargo test  fromhnsw::tests::test_graph_projection -- --nocapture
 //    RUST_LOG=annembed::fromhnsw=TRACE cargo test fromhnsw -- --nocapture
 
-#[allow(unused)]
 use super::*;
+
 
 use rand::distributions::{Uniform};
 use rand::prelude::*;
 
-#[allow(dead_code)]
+#[cfg(test)]
 fn log_init_test() {
     let res = env_logger::builder().is_test(true).try_init();
     if res.is_err() {
@@ -872,7 +908,6 @@ fn log_init_test() {
 }  // end of log_init_test
 
 
-#[allow(unused)]
 fn gen_rand_data_f32(nb_elem: usize , dim:usize) -> Vec<Vec<f32>> {
     let mut data = Vec::<Vec<f32>>::with_capacity(nb_elem);
     let mut rng = thread_rng();
@@ -962,6 +997,13 @@ fn test_layer_hnsw() {
     let kgraph : KGraph<f32> = kgraph_from_hnsw_layer(&hns, knbn, layer).unwrap();
     log::info!("minimum number of neighbours {}", kgraph.get_max_nbng());
     let _kgraph_stats = kgraph.get_kraph_stats();
+    // testing output for ripser
+    let fname = "test_ripser_output";
+    log::info!("testing ripser output in file : {}", fname);
+    let res = kgraph.to_ripser_sparse_dist(fname);
+    if res.is_err() {
+        log::error!("kgraph.to_ripser_sparse_dist in {} failed", fname);
+    }
 }  // end of test_layer_hnsw
 
 

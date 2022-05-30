@@ -765,7 +765,7 @@ impl <'a, F> EntropyOptim<'a,F>
 // These 2 function are also the base of module dmap
 //
 pub(crate) fn to_proba_edges<F>(kgraph : & KGraph<F>, scale_rho : f32, beta : f32) -> NodeParams
-    where F : Float + num_traits::cast::FromPrimitive {
+    where F : Float + num_traits::cast::FromPrimitive + std::fmt::UpperExp {
     //
     let nbnodes = kgraph.get_nb_nodes();
     let mut perplexity_q : CKMS<f32> = CKMS::<f32>::new(0.001);
@@ -829,7 +829,7 @@ pub(crate) fn to_proba_edges<F>(kgraph : & KGraph<F>, scale_rho : f32, beta : f3
 // and vector of proba weight to nearest neighbours.
 //
 fn get_scale_from_proba_normalisation<F> (kgraph : & KGraph<F>, scale_rho : f32, beta : f32, neighbours: &Vec<OutEdge<F>>) -> NodeParam 
-    where F : Float + num_traits::cast::FromPrimitive {
+    where F : Float + num_traits::cast::FromPrimitive + std::fmt::UpperExp {
     //
 //        log::trace!("in get_scale_from_proba_normalisation");
     let nbgh = neighbours.len();
@@ -1013,25 +1013,17 @@ fn set_data_box<F>(data : &mut Array2<F>, box_size : f64)
 
 
 
+#[cfg(test)]
 mod tests {
 
 //    cargo test embedder  -- --nocapture
 
 
-    #[allow(unused)]
     use super::*;
 
-
+    
     use rand::distributions::{Uniform};
 
-
-    // have a warning with and error without ?
-    #[allow(unused)]
-    use hnsw_rs::prelude::*;
-    #[allow(unused)]
-    use hnsw_rs::hnsw::Neighbour;
-
-    #[allow(unused)]
     fn log_init_test() {
         let _ = env_logger::builder().is_test(true).try_init();
     }
@@ -1039,7 +1031,7 @@ mod tests {
 
 
 
-    #[allow(unused)]
+    #[cfg(test)]
     fn gen_rand_data_f32(nb_elem: usize , dim:usize) -> Vec<Vec<f32>> {
         let mut data = Vec::<Vec<f32>>::with_capacity(nb_elem);
         let mut rng = thread_rng();

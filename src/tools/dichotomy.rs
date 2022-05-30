@@ -65,12 +65,11 @@ where
 //======================================================================
 
 
+#[cfg(test)]
 mod tests {
 
 
-    #[allow(unused)]
     use super::*;
-
 
     #[test]
     fn test_dichotomy_inc() {
