@@ -1,9 +1,9 @@
 //! Embedding from GraphK
 //! 
-//! The embedding is based on the graph extracted from the Hnsw structure.
+//! The embedding is based on the graph (see [KGraph](crate::fromhnsw::kgraph::KGraph)) extracted from the Hnsw structure.  
 //! Edges out a given point are given an exponential weight scaled related to the distance their neighbour.
 //! This weight is modulated locally by a scale parameter computed by the mean of the distance of a point to
-//! its nearest neighbour observed locaaly around each point.  
+//! its nearest neighbour observed locally around each point.  
 //! 
 //! **A more complete description of the model used can be found in module embedparams with hints to
 //! initialize parameters**.
@@ -14,7 +14,6 @@
 
 
 
-//#![allow(dead_code)]
 
 use num_traits::{Float, NumAssign};
 

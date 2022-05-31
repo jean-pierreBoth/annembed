@@ -1,5 +1,5 @@
-//! This file gathers everything coming from hnsw_rs.
-//! It covers grapk coming from hnsw (kgraph)[kgraph::KGraph] and projection on a small KGaph see (kgraphprojection)[kgproj::KGraphProjection]
+//! This modules gathers everything coming from hnsw_rs.  
+//! It covers graph coming from hnsw see [KGraph](kgraph::KGraph) and projection on a smaller KGraph see [KGraphProjection](kgproj::KGraphProjection)
 
 pub mod kgraph;
 

@@ -1,4 +1,8 @@
-//! Definition of graph projection
+//! Definition of graph projection.
+//! We extract from the Hnw structure a graph as in [KGraph](../KGraph) but
+//! also construct a smaller graph by considering only upper layers of the Hnsw structure.  
+//! Links from each point of the lower (denser) layers to the smaller graph are stored 
+//! so we can infer how well the smaller graph represent the whole graph.
 //! 
 
 use anyhow::{anyhow};
@@ -28,7 +32,7 @@ use hnsw_rs::hnsw::{DataId};
 use super::kgraph::*;
 use crate::tools::{nodeparam::*};
 
-/// Construct a projection from Hnsw data on layers above a given layers
+/// Construct a projection Graph from Hnsw data on layers above a given layers.  
 /// Maintain for each point in the Hnsw structure nearest point in projected structure.
 /// Possibly stores matrix of distances between filtered points
 /// 
@@ -272,13 +276,13 @@ impl <F> KGraphProjection<F>
     } // end of new
 
 
-    /// get layer corresponding above which the projection is done
+    /// get layer corresponding above which the projection is done. The layer is included in the projection.
     pub fn get_layer(&self) -> usize {
         self.layer
     } // end of get_layer
 
 
-    /// returns the edge defingin distance to nearest element in projected (small) graph
+    /// returns the edge defining distance to nearest element in projected (small) graph.  
     /// The argument is a NodeIdx
     pub fn get_projection_by_nodeidx(&self, nodeidx : &NodeIdx) -> OutEdge<F> {
         *(self.proj_data.get(&nodeidx).unwrap())
@@ -292,12 +296,12 @@ impl <F> KGraphProjection<F>
         self.proj_data.get(&edge.node).unwrap().weight
     } // end of get_distance_to_projection
 
-    // return a reference to the small graph
+    /// return a reference to the small graph
     pub fn get_small_graph(&self) -> &KGraph<F> {
         &self.small_graph
     }
 
-    // returns a reference to the large graph
+    /// returns a reference to the large graph
     pub fn get_large_graph(&self) -> &KGraph<F> {
         &self.large_graph
     }
