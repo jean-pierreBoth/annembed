@@ -256,22 +256,12 @@ impl <F> KGraph<F>
 
     /// dump a Graph in a format corresponding to sprs::TriMatI to serve as input to Bauer's ripser module.
     /// The dump corresponds to Ripser working on a distance matrix given in sparse format. See Ripser Code.
-    pub fn to_ripser_sparse_dist(&self, fname : &str) -> Result<(), anyhow::Error> {
-        let path = Path::new(fname);
-        log::debug!("in to_ripser_sparse_dist : fname : {}", path.display());
-        let fileres = OpenOptions::new().write(true).create(true).open(path);
-        let file;
-        if fileres.is_ok() {
-            file = fileres.unwrap();
-        }
-        else {
-            return Err(anyhow!("could not open file : {}", path.display()));
-        }
-        let mut bufwriter = BufWriter::new(file);
+    pub fn to_ripser_sparse_dist(&self, writer : &mut dyn Write) -> Result<(), anyhow::Error> {
+        log::debug!("in to_ripser_sparse_dist");
         //
         for i in 0..self.nbnodes {
             for n in &self.neighbours[i] {
-                write!(bufwriter, "{},{},{:.5E}\n", i, n.node, n.weight)?;
+                write!(writer, "{} {} {:.5E}\n", i, n.node, n.weight)?;
             }
         }
         //
@@ -827,6 +817,28 @@ impl <F> KGraphProjection<F>
         //
         quant
     }
+
+    /// compute approximate barcodes from projected graph.
+    /// As we know the distance between the 2 graphs we know the error on bar codes due to stability theorem
+    /// This is done by using the Ripser module.
+    pub fn compute_approximated_barcodes(&self, fname : &str)  -> Result<(), anyhow::Error> {
+        let path = Path::new(fname);
+        log::debug!("in to_ripser_sparse_dist : fname : {}", path.display());
+        let fileres = OpenOptions::new().write(true).create(true).open(path);
+        let file;
+        if fileres.is_ok() {
+            file = fileres.unwrap();
+        }
+        else {
+            return Err(anyhow!("could not open file : {}", path.display()));
+        }
+        //
+        let mut bufwriter = BufWriter::new(file);
+        let _res = self.small_graph.to_ripser_sparse_dist(&mut bufwriter);
+        // TODO must launch ripser either with crate run_script or by making ripser a library using cxx.
+        //
+        return Err(anyhow!("not yet"));
+    } // end of compute_approximated_barcodes
 }  // end of impl block
 
 
@@ -1000,9 +1012,21 @@ fn test_layer_hnsw() {
     // testing output for ripser
     let fname = "test_ripser_output";
     log::info!("testing ripser output in file : {}", fname);
-    let res = kgraph.to_ripser_sparse_dist(fname);
-    if res.is_err() {
-        log::error!("kgraph.to_ripser_sparse_dist in {} failed", fname);
+    let path = Path::new(fname);
+    log::debug!("in to_ripser_sparse_dist : fname : {}", path.display());
+    let fileres = OpenOptions::new().write(true).create(true).open(path);
+    let file;
+    if fileres.is_ok() {
+        file = fileres.unwrap();
+        let mut bufwriter = BufWriter::new(file);
+        let res = kgraph.to_ripser_sparse_dist(&mut bufwriter);
+        if res.is_err() {
+            log::error!("kgraph.to_ripser_sparse_dist in {} failed", fname);
+        }
+    }
+    else {
+        log::error!("cannot open {}", path.display());
+        assert_eq!(1,0);
     }
 }  // end of test_layer_hnsw
 

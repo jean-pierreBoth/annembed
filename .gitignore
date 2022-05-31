@@ -8,3 +8,4 @@ rls*
 *.csv
 .idea/
 *.log
+test_ripser_output
