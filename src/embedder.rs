@@ -41,7 +41,7 @@ use std::time::{Duration,SystemTime};
 use cpu_time::ProcessTime;
 
 use hnsw_rs::prelude::*;
-use crate::fromhnsw::*;
+use crate::fromhnsw::{fromhnsw::KGraph,kgproj::*};
 use crate::embedparams::*;
 use crate::diffmaps::*;
 use crate::tools::{dichotomy::*,nodeparam::*};
@@ -174,7 +174,7 @@ where
             }
         }
         let median_dist =  quant.query(0.5).unwrap().1;
-        let normal = Normal::new(0., 1.0).unwrap();
+        let normal = Normal::<f32>::new(0., 1.0).unwrap();
         for i in nb_nodes_small..nb_nodes_large {
             let projected_edge = graph_projection.get_projection_by_nodeidx(&i);
             let ratio = projected_edge.weight.to_f32().unwrap() / median_dist;
@@ -1020,6 +1020,7 @@ mod tests {
 
 
     use super::*;
+    use crate::fromhnsw::*;
 
     
     use rand::distributions::{Uniform};
@@ -1042,7 +1043,7 @@ mod tests {
             data.push(v);
         }
         data
-    }
+    } // end of gen_rand_data_f32
     
     #[test]
     fn mini_embed_full() {

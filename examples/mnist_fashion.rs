@@ -145,7 +145,9 @@ use csv::*;
 use std::time::{Duration, SystemTime};
 use cpu_time::ProcessTime;
 
+use crate::fromhnsw::KGraph;
 
+use crate::kgproj::KGraphProjection;
 
 const MNIST_FASHION_DIR : &'static str = "/home/jpboth/Data/Fashion-MNIST/";
 
