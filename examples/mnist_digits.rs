@@ -146,8 +146,9 @@ use csv::*;
 use std::time::{Duration, SystemTime};
 use cpu_time::ProcessTime;
 
-use crate::kgraph::KGraph;
-use crate::kgproj::KGraphProjection;
+use annembed::fromhnsw::kgraph::{KGraph,kgraph_from_hnsw_all};
+use annembed::fromhnsw::kgproj::KGraphProjection;
+
 
 const MNIST_DIGITS_DIR : &'static str = "/home/jpboth/Data/MNIST/";
 
