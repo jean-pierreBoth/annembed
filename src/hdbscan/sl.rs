@@ -18,7 +18,7 @@ use std::collections::BinaryHeap;
 
 use hnsw_rs::prelude::*;
 
-use crate::fromhnsw::fromhnsw::{KGraph};
+use crate::fromhnsw::kgraph::{KGraph};
 use crate::fromhnsw::kgraph_from_hnsw_all;
 use super::kruskal::*;
 

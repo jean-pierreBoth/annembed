@@ -145,7 +145,7 @@ use csv::*;
 use std::time::{Duration, SystemTime};
 use cpu_time::ProcessTime;
 
-use crate::fromhnsw::KGraph;
+use crate::kgraph::KGraph;
 
 use crate::kgproj::KGraphProjection;
 

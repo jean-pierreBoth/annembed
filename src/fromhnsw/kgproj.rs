@@ -25,7 +25,7 @@ use ndarray::{Array2};
 use hnsw_rs::prelude::*;
 use hnsw_rs::hnsw::{DataId};
 
-use super::fromhnsw::*;
+use super::kgraph::*;
 use crate::tools::{nodeparam::*};
 
 /// Construct a projection from Hnsw data on layers above a given layers

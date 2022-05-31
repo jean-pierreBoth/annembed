@@ -41,7 +41,7 @@ use std::time::{Duration,SystemTime};
 use cpu_time::ProcessTime;
 
 use hnsw_rs::prelude::*;
-use crate::fromhnsw::{fromhnsw::KGraph,kgproj::*};
+use crate::fromhnsw::{kgraph::KGraph,kgproj::*};
 use crate::embedparams::*;
 use crate::diffmaps::*;
 use crate::tools::{dichotomy::*,nodeparam::*};
@@ -256,7 +256,7 @@ where
     }
 
     /// returns embedded data reindexed by DataId. This requires the DataId to be contiguous from 0 to nbdata.  
-    ///  See [crate::fromhnsw::KGraph::get_idx_from_dataid]
+    ///  See [crate::fromhnsw::kgraph::KGraph::get_idx_from_dataid]
     pub fn get_embedded_reindexed(&self) -> Array2<F> {
         let emmbedded = self.embedding.as_ref().unwrap();
         let (nbrow, dim) = emmbedded.dim();

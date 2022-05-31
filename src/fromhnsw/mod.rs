@@ -1,7 +1,8 @@
-//! This file gathers everything coming from hnsw_rs
+//! This file gathers everything coming from hnsw_rs.
+//! It covers grapk coming from hnsw (kgraph)[kgraph::KGraph] and projection on a small KGaph see (kgraphprojection)[kgproj::KGraphProjection]
 
-pub mod fromhnsw;
+pub mod kgraph;
 
-pub use fromhnsw::kgraph_from_hnsw_all;
+pub use kgraph::kgraph_from_hnsw_all;
 
 pub mod kgproj;
