@@ -1,6 +1,5 @@
 target/**
 Runs/**
-Julia/**
 Cargo.lock
 rls*
 *.pdf

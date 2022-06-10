@@ -318,12 +318,11 @@ impl <F> KGraph<F>
             mean_in_degree /= in_degrees.len() as f32;
         }
         //
-        println!("\n ==========================");
         println!("\n minimal graph statistics \n");
-        println!("max in degree : {:.2e}", max_in_degree);
-        println!("mean in degree : {:.2e}", mean_in_degree);
-        println!("max max range : {:.2e} ", max_max_r.to_f32().unwrap());
-        println!("min min range : {:.2e} ", min_min_r.to_f32().unwrap());
+        println!("\t max in degree : {:.2e}", max_in_degree);
+        println!("\t mean in degree : {:.2e}", mean_in_degree);
+        println!("\t max max range : {:.2e} ", max_max_r.to_f32().unwrap());
+        println!("\t min min range : {:.2e} ", min_min_r.to_f32().unwrap());
         if quant.count() > 0 {
             println!("min radius quantile at 0.05 : {:.2e} , 0.5 :  {:.2e}, 0.95 : {:.2e}, 0.99 : {:.2e}", 
                         quant.query(0.05).unwrap().1, quant.query(0.5).unwrap().1, 

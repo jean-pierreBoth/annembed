@@ -179,7 +179,7 @@ impl <F> KGraphProjection<F>
                     for j in 0..neighbours_hnsw[m].len() {
                         let n_origin_id = neighbours_hnsw[m][j].get_origin_id();
                         let n_p_id = neighbours_hnsw[m][j].p_id;
-                        if n_p_id.0 >= layer_u8 && F::from(neighbours_hnsw[m][j].distance).unwrap() < best_distance {
+                        if n_p_id.0 >= layer_u8 && F::from(neighbours_hnsw[m][j].distance).unwrap() < best_edge.weight {
                             // store edge with remapping dataid to nodeidx
                             let neighbour_index = upper_index_set.get_index_of(&n_origin_id).unwrap();
                             best_edge = OutEdge::<F>{ node : neighbour_index, weight : F::from_f32(neighbours_hnsw[m][j].distance).unwrap() };
@@ -215,9 +215,10 @@ impl <F> KGraphProjection<F>
             }
         }
         //
-        log::info!("number of points with less than : {} neighbours = {} ", nbng, nb_point_below_nbng);
+        log::info!("\n\n number of points with less than : {} neighbours = {} ", nbng, nb_point_below_nbng);
         let upper_graph = KGraph::<F>{ max_nbng : nbng, nbnodes : upper_graph_neighbours.len() , neighbours : upper_graph_neighbours, node_set : upper_index_set};
-        log::info!("getting stats from reduced graph");
+        log::info!("\n\n getting stats from reduced graph : ");
+        log::info!("\n ================================");
         let _graph_stats = upper_graph.get_kraph_stats();
         //
         // construct the dense whole  graph, lower layers or more populated layers
@@ -266,7 +267,8 @@ impl <F> KGraphProjection<F>
         }  // end for on layers
         // we have both graph and projection
         let whole_graph = KGraph::<F>{ max_nbng : nbng, nbnodes : graph_neighbours.len() , neighbours : graph_neighbours, node_set : index_set};
-        log::info!("getting stats from whole graph");
+        log::info!("\n \n getting stats from whole graph : ");
+        log::info!("\n =====================================");
         let _graph_stats = whole_graph.get_kraph_stats();
         // 
         log::info!("number of points with less than : {} neighbours = {} ", nbng, nb_point_below_nbng);

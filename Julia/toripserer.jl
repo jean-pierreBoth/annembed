@@ -6,6 +6,7 @@ using Printf
 
 using SparseArrays
 using Ripserer
+using PersistenceDiagrams
 using Plots
 
 logger = ConsoleLogger(stdout, Base.CoreLogging.Debug)
@@ -24,8 +25,10 @@ function toripserer(fname)
     numline = 0
     for line in eachline(io)
         numline += 1
-        @debug line, numline
         sp = split(line, " ")
+        if length(sp) != 3 
+            @debug line, numline
+        end
         # check we have 3 str
         # we add 1 to indexes to got 1 based indexation (we come from Rust)
         push!(I, 1+parse(Int64, sp[1]))
