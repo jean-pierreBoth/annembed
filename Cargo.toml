@@ -30,7 +30,9 @@ path = "examples/mnist_digits.rs"
 name = "mnist_fashion"
 path = "examples/mnist_fashion.rs"
 
-#[[example]]
+[[examples]]
+name = "ripser_fashion"
+path = "examples/fashion_ripser"
 
 [dependencies]
 # default is version spec is ^ meaning can update up to max non null version number

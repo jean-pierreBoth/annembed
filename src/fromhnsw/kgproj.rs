@@ -319,10 +319,10 @@ impl <F> KGraphProjection<F>
     /// compute approximate barcodes from projected graph.
     /// As we know the distance between the 2 graphs we know the error on bar codes due to stability theorem
     /// This is done by using the Ripser module.
-    pub fn compute_approximated_barcodes(&self, fname : &str)  -> Result<(), anyhow::Error> {
+    pub fn dump_sparse_mat_for_ripser(&self, fname : &str)  -> Result<(), anyhow::Error> {
         let path = Path::new(fname);
         log::debug!("in to_ripser_sparse_dist : fname : {}", path.display());
-        let fileres = OpenOptions::new().write(true).create(true).open(path);
+        let fileres = OpenOptions::new().write(true).create(true).truncate(true).open(path);
         let file;
         if fileres.is_ok() {
             file = fileres.unwrap();
@@ -332,10 +332,10 @@ impl <F> KGraphProjection<F>
         }
         //
         let mut bufwriter = BufWriter::new(file);
-        let _res = self.small_graph.to_ripser_sparse_dist(&mut bufwriter);
-        // TODO must launch ripser either with crate run_script or by making ripser a library using cxx.
+        let res = self.small_graph.to_ripser_sparse_dist(&mut bufwriter);
+        // TODO must launch ripser either with crate run_script or by making ripser a library using cxx. or Ripserer.jl
         //
-        return Err(anyhow!("not yet"));
+        return res;
     } // end of compute_approximated_barcodes
 }  // end of impl block
 
@@ -375,12 +375,12 @@ fn fix_points_with_no_projection<T,F>(proj_data : &mut HashMap<NodeIdx, OutEdge<
     log::debug!("fix_points_with_no_projection, nb points : {} ", nb_points_noproj);
     //
     for point in points.iter() {
-    if let Some(edge) = get_point_approximate_projection(point, proj_data, index_set, layer) {
-        let origin_id = point.get_origin_id();
-        let idx = index_set.get_index_of(&origin_id).unwrap();
-        proj_data.insert(idx, edge);
-        nb_fixed += 1;
-    }
+        if let Some(edge) = get_point_approximate_projection(point, proj_data, index_set, layer) {
+            let origin_id = point.get_origin_id();
+            let idx = index_set.get_index_of(&origin_id).unwrap();
+            proj_data.insert(idx, edge);
+            nb_fixed += 1;
+        }
     } // end of for on points
     //
     log::trace!("fix_points_with_no_projection nb fixed {}", nb_fixed);

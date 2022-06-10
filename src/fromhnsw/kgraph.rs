@@ -252,19 +252,33 @@ impl <F> KGraph<F>
 
 
     /// dump a Graph in a format corresponding to sprs::TriMatI to serve as input to Bauer's ripser module.
-    /// The dump corresponds to Ripser working on a distance matrix given in sparse format. See Ripser Code.
+    /// The dump corresponds to Ripser working on a distance matrix given in sparse format. See Ripser Code or Julia Ripserer
+    /// We need to symetrize the matrix as we dump a distance matrix
+    /// Note that ripser do not complain for no symetric data but Ripserer does 
     pub fn to_ripser_sparse_dist(&self, writer : &mut dyn Write) -> Result<(), anyhow::Error> {
         log::debug!("in to_ripser_sparse_dist");
         //
         for i in 0..self.nbnodes {
             for n in &self.neighbours[i] {
                 write!(writer, "{} {} {:.5E}\n", i, n.node, n.weight)?;
+                write!(writer, "{} {} {:.5E}\n", n.node, i, n.weight)?;
             }
         }
         //
         log::debug!("to_ripser_sparse_dist finished");
         Ok(()) 
     }  // end of to_ripser_sparse_dist
+
+
+    /// dump a full lower symetric distance matrix
+    /// We must get to data_id and distance upin which Hnsw is built
+    pub fn to_ripser_full_lowsym(&self, _writer : &mut dyn Write) -> Result<(), anyhow::Error> {
+        log::debug!("entering to_ripser_full_lowsym");
+
+        log::debug!("to_ripser_full_lowsym finished");
+        Ok(()) 
+    } // end of to_ripser_full_lowsym
+
 
 
 
