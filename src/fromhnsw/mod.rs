@@ -6,3 +6,5 @@ pub mod kgraph;
 pub use kgraph::kgraph_from_hnsw_all;
 
 pub mod kgproj;
+
+pub mod zoom;
