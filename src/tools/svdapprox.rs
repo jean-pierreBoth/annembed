@@ -271,17 +271,23 @@ pub fn transpose_dense_mult_csr<F>(qmat : &Array2<F>, csrmat : &CsMat<F>) -> Arr
 //==================================================================================================
 
 
-/// We can ask for a range approximation of matrix on two modes:
+/// We can ask for a range approximation of matrix on two modes, either with a L2-norm approximation of the initial
+/// matrix with this structure or with a fixed rank target with the structure [RangeRank].  
+/// This approximation mode is less precise than the RangeRank mode but is more flexible, and consumes
+/// less Cpu and memory.
+/// 
+/// The RangePrecision has 3 parameters:
 /// - epsil     : asking for precision l2 norm residual under epsil
-/// - step      : at each iteration, step new base vectors of the range matrix are searched.
-///               between 5 and 10 seems adequate. To adapt to rank approximation searched.
+/// - step      : at each iteration, *step* new base vectors of the range matrix are searched.
+///               between 5 and 10 seems adequate. Value to adapt to rank approximation searched.
 ///               Must be greater or equal to 2.
 /// - max_rank  : maximum rank of approximation
 #[derive(Clone, Copy, Debug)]
 pub struct RangePrecision {
     /// precision asked for. Froebonius norm of the residual
     epsil :f64,
-    /// increment step for the number of base vector of the range matrix  5 to 10  is a good range 
+    /// increment step for the number of base vector of the range matrix  5 to 10  is a good range.
+    /// Must be greater or equal to 2. 
     step : usize,
     /// maximum rank asked. Iterations stop when epsil preicison is reached or maximum rank is reached.
     max_rank : usize,
@@ -303,9 +309,9 @@ impl RangePrecision {
 
 }  // end of RangePrecision
 
-/// We can ask for a range approximation of matrix with a fixed target range
-/// - asking for a range
-///    It is then necessary to fix the number of QR iterations to be done 
+/// We can ask for a range approximation of matrix with a fixed target rank
+/// - asking for a rank.  
+///    The method relies on QR iterations, 2 QR iterations should be good. 
 #[derive(Clone, Copy, Debug)]
 pub struct RangeRank {
     /// asked rank
