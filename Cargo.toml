@@ -31,8 +31,15 @@ name = "mnist_fashion"
 path = "examples/mnist_fashion.rs"
 
 [[examples]]
-name = "ripser_fashion"
-path = "examples/fashion_ripser"
+name = "toripser"
+path = "examples/toripser.rs"
+
+
+[[bin]]
+name = "embed"
+path = "src/bin/annembed.rs"
+
+
 
 [dependencies]
 # default is version spec is ^ meaning can update up to max non null version number
@@ -40,6 +47,7 @@ path = "examples/fashion_ripser"
 #
 
 
+clap = { version = "3.1", features = ["derive"] }
 
 
 # for //
@@ -56,8 +64,8 @@ sprs = {version = "0.11"}
 
 indexmap = {version = "1.6"}
 # hnsw_rs =  {git = "https://gitlab.com/jpboth/hnswlib-rs.git"}
-#hnsw_rs = {path = "../hnswlib-rs", features = ["simdeez_f"]}
-hnsw_rs = {version = "0.1.15"}
+hnsw_rs = {path = "../hnswlib-rs", features = ["simdeez_f"]}
+#hnsw_rs = {version = "0.1.15"}
 
 # rand utilis
 rand = {version = "0.8"}
@@ -73,6 +81,7 @@ csv = {version = "1.1"}
 serde= {version = "1.0", features = ["derive"] }
 bincode = {version = "1.3"}
 byteorder = {version = "1.4"}
+bson = {version = "2.2"}
 
 # decreasing order of log for debug build : (max_level_)trace debug info warn error off
 # decreasing order of log for release build (release_max_level_)  .. idem
@@ -83,7 +92,6 @@ env_logger = { version = "0.9"}
 # hack to avoid interaction bug with intel-mkl
 anyhow = { version = "<=1.0.48" }
 
-#openblas-src = {version = "0.10"}
 
 katexit = {version = "0.1.0"}
 

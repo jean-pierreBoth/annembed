@@ -240,7 +240,7 @@ pub fn main() {
     let kgraph : KGraph<f32>;
     let graphprojection: KGraphProjection<f32>;
     //
-    let mut embed_params = EmbedderParams::new();
+    let mut embed_params = EmbedderParams::default();
     embed_params.nb_grad_batch = 15;
     embed_params.scale_rho = 0.5;
     embed_params.beta = 1.;

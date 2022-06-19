@@ -8,6 +8,7 @@ using SparseArrays
 using Ripserer
 using PersistenceDiagrams
 using Plots
+using BSON
 
 logger = ConsoleLogger(stdout, Base.CoreLogging.Debug)
 global_logger(logger)
@@ -39,6 +40,32 @@ function toripserer(fname)
     close(io)
     return cscmat
 end
+
+
+"""
+    Reload a lower inferior matrix distance matrix from rust, in a Bson format
+"""
+function lowiMatReload(fname) 
+    bsonv = BSON.load(fname)
+    v = bsonv[:limat]
+    v = Vector{Float64}(v)
+    # get back to matrix form
+    size = sqrt(2 * length(v))
+    size = Int64(floor(size))
+    @debug "matrix size" size
+    # now we get back to a Matrix for Ripserer 
+    distmat = zeros(Float64, size,size)
+    rank = 1
+    for i=1:size
+        for j=1:i
+            distmat[i,j] = v[rank]
+            distmat[j,i] = v[rank]
+            rank += 1
+        end
+    end
+    return distmat
+end
+
 
 
 """

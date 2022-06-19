@@ -232,7 +232,7 @@ pub fn main() {
     println!(" ann construction sys time(s) {:?} cpu time {:?}", sys_now.elapsed().unwrap().as_secs(), cpu_time.as_secs());
     hnsw.dump_layer_info();
     //
-    let mut embed_params = EmbedderParams::new();
+    let mut embed_params = EmbedderParams::default();
     embed_params.nb_grad_batch = 15;
     embed_params.scale_rho = 0.6;
     embed_params.beta = 1.;

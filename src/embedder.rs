@@ -1067,7 +1067,7 @@ mod tests {
         let kgraph : KGraph<f32> = kgraph_from_hnsw_all(&hns, knbn).unwrap();
         log::info!("minimum number of neighbours {}", kgraph.get_max_nbng());
         let _kgraph_stats = kgraph.get_kraph_stats();
-        let mut embed_params = EmbedderParams::new();
+        let mut embed_params = EmbedderParams::default();
         embed_params.asked_dim = 5;
         let mut embedder = Embedder::new(&kgraph, embed_params);
         let embed_res = embedder.embed();

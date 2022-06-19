@@ -1,4 +1,4 @@
-//! ripser on Mnist fashion
+//! Some tests at dumping info for Julia Ripserer module from Mnist files
 //! 
 
 use std::io::prelude::*;
@@ -136,6 +136,12 @@ pub fn read_label_file(io_in: &mut dyn Read) -> Array1<u8>{
 use std::time::{Duration, SystemTime};
 use cpu_time::ProcessTime;
 
+use ndarray::{Array2};
+use bson;
+use std::path::{Path};
+use std::io::{BufWriter};
+
+
 #[allow(unused)]
 use annembed::fromhnsw::kgraph::{KGraph};
 use annembed::fromhnsw::kgproj::KGraphProjection;
@@ -214,5 +220,53 @@ pub fn main() {
     if res.is_err() {
         log::info!("compute_approximated_barcodes failed");
     }
- 
+    log::debug!("extracting matrix of distances around first point");
+    // try to get local persistent data around first images (which is automatically in layer 0) 
+    let center = data_with_id[0].0;
+    let point_indexation = hnsw.get_point_indexation();
+    log::debug!("asking for 500 points");
+    let neighbour_0 = hnsw.search(&center, 500, ef_c);
+    let nb_points = neighbour_0.len();
+    log::debug!("got nb neighbours : {}", nb_points);
+    let mut dist_mat = Array2::zeros((nb_points, nb_points));
+    let distance = hnsw.get_distance();
+    for i in 0..neighbour_0.len() {
+        let data_i = point_indexation.get_point_data(&neighbour_0[i].p_id).unwrap();
+        for j in 0..i {
+            let point_j =  point_indexation.get_point_data(&neighbour_0[j].p_id).unwrap();
+            dist_mat[[i,j]] = distance.eval(&data_i, &point_j);
+        }
+    } // end of for i
+    let vlen = nb_points * (nb_points + 1) / 2;
+    let mut v = Vec::<f32>::with_capacity(vlen);
+    for i in 0..neighbour_0.len() {
+        for j in 0..i {
+            v.push(dist_mat[[i,j]]);
+        }
+        v.push(0.);
+    }
+    // we must dump matrice as a lower inferior matrix
+    log::debug!("serializing , first values : {} {} {} , last : {}", v[0], v[1], v[2], v[v.len()-2]);
+    let serializer = bson::Serializer::new();
+    let res = serde::ser::Serialize::serialize::<bson::Serializer>(&v, serializer);
+    if !res.is_ok() {
+        panic!("serialization failed")
+    }
+    let bson_v = res.unwrap();
+    let path = Path::new("localdistmat.bson");
+    let fileres = OpenOptions::new().write(true).create(true).open(path);
+    let file;
+    if fileres.is_ok() {
+        file = fileres.unwrap();
+    }
+    else {
+        panic!("could not open file : {}", path.display());
+    }
+    let mut doc = bson::Document::new();
+    doc.insert("limat", bson_v);
+    let bufwriter = BufWriter::new(file);
+    let res = doc.to_writer(bufwriter);
+    if res.is_err() {
+        panic!("dump of bson failed: {}", res.err().unwrap());
+    }
 } // end of main

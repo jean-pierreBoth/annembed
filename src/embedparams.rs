@@ -95,7 +95,7 @@ pub struct EmbedderParams {
 
 
 impl EmbedderParams {
-    pub fn new()  -> Self {
+    pub fn default()  -> Self {
         let asked_dim = 2;
         let dmap_init = true;
         let beta = 1.;
