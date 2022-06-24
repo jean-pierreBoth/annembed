@@ -109,6 +109,7 @@ impl EmbedderParams {
 
     pub fn log(&self) {
         log::info!("EmbedderParams");
+        log::info!("\t asked dim : {}", self.asked_dim);
         log::info!("\t gradient step : {}", self.grad_step);
         log::info!("\t edge exponent in original graph : {} ", self.beta);
         log::info!("\t nb sampling by edge : {}", self.nb_sampling_by_edge);

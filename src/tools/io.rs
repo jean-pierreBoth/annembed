@@ -15,7 +15,7 @@ use num_traits::{Float};
 use std::str::FromStr;
 
 
-use ndarray::{Array1, Array2};
+use ndarray::{Array2};
 
 use csv::*;
 
@@ -79,7 +79,7 @@ pub(crate) fn get_header_size(filepath : &Path) -> anyhow::Result<usize> {
 /// get data to embed from a csv file
 /// Each line of the file must have a vector of float values with some standard csv delimiters.
 /// A header is possible with lines beginning with '#' or '%'
-pub fn get_toembed_from_csv<F> (filepath : &Path, delim : u8) -> anyhow::Result<Array2<F>> 
+pub fn get_toembed_from_csv<F> (filepath : &Path, delim : u8) -> anyhow::Result<Vec<Vec<F>>> 
     where F : FromStr + Float {
     //
     let nb_headers_line = get_header_size(&filepath)?;
@@ -101,7 +101,7 @@ pub fn get_toembed_from_csv<F> (filepath : &Path, delim : u8) -> anyhow::Result<
     let mut nb_record = 0;      // number of record loaded
     let mut num_record : usize = 0;
     let mut nb_fields = 0;
-    let mut toembed = Array2::<F>::zeros((0,0));
+    let mut toembed = Vec::<Vec<F>>::new();
     //
     let mut rdr = ReaderBuilder::new().delimiter(delim).flexible(false).has_headers(false).from_reader(bufreader);
     for result in rdr.records() {
@@ -117,7 +117,6 @@ pub fn get_toembed_from_csv<F> (filepath : &Path, delim : u8) -> anyhow::Result<
                 log::error!("found only one field in record, check the delimitor , got {:?} as delimitor ", delim as char);
                 return Err(anyhow!("found only one field in record, check the delimitor , got {:?} as delimitor ", delim as char));
             }
-            toembed = Array2::<F>::zeros((0, nb_fields));
         }
         else {
             if record.len() != nb_fields {
@@ -125,19 +124,19 @@ pub fn get_toembed_from_csv<F> (filepath : &Path, delim : u8) -> anyhow::Result<
                 return Err(anyhow!("non constant number of fields at record {} first record has {}",num_record,  nb_fields));   
             }
             // We have a new vector with nb_fields to parse
-            let mut v = Array1::<F>::zeros(nb_fields);
+            let mut v = Vec::<F>::with_capacity(nb_fields);
             for j in 0..nb_fields {
                 let field = record.get(j).unwrap();
                 // decode into Ix type
                 if let Ok(val) = field.parse::<F>() {
-                    v[j] = val;
+                    v.push(val);
                 }
                 else {
                     log::debug!("error decoding field 1 of record {}", num_record);
                     return Err(anyhow!("error decoding field 1 of record  {}",num_record)); 
                 }
             }
-            toembed.push_row(v.view()).unwrap();
+            toembed.push(v);
         }
         nb_record += 1;
     }
