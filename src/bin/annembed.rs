@@ -1,10 +1,11 @@
 //! annembed excutable.  
 //! 
-//! This module provide just access to the simple (not hierarchical) embedding.  
-//! Cmd syntax is annembed input --file [hnsw params] [embed params]
+//! This module provide just access to floating point data embedding.  
+//! Cmd syntax is annembed input --file svfile [hnsw params] [embed params]
 //! hnsw is an optional command to change default parameters 
 //! embed is an optional command to change default parameters
-
+//! The csv file must have one record by vector to embed. The output is a csv file with embedded vectors.
+//! The Julia directory provide helpers to vizualize and some Topological Data analysis tools
 
 
 
@@ -15,6 +16,7 @@ use cpu_time::ProcessTime;
 
 use anyhow::{anyhow};
 use clap::{Arg, ArgMatches, Command};
+//use std::io::prelude::*;
 
 
 use hnsw_rs::prelude::*;
@@ -136,7 +138,6 @@ fn parse_embed_cmd(matches : &ArgMatches) ->  Result<EmbedderParams, anyhow::Err
         _      => { return Err(anyhow!("could not parse scale_rho"));}
     };  // end of match scale_rho
 
-
     match matches.value_of("nbsample") {
         Some(str) =>  { 
             let res = str.parse::<usize>();
@@ -148,7 +149,6 @@ fn parse_embed_cmd(matches : &ArgMatches) ->  Result<EmbedderParams, anyhow::Err
         } 
         _      => { return Err(anyhow!("could not parse nbsample"));}
     };  // end of match nb_sampling_by_edge
-
 
 
     return Ok(embedparams);
@@ -187,7 +187,7 @@ pub fn main() {
             .long("dist")
             .short('d')
             .required(true)
-            .help("distance is required"))
+            .help("distance is required   \"DistL1\" , \"DistL2\", \"DistCosine\", \"DistJeyffreys\"  "))
         .arg(Arg::new("nb_conn")
             .long("nbconn")
             .takes_value(true)
@@ -288,20 +288,70 @@ pub fn main() {
     }
 
     let data = res.unwrap();
+    let data_with_id : Vec<(&Vec<f64>, usize)>= data.iter().zip(0..data.len()).collect();
     let nb_data = data.len();
     let nb_layer = 16.min((nb_data as f32).ln().trunc() as usize);
     //
     let cpu_start = ProcessTime::now();
     let sys_now = SystemTime::now();
-    //
-    let hnsw = Hnsw::<f64, DistL2>::new(hnswparams.max_conn, nb_data, nb_layer, hnswparams.ef_c, DistL2{});
-    let data_with_id : Vec<(&Vec<f64>, usize)>= data.iter().zip(0..data.len()).collect();
-    hnsw.parallel_insert(&data_with_id);
+    // a closure to hide genericity problem , use a macro?
+    let get_graph = |distname : &String| -> KGraph<f64> {
+        match distname.as_str() {
+            "DistL2" => {
+                let hnsw = Hnsw::<f64, DistL2>::new(hnswparams.max_conn, nb_data, nb_layer, 
+                        hnswparams.ef_c, DistL2{});
+                hnsw.parallel_insert(&data_with_id);
+                hnsw.dump_layer_info();
+                let kgraph = kgraph_from_hnsw_all(&hnsw, hnswparams.knbn).unwrap();
+                kgraph            
+            },
+            "DistL1" => {
+                let hnsw = Hnsw::<f64, DistL1>::new(hnswparams.max_conn, nb_data, nb_layer, 
+                        hnswparams.ef_c, DistL1{});
+                hnsw.parallel_insert(&data_with_id);
+                hnsw.dump_layer_info();
+                let kgraph = kgraph_from_hnsw_all(&hnsw, hnswparams.knbn).unwrap();
+                kgraph                
+            }
+            "DistJeffreys" => {
+                let hnsw = Hnsw::<f64, DistJeffreys>::new(hnswparams.max_conn, nb_data, nb_layer, 
+                        hnswparams.ef_c, DistJeffreys{});
+                hnsw.parallel_insert(&data_with_id);
+                hnsw.dump_layer_info();
+                let kgraph = kgraph_from_hnsw_all(&hnsw, hnswparams.knbn).unwrap();
+                kgraph                
+            }
+            "DistCosine" => {
+                let hnsw = Hnsw::<f64, DistCosine>::new(hnswparams.max_conn, nb_data, nb_layer, 
+                        hnswparams.ef_c, DistCosine{});
+                hnsw.parallel_insert(&data_with_id);
+                hnsw.dump_layer_info();
+                let kgraph = kgraph_from_hnsw_all(&hnsw, hnswparams.knbn).unwrap();
+                kgraph                
+            }
+            _         => {
+                log::error!("unknown distance : {}", hnswparams.distance);
+                std::process::exit(1);           
+            }
+        } 
+    };
+
+    let kgraph = get_graph(&hnswparams.distance);
     //
     let cpu_time: Duration = cpu_start.elapsed();
-    println!(" ann construction sys time(s) {:?} cpu time {:?}", sys_now.elapsed().unwrap().as_secs(), cpu_time.as_secs());
-    hnsw.dump_layer_info();
-
-    let kgraph: KGraph<f64> = kgraph_from_hnsw_all(&hnsw, hnswparams.knbn).unwrap();
-
+    println!(" graph construction sys time(s) {:?} cpu time {:?}", sys_now.elapsed().unwrap().as_secs(), cpu_time.as_secs());
+    //
+    let mut embedder = Embedder::new(&kgraph, embedparams);
+    let embed_res = embedder.embed();
+    if embed_res.is_err() {
+        log::error!("embedding failed");
+        std::process::exit(1);
+    }
+    //
+    let csv_output = String::from("embedded.csv");
+    log::info!("dumping in csv file {}", csv_output);
+    let mut csv_w = csv::Writer::from_path(csv_output).unwrap();
+    // we can use get_embedded_reindexed as we indexed DataId contiguously in hnsw!
+    let _res = write_csv_array2(&mut csv_w, &embedder.get_embedded_reindexed());
+    csv_w.flush().unwrap();
 } // end of main

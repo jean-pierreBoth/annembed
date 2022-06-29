@@ -39,6 +39,23 @@ pub fn write_csv_labeled_array2<F>(csv_writer : &mut Writer<std::fs::File>, labe
 } // end of dump_csv_array2
 
 
+/// This function dumps an array2 into a csf file 
+pub fn write_csv_array2<F>(csv_writer : &mut Writer<std::fs::File>, mat : &Array2<F>) -> std::io::Result<usize>
+            where F : Float {
+    //
+    let (nbrow, nbcol) = mat.dim();
+    let mut line : Vec<String> = ((0..nbcol)).into_iter().map(|_| String::from("")).collect();
+    for i in 0..nbrow {
+        for j in 0..nbcol {
+            line[j] = format!("{:.2e}", mat[[i,j]].to_f32().unwrap());
+        }
+        csv_writer.write_record(&line)?;
+    }
+    csv_writer.flush()?;
+    //
+    return Ok(1);
+} // end of write_csv_array2
+
 
 // count number of first lines beginning with '#' or '%'
 pub(crate) fn get_header_size(filepath : &Path) -> anyhow::Result<usize> {
