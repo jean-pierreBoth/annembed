@@ -1,9 +1,12 @@
-//! annembed excutable.  
+//! annembed binary.  
 //! 
-//! This module provide just access to floating point data embedding.  
-//! Cmd syntax is annembed input --file svfile [hnsw params] [embed params]
-//! hnsw is an optional command to change default parameters 
-//! embed is an optional command to change default parameters
+//! This module provides just access to floating point data embedding.  
+//! Command syntax is embed input --file csvfile [--delim u8] [hnsw params] [embed params]
+//! The default delimiter is ','.   
+//! 
+//! hnsw is an optional command to change default parameters of the Hnsw structure. See [hnsw_rs](https://crates.io/crates/hnsw_rs)
+//! embed is an optional command to change default parameters related to the embedding: gradient, edge sampling etc. See [EmbedderParams]
+//! 
 //! The csv file must have one record by vector to embed. The output is a csv file with embedded vectors.
 //! The Julia directory provide helpers to vizualize and some Topological Data analysis tools
 
@@ -22,14 +25,16 @@ use clap::{Arg, ArgMatches, Command};
 use hnsw_rs::prelude::*;
 
 use annembed::fromhnsw::kgraph::{KGraph,kgraph_from_hnsw_all};
+use annembed::fromhnsw::kgproj::{KGraphProjection};
 use annembed::prelude::*;
 
-/// Defines parameters to drive ann computations. See the crate [hnsw]
+/// Defines parameters to drive ann computations. See the crate [hnsw_rs](https://crates.io/crates/hnsw_rs)
 #[derive(Debug, Clone)]
-struct HnswParams {
+pub struct HnswParams {
     max_conn : usize,
     ef_c : usize,
     knbn : usize,
+    /// distance to use in Hnsw. Default is "DistL2". Other choices are "DistL1", "DistCosine", D
     distance : String,
 }
 
@@ -38,6 +43,7 @@ impl HnswParams {
         HnswParams{max_conn : 48, ef_c : 400, knbn : 10, distance : String::from("DistL2")}
     }
 
+    #[allow(unused)]
     pub fn new(max_conn : usize, ef_c : usize, knbn : usize, distance : String) -> Self {
         HnswParams{max_conn, ef_c, knbn, distance}
     }
@@ -104,9 +110,9 @@ fn parse_hnsw_cmd(matches : &ArgMatches) ->  Result<HnswParams, anyhow::Error> {
     match matches.value_of("dist") {
         Some(str) =>  { 
             match str {
-                "DistL2"  => { hnswparams.distance = String::from("DistL2");}
-                "DistL1"  => { hnswparams.distance = String::from("DistL1");}
-                "DistCos" => { hnswparams.distance = String::from("DistCos");}
+                "DistL2"     => { hnswparams.distance = String::from("DistL2");}
+                "DistL1"     => { hnswparams.distance = String::from("DistL1");}
+                "DistCosine" => { hnswparams.distance = String::from("DistCosine");}
 
                 _         => { return Err(anyhow!("not a valid distance"));}
             }
@@ -155,6 +161,66 @@ fn parse_embed_cmd(matches : &ArgMatches) ->  Result<EmbedderParams, anyhow::Err
 } // end of parse_embed_cmd
 
 
+
+// construct kgraph case not hierarchical
+fn get_kgraph<Dist>(data_with_id : &Vec<(&Vec<f64>, usize)>, hnswparams : &HnswParams, nb_layer : usize) ->  KGraph<f64>
+                    where  Dist : Distance<f64> + Default + Send + Sync {
+    //
+    let nb_data = data_with_id.len();
+    let hnsw = Hnsw::<f64, Dist>::new(hnswparams.max_conn, nb_data, nb_layer, 
+                    hnswparams.ef_c, Dist::default());
+    hnsw.parallel_insert(&data_with_id);
+    hnsw.dump_layer_info();
+    let kgraph = kgraph_from_hnsw_all(&hnsw, hnswparams.knbn).unwrap();
+    kgraph
+}  // end of get_kgraph
+
+
+
+
+// construct kgraph case not hierarchical
+#[allow(unused)]
+fn get_kgraph_projection<Dist>(data_with_id : &Vec<(&Vec<f64>, usize)>, hnswparams : &HnswParams, nb_layer : usize, layer_proj : usize) ->  KGraphProjection<f64>
+                    where  Dist : Distance<f64> + Default + Send + Sync {
+    //
+    let nb_data = data_with_id.len();
+    let hnsw = Hnsw::<f64, Dist>::new(hnswparams.max_conn, nb_data, nb_layer, 
+                    hnswparams.ef_c, Dist::default());
+    hnsw.parallel_insert(&data_with_id);
+    hnsw.dump_layer_info();
+    let graphprojection =  KGraphProjection::<f64>::new(&hnsw, hnswparams.knbn, layer_proj);
+    graphprojection
+}  // end of get_kgraph_projection
+
+
+
+
+// dispatching according to distance ... use a macro
+fn get_kgraph_with_distname(data_with_id : &Vec<(&Vec<f64>, usize)>, hnswparams : &HnswParams, nb_layer : usize) -> KGraph<f64> {
+    let kgraph = match hnswparams.distance.as_str() {
+        "DistL2" => {
+            let kgraph = get_kgraph::<DistL2>(&data_with_id, &hnswparams, nb_layer);
+            kgraph            
+        },
+        "DistL1" => {
+            let kgraph = get_kgraph::<DistL1>(&data_with_id, &hnswparams, nb_layer);
+            kgraph                
+        }
+        "DistJeffreys" => {
+            let kgraph = get_kgraph::<DistJeffreys>(&data_with_id, &hnswparams, nb_layer);
+            kgraph                
+        }
+        "DistCosine" => {
+            let kgraph = get_kgraph::<DistCosine>(&data_with_id, &hnswparams, nb_layer);
+            kgraph                
+        }
+        _         => {
+            log::error!("unknown distance : {}", hnswparams.distance);
+            std::process::exit(1);           
+        }
+    };
+    kgraph
+}  // end of get_kgraph_with_distname
 
 
 
@@ -207,7 +273,7 @@ pub fn main() {
     // ===================
     //
     let matches = Command::new("annembed")
-        .subcommand_required(true)
+//        .subcommand_required(true)
         .arg_required_else_help(true)
         .arg(Arg::new("csvfile")
             .long("csv")    
@@ -274,19 +340,22 @@ pub fn main() {
         }
     }
 
-    let delim: u8 = *matches
-            .get_one("delim")
-            .expect("`delim`is required");
-    // open file and embed
+    //
+    let delim_opt = matches.get_one::<u8>("delim");
+    let delim = match delim_opt {
+        Some(c)  => { *c},
+        None     => { b','},
+    };
 
+    // open file
     let filepath = std::path::Path::new(&fname);
     let res = get_toembed_from_csv::<f64>(filepath, delim);
-
     if res.is_err() {
         log::error!("could not open file : {:?}", filepath);
         std::process::exit(1);
     }
-
+    log::info!("csv file {} read", fname);
+    //
     let data = res.unwrap();
     let data_with_id : Vec<(&Vec<f64>, usize)>= data.iter().zip(0..data.len()).collect();
     let nb_data = data.len();
@@ -294,49 +363,9 @@ pub fn main() {
     //
     let cpu_start = ProcessTime::now();
     let sys_now = SystemTime::now();
-    // a closure to hide genericity problem , use a macro?
-    let get_graph = |distname : &String| -> KGraph<f64> {
-        match distname.as_str() {
-            "DistL2" => {
-                let hnsw = Hnsw::<f64, DistL2>::new(hnswparams.max_conn, nb_data, nb_layer, 
-                        hnswparams.ef_c, DistL2{});
-                hnsw.parallel_insert(&data_with_id);
-                hnsw.dump_layer_info();
-                let kgraph = kgraph_from_hnsw_all(&hnsw, hnswparams.knbn).unwrap();
-                kgraph            
-            },
-            "DistL1" => {
-                let hnsw = Hnsw::<f64, DistL1>::new(hnswparams.max_conn, nb_data, nb_layer, 
-                        hnswparams.ef_c, DistL1{});
-                hnsw.parallel_insert(&data_with_id);
-                hnsw.dump_layer_info();
-                let kgraph = kgraph_from_hnsw_all(&hnsw, hnswparams.knbn).unwrap();
-                kgraph                
-            }
-            "DistJeffreys" => {
-                let hnsw = Hnsw::<f64, DistJeffreys>::new(hnswparams.max_conn, nb_data, nb_layer, 
-                        hnswparams.ef_c, DistJeffreys{});
-                hnsw.parallel_insert(&data_with_id);
-                hnsw.dump_layer_info();
-                let kgraph = kgraph_from_hnsw_all(&hnsw, hnswparams.knbn).unwrap();
-                kgraph                
-            }
-            "DistCosine" => {
-                let hnsw = Hnsw::<f64, DistCosine>::new(hnswparams.max_conn, nb_data, nb_layer, 
-                        hnswparams.ef_c, DistCosine{});
-                hnsw.parallel_insert(&data_with_id);
-                hnsw.dump_layer_info();
-                let kgraph = kgraph_from_hnsw_all(&hnsw, hnswparams.knbn).unwrap();
-                kgraph                
-            }
-            _         => {
-                log::error!("unknown distance : {}", hnswparams.distance);
-                std::process::exit(1);           
-            }
-        } 
-    };
 
-    let kgraph = get_graph(&hnswparams.distance);
+    // not hierarchical case
+    let kgraph = get_kgraph_with_distname(&data_with_id, &hnswparams, nb_layer);
     //
     let cpu_time: Duration = cpu_start.elapsed();
     println!(" graph construction sys time(s) {:?} cpu time {:?}", sys_now.elapsed().unwrap().as_secs(), cpu_time.as_secs());
