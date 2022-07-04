@@ -1,7 +1,7 @@
 //! annembed binary.  
 //! 
 //! This module provides just access to floating point data embedding.  
-//! Command syntax is embed input --file csvfile [--delim u8] [hnsw params] [embed params]
+//! Command syntax is embed input --csv csvfile [--delim u8] [hnsw params] [embed params]
 //! The default delimiter is ','.   
 //! 
 //! hnsw is an optional command to change default parameters of the Hnsw structure. See [hnsw_rs](https://crates.io/crates/hnsw_rs)
@@ -31,12 +31,16 @@ use annembed::prelude::*;
 /// Defines parameters to drive ann computations. See the crate [hnsw_rs](https://crates.io/crates/hnsw_rs)
 #[derive(Debug, Clone)]
 pub struct HnswParams {
+    /// maximum number of connections within a layer
     max_conn : usize,
+    /// with of search in hnsw
     ef_c : usize,
+    /// 
     knbn : usize,
     /// distance to use in Hnsw. Default is "DistL2". Other choices are "DistL1", "DistCosine", D
     distance : String,
-}
+} // end of struct HnswParams
+
 
 impl HnswParams {
     pub fn default() -> Self {
@@ -48,6 +52,10 @@ impl HnswParams {
         HnswParams{max_conn, ef_c, knbn, distance}
     }
 } // end impl block
+
+
+
+//==========================================================
 
 
 #[doc(hidden)]
@@ -141,7 +149,7 @@ fn parse_embed_cmd(matches : &ArgMatches) ->  Result<EmbedderParams, anyhow::Err
                             },
             } 
         } 
-        _      => { return Err(anyhow!("could not parse scale_rho"));}
+        _               => {}
     };  // end of match scale_rho
 
     match matches.value_of("nbsample") {
@@ -153,9 +161,21 @@ fn parse_embed_cmd(matches : &ArgMatches) ->  Result<EmbedderParams, anyhow::Err
                             },
             } 
         } 
-        _      => { return Err(anyhow!("could not parse nbsample"));}
+        _               => {}
     };  // end of match nb_sampling_by_edge
 
+
+    match matches.value_of("hierarchy") {
+        Some(str) =>  { 
+            let res = str.parse::<usize>();
+            match res {
+                Ok(val) => { embedparams.hierarchy_layer = val},
+                _       => { return Err(anyhow!("could not parse hierarchy layer parameter"));
+                            },
+            } 
+        } 
+        _               => {}
+    } // end of match hierarchy
 
     return Ok(embedparams);
 } // end of parse_embed_cmd
@@ -179,7 +199,6 @@ fn get_kgraph<Dist>(data_with_id : &Vec<(&Vec<f64>, usize)>, hnswparams : &HnswP
 
 
 // construct kgraph case not hierarchical
-#[allow(unused)]
 fn get_kgraph_projection<Dist>(data_with_id : &Vec<(&Vec<f64>, usize)>, hnswparams : &HnswParams, nb_layer : usize, layer_proj : usize) ->  KGraphProjection<f64>
                     where  Dist : Distance<f64> + Default + Send + Sync {
     //
@@ -224,6 +243,36 @@ fn get_kgraph_with_distname(data_with_id : &Vec<(&Vec<f64>, usize)>, hnswparams 
 
 
 
+fn get_kgraphproj_with_distname(data_with_id : &Vec<(&Vec<f64>, usize)>, hnswparams : &HnswParams, 
+                        nb_layer : usize, layer_proj : usize) ->  KGraphProjection::<f64> {
+    //
+    let kgraph_projection = match hnswparams.distance.as_str() {
+        "DistL2" => {
+            let kgraph = get_kgraph_projection::<DistL2>(&data_with_id, &hnswparams, nb_layer, layer_proj);
+            kgraph            
+        },
+        "DistL1" => {
+            let kgraph = get_kgraph_projection::<DistL1>(&data_with_id, &hnswparams, nb_layer, layer_proj);
+            kgraph                
+        }
+        "DistJeffreys" => {
+            let kgraph = get_kgraph_projection::<DistJeffreys>(&data_with_id, &hnswparams, nb_layer, layer_proj);
+            kgraph                
+        }
+        "DistCosine" => {
+            let kgraph = get_kgraph_projection::<DistCosine>(&data_with_id, &hnswparams, nb_layer, layer_proj);
+            kgraph                
+        }
+        _         => {
+            log::error!("unknown distance : {}", hnswparams.distance);
+            std::process::exit(1);           
+        }        
+    };
+    kgraph_projection
+} // end of get_kgraphproj_with_distname
+
+
+
 
 #[doc(hidden)]
 pub fn main() {
@@ -234,19 +283,32 @@ pub fn main() {
     let hnswparams : HnswParams;
     let embedparams : EmbedderParams;
     //
-    let embedcmd = Command::new("ann")
+    let embedcmd = Command::new("embed")
         .arg(Arg::new("step_grap")
+            .required(false)
             .long("stepg")
             .takes_value(true)
-            .help("gradient step"))
+            .help("gradient step")
+        )
         .arg(Arg::new("nbsample")
+            .required(false)
             .long("nbsample")
             .takes_value(true)
-            .help("number of edge sampling"))
+            .help("number of edge sampling")
+        )
+        .arg(Arg::new("hierarchy")
+            .required(false)
+            .long("layer")
+            .short('l')
+            .takes_value(true)
+            .help("expecting a layer num")
+        )
         .arg(Arg::new("scale")
+            .required(false)
             .long("scale")
             .takes_value(true)
-            .help("spatial scale factor"));
+            .help("spatial scale factor")
+        );
 
     let hnswcmd = Command::new("hnsw")
         .arg(Arg::new("dist")
@@ -309,13 +371,13 @@ pub fn main() {
     log::debug!("hnswparams : {:?}", hnswparams);
 
     // parse ann parameters
-    if let Some(ann_m) = matches.subcommand_matches("ann") {
+    if let Some(ann_m) = matches.subcommand_matches("embed") {
         log::debug!("subcommand_matches got ann");
         let res = parse_embed_cmd(ann_m);        
         match res {
             Ok(params) => { embedparams = params; },
             _                      => { 
-                                        log::error!("parsing hnsw command failed");
+                                        log::error!("parsing embed cmd failed");
                                         println!("exiting with error {}", res.err().as_ref().unwrap());
                                         //  log::error!("exiting with error {}", res.err().unwrap());
                                         std::process::exit(1);                                
@@ -364,23 +426,33 @@ pub fn main() {
     let cpu_start = ProcessTime::now();
     let sys_now = SystemTime::now();
 
-    // not hierarchical case
-    let kgraph = get_kgraph_with_distname(&data_with_id, &hnswparams, nb_layer);
-    //
-    let cpu_time: Duration = cpu_start.elapsed();
-    println!(" graph construction sys time(s) {:?} cpu time {:?}", sys_now.elapsed().unwrap().as_secs(), cpu_time.as_secs());
-    //
-    let mut embedder = Embedder::new(&kgraph, embedparams);
-    let embed_res = embedder.embed();
-    if embed_res.is_err() {
-        log::error!("embedding failed");
-        std::process::exit(1);
-    }
-    //
     let csv_output = String::from("embedded.csv");
     log::info!("dumping in csv file {}", csv_output);
     let mut csv_w = csv::Writer::from_path(csv_output).unwrap();
-    // we can use get_embedded_reindexed as we indexed DataId contiguously in hnsw!
-    let _res = write_csv_array2(&mut csv_w, &embedder.get_embedded_reindexed());
-    csv_w.flush().unwrap();
+    //
+    if embedparams.get_hierarchy_layer() == 0 {
+        let kgraph = get_kgraph_with_distname(&data_with_id, &hnswparams, nb_layer);
+        let cpu_time: Duration = cpu_start.elapsed();
+        println!(" graph construction sys time(s) {:?} cpu time {:?}", sys_now.elapsed().unwrap().as_secs(), cpu_time.as_secs());
+        let mut embedder = Embedder::new(&kgraph, embedparams);
+        let embed_res = embedder.embed();
+        if embed_res.is_err() {
+            log::error!("embedding failed");
+            std::process::exit(1);
+        }
+        //
+        // we can use get_embedded_reindexed as we indexed DataId contiguously in hnsw!
+        let _res = write_csv_array2(&mut csv_w, &embedder.get_embedded_reindexed());
+        csv_w.flush().unwrap();
+    } // end not hierarchical
+    else {
+        let graphprojection =  get_kgraphproj_with_distname(&data_with_id, &hnswparams, 
+                                        nb_layer, embedparams.get_hierarchy_layer());
+        let mut embedder = Embedder::from_hkgraph(&graphprojection, embedparams);
+        let embed_res = embedder.embed();        
+        assert!(embed_res.is_ok()); 
+        assert!(embedder.get_embedded().is_some());
+        let _res = write_csv_array2(&mut csv_w, &embedder.get_embedded_reindexed());
+        csv_w.flush().unwrap();
+    }
 } // end of main

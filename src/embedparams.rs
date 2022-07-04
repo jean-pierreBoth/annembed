@@ -91,6 +91,8 @@ pub struct EmbedderParams {
     pub nb_sampling_by_edge : usize,
     /// number of gradient batch. default to 15
     pub nb_grad_batch : usize,
+    /// if layer > 0 means we have hierarchical initialization
+    pub hierarchy_layer : usize
 } // end of EmbedderParams
 
 
@@ -104,8 +106,10 @@ impl EmbedderParams {
         let nb_sampling_by_edge = 10;
         let scale_rho = 1.;
         let nb_grad_batch = 15;
-        EmbedderParams{asked_dim, dmap_init, beta, b, scale_rho, grad_step, nb_sampling_by_edge , nb_grad_batch}
+        let hierarchy_layer = 0;
+        EmbedderParams{asked_dim, dmap_init, beta, b, scale_rho, grad_step, nb_sampling_by_edge , nb_grad_batch, hierarchy_layer}
     }
+
 
     pub fn log(&self) {
         log::info!("EmbedderParams");
@@ -116,6 +120,7 @@ impl EmbedderParams {
         log::info!("\t beta : {}", self.beta);
         log::info!("\t scale factor : {}", self.scale_rho);
         log::info!("\t number of gradient batch : {}", self.nb_grad_batch);
+        log::info!("\t hierarchy layer  : {}", self.hierarchy_layer);
     }
 
     /// set to false if random initialization is preferred
@@ -143,4 +148,12 @@ impl EmbedderParams {
     pub fn get_dimension(&self) -> usize {
         self.asked_dim
     }
+
+    pub fn set_hierarchy_layer(&mut self, layer : usize) {
+        self.hierarchy_layer = layer;
+    }
+
+    pub fn get_hierarchy_layer(&self) -> usize {
+        self.hierarchy_layer
+    }    
 } // end of impl EmbedderParams
