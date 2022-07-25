@@ -9,12 +9,13 @@ using DataFrames
 
 
 using CairoMakie
+using Logging
 
 using SparseArrays
 using Ripserer
 
 debug_log = stdout
-logger = ConsoleLogger(stdout, CoreLogging.Info)
+logger = ConsoleLogger(stdout, Logging.Info)
 global_logger(logger)
 
 include("visu.jl")

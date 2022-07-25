@@ -1,4 +1,9 @@
-//! Some tests at dumping info for Julia Ripserer module from Mnist files
+//! Some tests at dumping sparse matrix distances between points using the Hnsw structure.
+//! Hnsw gives us 
+//!      - a graph projection enabling dump of sparse distance matrix between sampled points from the data
+//!      - the possibility to extract the neighbourhood of a point and extract a small matrix of distance between points around a node.
+//! 
+//! The small Julia module in the crate, using the **Ripserer module** associated can reload these matrices and computes homology on these extracted data
 //! 
 
 use std::io::prelude::*;
@@ -218,7 +223,7 @@ pub fn main() {
     log::info!("output fashion projection for ripser : {}", fname);
     let res = graph_projection.dump_sparse_mat_for_ripser(fname);
     if res.is_err() {
-        log::info!("compute_approximated_barcodes failed");
+        log::info!("graph_projection dump_sparse_mat_for_ripser failed");
     }
     log::debug!("extracting matrix of distances around first point");
     // try to get local persistent data around first images (which is automatically in layer 0) 
