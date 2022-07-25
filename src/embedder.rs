@@ -182,11 +182,11 @@ where
                 second_step_init[[i,j]] = first_embedding[[projected_edge.node,j]] + F::from(exp_correction).unwrap();
             }
         }
-        log::info!("projection done");
+        log::debug!("projection done");
         //
         self.initial_embedding = Some(second_step_init);
         // cross entropy optimize
-        log::info!("optimizing second step");
+        log::debug!("optimizing second step");
         let embedding_res = self.entropy_optimize(&self.parameters, self.initial_embedding.as_ref().unwrap());
         //
         println!(" first + second step embedding sys time(s) {:.2e} cpu time(s) {:.2e}", sys_start.elapsed().unwrap().as_secs(), cpu_start.elapsed().as_secs());
@@ -197,7 +197,7 @@ where
                 return Ok(1);
             }
             _ => {
-                log::info!("Embedder::embed : embedding optimization failed");
+                log::error!("Embedder::embed : embedding optimization failed");
                 return Err(1);
             }        
         }
@@ -238,7 +238,7 @@ where
                 return Ok(1);
             }
             _ => {
-                log::info!("Embedder::embed : embedding optimization failed");
+                log::error!("Embedder::embed : embedding optimization failed");
                 return Err(1);
             }        
         }
@@ -384,7 +384,7 @@ where
     // returns the embedded data after restauration of the original indexation/identification of datas! (time consuming bug)
     fn entropy_optimize(&self, params : &EmbedderParams, initial_embedding : &Array2<F>) -> Result<Array2<F>, String> {
         //
-        log::info!("in Embedder::entropy_optimize");
+        log::debug!("in Embedder::entropy_optimize");
         //
         if self.initial_space.is_none() {
             log::error!("Embedder::entropy_optimize : initial_space not constructed, exiting");
@@ -469,7 +469,7 @@ impl <'a, F> EntropyOptim<'a,F>
     where F: Float + NumAssign + std::iter::Sum + num_traits::cast::FromPrimitive + Send + Sync + ndarray::ScalarOperand {
     //
     pub fn new(node_params : &'a NodeParams, params: &'a EmbedderParams, initial_embed : &Array2<F>) -> Self {
-        log::info!("entering EntropyOptim::new");
+        log::debug!("entering EntropyOptim::new");
         // TODO what if not the same number of neighbours!!
         let nbng = node_params.params[0].edges.len();
         let nbnodes = node_params.get_nb_nodes();
@@ -484,11 +484,11 @@ impl <'a, F> EntropyOptim<'a,F>
                 edges_weight.push(node_params.params[i].edges[j].weight);
             }
         }
-        log::info!("construction alias table for sampling edges..");
+        log::debug!("construction alias table for sampling edges..");
         let start = ProcessTime::now();
         let pos_edge_sampler = WeightedAliasIndex::new(edges_weight).unwrap();
         let cpu_time: Duration = start.elapsed();
-        log::info!("constructied alias table for sampling edges.. , time : {:?}", cpu_time);
+        log::debug!("constructied alias table for sampling edges.. , time : {:?}", cpu_time);
         // construct embedded, initial embed can be droped now
         let mut embedded = Vec::<Arc<RwLock<Array1<F>>>>::new();
         let nbrow  = initial_embed.nrows();
@@ -764,34 +764,47 @@ impl <'a, F> EntropyOptim<'a,F>
 // These 2 function are also the base of module dmap
 //
 pub(crate) fn to_proba_edges<F>(kgraph : & KGraph<F>, scale_rho : f32, beta : f32) -> NodeParams
-    where F : Float + num_traits::cast::FromPrimitive + std::fmt::UpperExp {
+    where F : Float + num_traits::cast::FromPrimitive + std::marker::Sync + std::fmt::UpperExp {
     //
-    let nbnodes = kgraph.get_nb_nodes();
     let mut perplexity_q : CKMS<f32> = CKMS::<f32>::new(0.001);
     let mut scale_q : CKMS<f32> = CKMS::<f32>::new(0.001);
     let mut weight_q :  CKMS<f32> = CKMS::<f32>::new(0.001);
-    // get stats
-    let mut node_params = Vec::<NodeParam>::with_capacity(nbnodes);
-    // TODO can be // with rayon taking care of indexation
     let neighbour_hood = kgraph.get_neighbours();
-    let mut max_nbng = 0;
-    for i in 0..neighbour_hood.len() {
+    // a closure to compute scale and perplexity
+    let scale_perplexity = | i : usize | ->  (usize, Option<(f32, NodeParam)>) {
         if neighbour_hood[i].len() > 0 {
             let node_param = get_scale_from_proba_normalisation(kgraph, scale_rho, beta, &neighbour_hood[i]);
-            scale_q.insert(node_param.scale);
-            perplexity_q.insert(node_param.get_perplexity());
-            // coose random edge to audit
-            let j = thread_rng().gen_range(0..node_param.edges.len());
-            weight_q.insert(node_param.edges[j].weight);
-            max_nbng = node_param.edges.len().max(max_nbng);
-            assert_eq!(node_param.edges.len(), neighbour_hood[i].len());
-            node_params.push(node_param);
+            let perplexity = node_param.get_perplexity();
+            return (i, Some((perplexity, node_param)));
         }
         else {
-            println!("to_proba_edges , node rank {}, has no neighbour, use hnsw.set_keeping_pruned(true)", i);
-            log::error!("to_proba_edges , node rank {}, has no neighbour, use hnsw.set_keeping_pruned(true)", i);
-            std::process::exit(1);
+            return (i, None);
         }
+    };
+    let mut opt_node_params :  Vec::<(usize,Option<(f32, NodeParam)>)> =  Vec::<(usize,Option<(f32, NodeParam)>)>::new();
+    let mut node_params : Vec<NodeParam> = (0..neighbour_hood.len()).into_iter().map(|_| NodeParam::default()).collect();
+    //
+    (0..neighbour_hood.len()).into_par_iter().map(|i| scale_perplexity(i)).collect_into_vec(&mut opt_node_params);
+    // now we process serial information related to opt_node_params
+    let mut max_nbng = 0;
+    for opt_param in &opt_node_params {
+        match opt_param {
+            (i, Some(param)) => {
+                scale_q.insert(param.0);
+                perplexity_q.insert(param.1.get_perplexity());
+                // choose random edge to audit
+                let j = thread_rng().gen_range(0..param.1.edges.len());
+                weight_q.insert(param.1.edges[j].weight);
+                max_nbng = param.1.edges.len().max(max_nbng);
+                assert_eq!(param.1.edges.len(), neighbour_hood[*i].len());
+                node_params[*i] = param.1.clone();
+            }
+            (i, None) => {
+                println!("to_proba_edges , node rank {}, has no neighbour, use hnsw.set_keeping_pruned(true)", i);
+                log::error!("to_proba_edges , node rank {}, has no neighbour, use hnsw.set_keeping_pruned(true)", i);
+                std::process::exit(1);
+            }
+        };
     }
     // dump info on quantiles
     println!("\n constructed initial space");
@@ -968,10 +981,11 @@ where F :  Float + std::iter::Sum + num_traits::cast::FromPrimitive {
 fn estimate_embedded_scales_from_initial_scales(initial_scales :&Vec<f32>) -> Vec<f32> {
     log::trace!("estimate_embedded_scale_from_initial_scales");
     let mean_scale : f32 = initial_scales.iter().sum::<f32>() / (initial_scales.len() as f32);
-    let scale_sup = 2.0;  // CAVEAT seems we can go up to 4.
+    let scale_sup = 4.0;  // CAVEAT seems we can go up to 4.
     let scale_inf = 1./scale_sup;
+    let width = 0.2;
     // We want embedded scae impact between 0.5 and 2 (amplitude 4) , we take into account the square in cauchy weight
-    let embedded_scale : Vec<f32> = initial_scales.iter().map(|&x| 0.2 * (x/mean_scale).min(scale_sup).max(scale_inf)).collect();
+    let embedded_scale : Vec<f32> = initial_scales.iter().map(|&x| width * (x/mean_scale).min(scale_sup).max(scale_inf)).collect();
     //
     for i in 0..embedded_scale.len() {
         log::trace!("embedded scale for node {} : {:.2e}", i , embedded_scale[i]);

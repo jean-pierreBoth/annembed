@@ -33,11 +33,11 @@ use annembed::prelude::*;
 pub struct HnswParams {
     /// maximum number of connections within a layer
     max_conn : usize,
-    /// with of search in hnsw
+    /// width of search in hnsw
     ef_c : usize,
     /// 
     knbn : usize,
-    /// distance to use in Hnsw. Default is "DistL2". Other choices are "DistL1", "DistCosine", D
+    /// distance to use in Hnsw. Default is "DistL2". Other choices are "DistL1", "DistCosine", DistJeffreys
     distance : String,
 } // end of struct HnswParams
 
@@ -118,11 +118,12 @@ fn parse_hnsw_cmd(matches : &ArgMatches) ->  Result<HnswParams, anyhow::Error> {
     match matches.value_of("dist") {
         Some(str) =>  { 
             match str {
-                "DistL2"     => { hnswparams.distance = String::from("DistL2");}
-                "DistL1"     => { hnswparams.distance = String::from("DistL1");}
-                "DistCosine" => { hnswparams.distance = String::from("DistCosine");}
+                "DistL2"          => { hnswparams.distance = String::from("DistL2");}
+                "DistL1"          => { hnswparams.distance = String::from("DistL1");}
+                "DistCosine"      => { hnswparams.distance = String::from("DistCosine");}
+                "DistJeffreys"    => { hnswparams.distance = String::from("DistJeffreys");}
 
-                _         => { return Err(anyhow!("not a valid distance"));}
+                _                 => { return Err(anyhow!("not a valid distance"));}
             }
         },
         _  => { return Err(anyhow!("could not parse distance"));}

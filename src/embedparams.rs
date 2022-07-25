@@ -18,10 +18,10 @@
 /// After that weights are normalized to a probability distribution.
 ///
 /// So before normalization $w_{0}$ is always equal to 1. Augmenting β to 2. makes the weight $w_{i}$ decrease faster. 
-/// The least weight of an edge can go under $10^{-5}$ to limit the range of weight and avoid Svd numeric difficulties. 
+/// *The least weight of an edge must not go under $10^{-5}$ to limit the range of weight and avoid Svd numeric difficulties*. 
 /// The code stops with an error in this case.
 /// So after normalization the range of weights from $w_{0}$ to $w_{k}$ is larger. 
-/// Reducing S as similar effect but playing with both $\beta$ and the scale adjustment must not encounter the range constraint on weights.
+/// Reducing S as similar effect but playing with both $\beta$ and the scale adjustment must not violate the range constraint on weights.
 /// 
 /// It must be noted that setting the scale as described before and renormalizing to get a probability distribution
 /// gives a perplexity nearly equal to the number of neighbours.  
@@ -35,9 +35,9 @@
 /// 
 ///  $\beta = 1$ so that we have exponential weights similar to Umap.  
 /// 
-///  $S = 1.$
+///  $S = 0.5$
 /// 
-/// But it is possible to set β to 2. to get more gaussian weight or reduce to 0.5.
+/// But it is possible to set β to 2. to get more gaussian weight or reduce to 0.5 and adjust S to respect the constraints on edge weights.
 ///    
 /// ## Definition of the weight of an edge of the embedded graph
 /// 
@@ -81,11 +81,11 @@ pub struct EmbedderParams {
     pub dmap_init : bool,
     /// exponent used in defining edge weight in original graph. 0.5 or 1.
     pub beta : f64,
-    /// exponenent used in embedded space
+    /// exponenent used in embedded space, default 1.
     pub b : f64,
-    /// embedded scale factor. default to 1.
+    /// embedded scale factor. default to 0.5
     pub scale_rho : f64,
-    /// initial gradient step , default to 1.
+    /// initial gradient step , default to 2.
     pub grad_step : f64,
     /// nb sampling by edge in gradient step. default = 10
     pub nb_sampling_by_edge : usize,
@@ -102,9 +102,9 @@ impl EmbedderParams {
         let dmap_init = true;
         let beta = 1.;
         let b = 1.;
-        let grad_step = 5.;
+        let grad_step = 2.;
         let nb_sampling_by_edge = 10;
-        let scale_rho = 1.;
+        let scale_rho = 0.5;
         let nb_grad_batch = 15;
         let hierarchy_layer = 0;
         EmbedderParams{asked_dim, dmap_init, beta, b, scale_rho, grad_step, nb_sampling_by_edge , nb_grad_batch, hierarchy_layer}

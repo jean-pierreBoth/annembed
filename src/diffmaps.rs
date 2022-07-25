@@ -66,7 +66,7 @@ impl DiffusionMaps {
     /// F is f32 or f64 depending on how diffusions Maps is to be computed.
     pub fn embed_hnsw<T,D,F>(&mut self, hnsw : &Hnsw<T,D>) -> Array2<F>  where
         T : Clone + Send + Sync,
-        F : Float + FromPrimitive + std::fmt::UpperExp,
+        F : Float + FromPrimitive + std::marker::Sync + std::fmt::UpperExp,
         D : Distance<T> + Send + Sync {
         //
         let knbn = hnsw.get_max_nb_connection();
