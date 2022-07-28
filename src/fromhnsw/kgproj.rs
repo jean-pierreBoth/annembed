@@ -50,7 +50,7 @@ pub struct KGraphProjection<F> {
 
 
 impl <F> KGraphProjection<F>
-    where F : Float + FromPrimitive + std::fmt::UpperExp {
+    where F : Float + FromPrimitive + Send + Sync + std::fmt::UpperExp + std::iter::Sum {
 
     //  - first we construct graph consisting in upper (less populated) layers
     //  - Then we project : for points of others layers store the shorter edge from point to graph just constructed

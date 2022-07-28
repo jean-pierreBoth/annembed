@@ -1,5 +1,6 @@
 target/**
 Runs/**
+Results/**
 Tmp/**
 Cargo.lock
 rls*

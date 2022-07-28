@@ -19,6 +19,7 @@ use rand::thread_rng;
 
 use quantiles::{ckms::CKMS};     // we could use also greenwald_khanna
 
+use rayon::prelude::*;
 
 use hnsw_rs::prelude::*;
 use hnsw_rs::hnsw::{DataId};
@@ -128,7 +129,7 @@ pub struct KGraph<F> {
 
 
 impl <F> KGraph<F> 
-    where F : FromPrimitive + Float + std::fmt::UpperExp
+    where F : FromPrimitive + Float + std::fmt::UpperExp + Sync + Send + std::iter::Sum
 {
     /// allocates a graph with expected size nbnodes and nbng neighbours 
     pub fn new() -> Self {
@@ -160,6 +161,22 @@ impl <F> KGraph<F>
     pub fn get_out_edges_by_idx(&self, node : NodeIdx) -> &Vec<OutEdge<F>> {
         &self.neighbours[node]
     }
+
+    /// compute mean edge.
+    pub fn compute_mean_edge(&self) -> f64 {
+        let neighbours = &self.neighbours;
+        let total_edge_length : f64 = (0..neighbours.len()).into_par_iter().map( |n| -> f64 {
+                let mut node_edge_length : f64 = 0.;
+                for edge in  &neighbours[n] {
+                    node_edge_length = node_edge_length + edge.weight.to_f64().unwrap();
+                }
+                // get mean edge length in embedded space
+                node_edge_length = node_edge_length / neighbours[n].len() as f64;
+                return node_edge_length;
+            }
+            ).sum::<f64>();
+        total_edge_length / neighbours.len() as f64
+    } // end of compute_mean_edge
 
 
     /// given a DataId returns list of edges from corresponding point or None if error occurs

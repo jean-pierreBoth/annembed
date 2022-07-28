@@ -233,8 +233,8 @@ pub fn main() {
     hnsw.dump_layer_info();
     //
     let mut embed_params = EmbedderParams::default();
-    embed_params.nb_grad_batch = 15;
-    embed_params.scale_rho = 0.6;
+    embed_params.nb_grad_batch = 20;
+    embed_params.scale_rho = 0.5;
     embed_params.beta = 1.;
     embed_params.grad_step = 2.;
     embed_params.nb_sampling_by_edge = 10;
@@ -254,7 +254,7 @@ pub fn main() {
     }
     else {
         let knbn = 5;
-        log::info!("trying graph projection");
+        log::debug!("trying graph projection");
         graphprojection =  KGraphProjection::<f32>::new(&hnsw, knbn, 1);
         embedder = Embedder::from_hkgraph(&graphprojection, embed_params);
         let embed_res = embedder.embed();        
@@ -274,7 +274,8 @@ pub fn main() {
     // we can use get_embedded_reindexed as we indexed DataId contiguously in hnsw!
     let _res = write_csv_labeled_array2(&mut csv_w, labels.as_slice(), &embedder.get_embedded_reindexed());
     csv_w.flush().unwrap();
-
+    //
+    let quality = embedder.get_quality_estimate_from_edge_length();
     // Get some statistics on induced graph. This is not related to the embedding process
     let knbn = 25;
     let kgraph : KGraph<f32>;

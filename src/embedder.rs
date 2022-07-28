@@ -40,7 +40,7 @@ use std::time::{Duration,SystemTime};
 use cpu_time::ProcessTime;
 
 use hnsw_rs::prelude::*;
-use crate::fromhnsw::{kgraph::KGraph,kgproj::*};
+use crate::fromhnsw::{kgraph::KGraph, kgraph::kgraph_from_hnsw_all , kgproj::*};
 use crate::embedparams::*;
 use crate::diffmaps::*;
 use crate::tools::{dichotomy::*,nodeparam::*};
@@ -49,8 +49,22 @@ use crate::tools::{dichotomy::*,nodeparam::*};
 const PROBA_MIN: f32 = 1.0E-5;
 
 
+// to be used in emdedded space so small dimension. no need for simd and 
+#[inline]
+fn distl2<F:Float+ Lapack + Scalar + ndarray::ScalarOperand + Send + Sync>(a: &[F], b: &[F]) -> F {
+    assert_eq!(a.len(), b.len());
+    let norm : F = a.iter().zip(b.iter()).map(|t| (*t.0 - *t.1 ) * (*t.0 - *t.1)).sum();
+    num_traits::Float::sqrt(norm)
+}
 
+struct DistL2F;
 
+impl <F> Distance<F> for DistL2F 
+    where F:Float+ Lapack + Scalar + ndarray::ScalarOperand + Send + Sync {
+    fn eval(&self, va:&[F], vb: &[F]) -> f32 {
+        distl2::<F>(va, vb).to_f32().unwrap()
+    } // end of compute
+} // end of impl block
 
 //=====================================================================================
 
@@ -254,6 +268,9 @@ where
         return self.embedding.as_ref();
     }
 
+
+
+
     /// returns embedded data reindexed by DataId. This requires the DataId to be contiguous from 0 to nbdata.  
     ///  See [crate::fromhnsw::kgraph::KGraph::get_idx_from_dataid]
     pub fn get_embedded_reindexed(&self) -> Array2<F> {
@@ -340,6 +357,102 @@ where
         initial_embedding
     }  // end of get_random_init
 
+
+
+    /// Computes something related to a normalized sum of initial graph edges in embedded space. 
+    /// To be used in a comparison with edge length of a Hnsw structure computed on embedded data, 
+    /// the ratio is a kind of distorsion measure
+    fn get_mean_edge_length_from_kgraph(&self) -> Option<f64> {
+        // we check we have kgraph
+        if self.kgraph.is_none() {
+            log::info!("kgraph is absent, case with projection to be treated");
+            return None;
+        }
+        // we loop on kgraph nodes, loop on edges of node, get extremity id , converts to index, compute embedded distance and sum
+        let neighbours = self.kgraph.unwrap().get_neighbours();
+        let total_edge_length : f64 = (0..neighbours.len()).into_par_iter().map( |n| -> f64
+            {
+                let node_embedded = self.get_embedded_by_nodeid(n);
+                let mut node_edge_length = F::zero();
+                for edge in  &neighbours[n] {
+                    let ext_embedded = self.get_embedded_by_dataid(&edge.node);
+                    // now we can compute distance for corresponding edge in embedded space. We must use L2
+                    node_edge_length += distl2(node_embedded.as_slice().unwrap(), &ext_embedded.as_slice().unwrap());
+                }
+                // get mean edge length in embedded space
+                node_edge_length /= F::from(neighbours[n].len()).unwrap();
+                return  node_edge_length.to_f64().unwrap();
+            }
+            ).sum();
+        //
+        let mean_edge_length = total_edge_length / neighbours.len() as f64;
+        log::info!("mean embedded edge : {:.3e}", mean_edge_length);
+        //
+        return Some(mean_edge_length); 
+    } // end of get_mean_edge_length_from_kgraph
+
+
+    /// compute hnsw and kgraph from embedded data and deduce minimal edge length 
+    fn get_mean_edge_length_embedded_kgraph(&self) -> Option<f64> {
+        let kgraph = self.kgraph.unwrap();
+        let embedding = self.embedding.as_ref().unwrap();
+        let max_nbng = kgraph.get_max_nbng();
+        // TODO use the same parameters as the hnsw given to kgraph, and adjust ef_c accordingly
+        let max_nb_connection = 70;
+        let ef_c = 50;
+        // compute hnsw
+        let nb_nodes = embedding.nrows();
+        let nb_layer = 16.min((nb_nodes as f32).ln().trunc() as usize);
+        let hnsw = Hnsw::<F, DistL2F>::new(max_nb_connection, nb_nodes, nb_layer, ef_c, DistL2F{});
+        // need to store arrayviews to get a sufficient lifetime to call as_slice later
+        let vectors : Vec<ArrayView1<F>> = (0..nb_nodes).into_iter().map(|i| (embedding.row(i))).collect();
+        let mut data_with_id = Vec::<(&[F], usize)>::with_capacity(nb_nodes);
+        for i in 0..nb_nodes {
+            data_with_id.push((vectors[i].as_slice().unwrap(), i));
+        }
+        hnsw.parallel_insert_slice(&data_with_id);
+        // compute kgraph from hnsw and sum edge length 
+        let optimal_graph : Result<KGraph<F>, usize>  = kgraph_from_hnsw_all(&hnsw, max_nbng);
+        if optimal_graph.is_err() {
+            log::error!("could not compute optimal graph");
+            return None;
+        }
+        let optimal_graph = optimal_graph.unwrap();
+        let optimal_mean_edge = optimal_graph.compute_mean_edge();
+        Some(optimal_mean_edge)
+    } // end of get_mean_edge_length_embedded_kgraph
+
+
+
+    #[allow(unused)]
+    pub fn get_quality_estimate_from_edge_length(&self) -> Option<f64> {
+        //
+        let cpu_start = ProcessTime::now();
+        let sys_now = SystemTime::now();
+        //
+        let quality = 0f64; 
+        // compute mean edge length from initial kgraph
+        let embedded_edge_length = self.get_mean_edge_length_from_kgraph();
+        if embedded_edge_length.is_none() {
+            log::error!("cannot ask for embedded quality before embedding");
+            std::process::exit(1);
+        }
+        let embedded_edge_length = embedded_edge_length.unwrap();
+        // compute mean edge length from kgraph constructed from embedded points
+        let minimal_mean_length = self.get_mean_edge_length_embedded_kgraph();
+        if minimal_mean_length.is_none() {
+            log::error!("cannot compute mean edge length from embedded data");
+            return None;
+        }
+        let minimal_mean_length = minimal_mean_length.unwrap();
+        log::info!(" minimal = {:.3e}, observed = {:.3e}", minimal_mean_length, embedded_edge_length);
+        let quality = minimal_mean_length / embedded_edge_length;
+        //
+        let cpu_time: Duration = cpu_start.elapsed();
+        log::info!(" quality estimation,  sys time(s) {:?} cpu time {:?}", sys_now.elapsed().unwrap().as_secs(), cpu_time.as_secs());
+        log::info!("get_quality_estimate_from_edge_length : {:.3e}", quality);
+        return Some(quality);
+    } // end of get_quality_estimate_from_edge_length
 
 
 
@@ -513,9 +626,13 @@ impl <'a, F> EntropyOptim<'a,F>
         // construct field embedded
     }  // end of new 
 
+
+
     pub fn get_nb_edges(&self) -> usize {
         self.edges.len()
     } // end of get_nb_edges
+
+
 
     // return result as an Array2<F> cloning data to result to struct Embedder
     // We return data in rows as (re)indexed in graph construction after hnsw!!
@@ -764,7 +881,7 @@ impl <'a, F> EntropyOptim<'a,F>
 // These 2 function are also the base of module dmap
 //
 pub(crate) fn to_proba_edges<F>(kgraph : & KGraph<F>, scale_rho : f32, beta : f32) -> NodeParams
-    where F : Float + num_traits::cast::FromPrimitive + std::marker::Sync + std::fmt::UpperExp {
+    where F : Float + num_traits::cast::FromPrimitive + std::marker::Sync + std::marker::Send + std::fmt::UpperExp + std::iter::Sum {
     //
     let mut perplexity_q : CKMS<f32> = CKMS::<f32>::new(0.001);
     let mut scale_q : CKMS<f32> = CKMS::<f32>::new(0.001);
@@ -841,7 +958,7 @@ pub(crate) fn to_proba_edges<F>(kgraph : & KGraph<F>, scale_rho : f32, beta : f3
 // and vector of proba weight to nearest neighbours.
 //
 fn get_scale_from_proba_normalisation<F> (kgraph : & KGraph<F>, scale_rho : f32, beta : f32, neighbours: &Vec<OutEdge<F>>) -> NodeParam 
-    where F : Float + num_traits::cast::FromPrimitive + std::fmt::UpperExp {
+    where F : Float + num_traits::cast::FromPrimitive + Sync + Send + std::fmt::UpperExp + std::iter::Sum {
     //
 //        log::trace!("in get_scale_from_proba_normalisation");
     let nbgh = neighbours.len();
