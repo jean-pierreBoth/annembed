@@ -359,10 +359,10 @@ where
 
 
 
-    /// Computes something related to a normalized sum of initial graph edges in embedded space. 
-    /// To be used in a comparison with edge length of a Hnsw structure computed on embedded data, 
-    /// the ratio is a kind of distorsion measure
-    fn get_mean_edge_length_from_kgraph(&self) -> Option<f64> {
+    /// For each node we in the orginal kgraph we return the minimal distance in embedded space of the original neighbours.
+    /// To be used in a comparison with edge length of a Hnsw structure computed on embedded graph to see how far 
+    /// the original neighbours are sent in embedded space
+    fn get_min_edge_length_from_kgraph(&self) -> Option<Vec<(usize,f64)>> {
         // we check we have kgraph
         if self.kgraph.is_none() {
             log::info!("kgraph is absent, case with projection to be treated");
@@ -370,33 +370,28 @@ where
         }
         // we loop on kgraph nodes, loop on edges of node, get extremity id , converts to index, compute embedded distance and sum
         let neighbours = self.kgraph.unwrap().get_neighbours();
-        let total_edge_length : f64 = (0..neighbours.len()).into_par_iter().map( |n| -> f64
+        let mut best_edge_length : Vec<(usize,f64)> = (0..neighbours.len()).into_par_iter().map( |n| -> (usize,f64)
             {
                 let node_embedded = self.get_embedded_by_nodeid(n);
-                let mut node_edge_length = F::zero();
+                let mut node_edge_length = F::max_value();
                 for edge in  &neighbours[n] {
                     let ext_embedded = self.get_embedded_by_dataid(&edge.node);
                     // now we can compute distance for corresponding edge in embedded space. We must use L2
-                    node_edge_length += distl2(node_embedded.as_slice().unwrap(), &ext_embedded.as_slice().unwrap());
+                    node_edge_length = distl2(node_embedded.as_slice().unwrap(), &ext_embedded.as_slice().unwrap()).min(node_edge_length);
                 }
-                // get mean edge length in embedded space
-                node_edge_length /= F::from(neighbours[n].len()).unwrap();
-                return  node_edge_length.to_f64().unwrap();
+                return (n, node_edge_length.to_f64().unwrap());
             }
-            ).sum();
+            ).collect();
+        // sort
+        best_edge_length.sort_unstable_by(|a,b| a.0.partial_cmp(&b.0).unwrap());
         //
-        let mean_edge_length = total_edge_length / neighbours.len() as f64;
-        log::info!("mean embedded edge : {:.3e}", mean_edge_length);
-        //
-        return Some(mean_edge_length); 
-    } // end of get_mean_edge_length_from_kgraph
+        return Some(best_edge_length); 
+    } // end of get_min_edge_length_from_kgraph
 
 
-    /// compute hnsw and kgraph from embedded data and deduce minimal edge length 
-    fn get_mean_edge_length_embedded_kgraph(&self) -> Option<f64> {
-        let kgraph = self.kgraph.unwrap();
+    /// compute hnsw and kgraph from embedded data and get maximal edge length by node
+    fn get_max_edge_length_embedded_kgraph(&self, nbng : usize) -> Option<Vec<(usize,f64)>> {
         let embedding = self.embedding.as_ref().unwrap();
-        let max_nbng = kgraph.get_max_nbng();
         // TODO use the same parameters as the hnsw given to kgraph, and adjust ef_c accordingly
         let max_nb_connection = 70;
         let ef_c = 50;
@@ -412,45 +407,66 @@ where
         }
         hnsw.parallel_insert_slice(&data_with_id);
         // compute kgraph from hnsw and sum edge length 
-        let optimal_graph : Result<KGraph<F>, usize>  = kgraph_from_hnsw_all(&hnsw, max_nbng);
+        let optimal_graph : Result<KGraph<F>, usize>  = kgraph_from_hnsw_all(&hnsw, nbng);
         if optimal_graph.is_err() {
             log::error!("could not compute optimal graph");
             return None;
         }
         let optimal_graph = optimal_graph.unwrap();
-        let optimal_mean_edge = optimal_graph.compute_mean_edge();
-        Some(optimal_mean_edge)
-    } // end of get_mean_edge_length_embedded_kgraph
+        let optimal_max_edge = optimal_graph.compute_max_edge();
+        Some(optimal_max_edge)
+    } // end of get_max_edge_length_embedded_kgraph
 
 
-
+    /// This function computes the proportion of points in original space that have a neighborhood, once trasported in embedded space
+    /// that intersect with neighborhood of size nbng in embedded space.
+    /// So it measure concordance in neighborhoods in original space and embedded space
     #[allow(unused)]
-    pub fn get_quality_estimate_from_edge_length(&self) -> Option<f64> {
+    pub fn get_quality_estimate_from_edge_length(&self, nbng : usize) -> Option<f64> {
         //
         let cpu_start = ProcessTime::now();
         let sys_now = SystemTime::now();
         //
         let quality = 0f64; 
-        // compute mean edge length from initial kgraph
-        let embedded_edge_length = self.get_mean_edge_length_from_kgraph();
-        if embedded_edge_length.is_none() {
+        // compute min edge length from initial kgraph
+        let embedded_min_edge = self.get_min_edge_length_from_kgraph();
+        if embedded_min_edge.is_none() {
             log::error!("cannot ask for embedded quality before embedding");
             std::process::exit(1);
         }
-        let embedded_edge_length = embedded_edge_length.unwrap();
-        // compute mean edge length from kgraph constructed from embedded points
-        let minimal_mean_length = self.get_mean_edge_length_embedded_kgraph();
-        if minimal_mean_length.is_none() {
+        let embedded_min_edge  = embedded_min_edge.unwrap();
+        // compute max edge length from kgraph constructed from embedded points
+        let max_edges_embedded = self.get_max_edge_length_embedded_kgraph(nbng);
+        if max_edges_embedded.is_none() {
             log::error!("cannot compute mean edge length from embedded data");
             return None;
         }
-        let minimal_mean_length = minimal_mean_length.unwrap();
-        log::info!(" minimal = {:.3e}, observed = {:.3e}", minimal_mean_length, embedded_edge_length);
-        let quality = minimal_mean_length / embedded_edge_length;
+        let max_edges_embedded = max_edges_embedded.unwrap();
+        // now we can for each node see if best of propagated initial edges encounter ball in reconstructed kgraph from embedded data
+        assert_eq!(max_edges_embedded.len(), embedded_min_edge.len());
+        let nb_nodes = max_edges_embedded.len();
+        let mut node_quality = Vec::<f64>::with_capacity(nb_nodes);
+        for i in 0..nb_nodes {
+            assert_eq!(i, max_edges_embedded[i].0);
+            if (embedded_min_edge[i].1 <= 0.) {
+                log::error!("node i : {}, embedded_min_edge[i].1, {:.3e}", i, embedded_min_edge[i].1);
+                node_quality.push(1.);
+            }
+            else {
+                if embedded_min_edge[i].1 <= max_edges_embedded[i].1 {
+ //                   node_quality.push(max_edges_embedded[i].1/embedded_min_edge[i].1);
+                    node_quality.push(1.);
+                }
+                else {
+                    node_quality.push(0.);
+                }
+            }
+        }
+        let mean_quality: f64 = node_quality.iter().sum::<f64>()/node_quality.len() as f64;
+        log::info!(" mean quality : {:.3e}", mean_quality);
         //
         let cpu_time: Duration = cpu_start.elapsed();
         log::info!(" quality estimation,  sys time(s) {:?} cpu time {:?}", sys_now.elapsed().unwrap().as_secs(), cpu_time.as_secs());
-        log::info!("get_quality_estimate_from_edge_length : {:.3e}", quality);
         return Some(quality);
     } // end of get_quality_estimate_from_edge_length
 
