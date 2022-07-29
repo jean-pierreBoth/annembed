@@ -162,21 +162,22 @@ impl <F> KGraph<F>
         &self.neighbours[node]
     }
 
-    /// compute mean edge.
-    pub fn compute_mean_edge(&self) -> f64 {
+    /// returns largest edge vector by node
+    pub fn compute_max_edge(&self) -> Vec<(usize,f64)> {
         let neighbours = &self.neighbours;
-        let total_edge_length : f64 = (0..neighbours.len()).into_par_iter().map( |n| -> f64 {
+        // TODO already sorted...
+        let mut max_edge_length : Vec<(usize,f64)> = (0..neighbours.len()).into_par_iter().map( |n| -> (usize,f64) {
                 let mut node_edge_length : f64 = 0.;
                 for edge in  &neighbours[n] {
-                    node_edge_length = node_edge_length + edge.weight.to_f64().unwrap();
+                    node_edge_length = node_edge_length.max(edge.weight.to_f64().unwrap());
                 }
-                // get mean edge length in embedded space
-                node_edge_length = node_edge_length / neighbours[n].len() as f64;
-                return node_edge_length;
+                return (n, node_edge_length);
             }
-            ).sum::<f64>();
-        total_edge_length / neighbours.len() as f64
-    } // end of compute_mean_edge
+            ).collect();
+        // sort
+        max_edge_length.sort_unstable_by(|a,b| a.0.partial_cmp(&b.0).unwrap()); 
+        max_edge_length
+    } // end of compute_max_edge
 
 
     /// given a DataId returns list of edges from corresponding point or None if error occurs
@@ -434,9 +435,10 @@ pub fn kgraph_from_hnsw_all<T, D, F>(hnsw : &Hnsw<T,D>, nbng : usize) -> std::re
     assert_eq!(neighbours.len(), nb_point);
     log::trace!("KGraph::exiting init_from_hnsw_all");
     // now we can fill some statistics on density and incoming degrees for nodes!
-    log::info!("mean number of neighbours obtained = {:.3e}", mean_nbng as f64 / nb_point as f64);
-    log::info!("minimal number of neighbours {}", minimum_nbng);
-    log::info!("number of points with less than : {} neighbours = {} ", nbng, nb_point_below_nbng);
+    log::info!("mean number of neighbours obtained = {:.3e}, minimal number of neighbours {}", mean_nbng as f64 / nb_point as f64, minimum_nbng);
+    if nb_point_below_nbng > 0 {
+        log::info!("number of points with less than : {} neighbours = {} ", nbng, nb_point_below_nbng);
+    }
     let mean_nbng = mean_nbng as f64 / nb_point as f64;
     if mean_nbng < nbng as f64 {
         log::warn!(" mean number of neighbours obtained : {:.3e}", mean_nbng);
@@ -539,9 +541,10 @@ pub fn kgraph_from_hnsw_all<T, D, F>(hnsw : &Hnsw<T,D>, nbng : usize) -> std::re
         log::trace!("collected {} points", nb_point_collected);
         // now we can fill some statistics on density and incoming degrees for nodes!
         let mean_nbng = mean_nbng as f64 / nb_point_collected as f64;
-        log::info!("mean number of neighbours obtained = {:.3e}", mean_nbng);
-        log::info!("minimal number of neighbours {}", minimum_nbng);
-        log::info!("number of points with less than : {} neighbours = {} ", nbng, nb_point_below_nbng);
+        log::info!("mean number of neighbours obtained = {:.3e} minimal number of neighbours {}", mean_nbng, minimum_nbng);
+        if nb_point_below_nbng > 0 {
+            log::info!("number of points with less than : {} neighbours = {} ", nbng, nb_point_below_nbng);
+        }
         if mean_nbng < nbng as f64 {
             println!(" mean number of neighbours obtained : {:.3e}", mean_nbng);
             println!(" possibly use hnsw.reset_keeping_pruned(true)");

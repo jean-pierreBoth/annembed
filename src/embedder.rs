@@ -359,34 +359,46 @@ where
 
 
 
-    /// For each node we in the orginal kgraph we return the minimal distance in embedded space of the original neighbours.
-    /// To be used in a comparison with edge length of a Hnsw structure computed on embedded graph to see how far 
-    /// the original neighbours are sent in embedded space
-    fn get_min_edge_length_from_kgraph(&self) -> Option<Vec<(usize,f64)>> {
+    /// For each node we in the orginal kgraph compute the transformed neighbourhood info in the embedded space.
+    /// So we will be able to compare transported kgraph from direct kgraph computed from embedded data.
+    fn get_transformed_kgraph(&self) -> Option<Vec<(usize,Vec<OutEdge<F>>) >> {
         // we check we have kgraph
         if self.kgraph.is_none() {
             log::info!("kgraph is absent, case with projection to be treated");
             return None;
         }
+        let kgraph = self.kgraph.unwrap();
         // we loop on kgraph nodes, loop on edges of node, get extremity id , converts to index, compute embedded distance and sum
-        let neighbours = self.kgraph.unwrap().get_neighbours();
-        let mut best_edge_length : Vec<(usize,f64)> = (0..neighbours.len()).into_par_iter().map( |n| -> (usize,f64)
+        let neighbours = kgraph.get_neighbours();
+        //
+        let transformed_neighbours : Vec::<(usize,Vec<OutEdge<F>>)> = (0..neighbours.len()).into_par_iter().map( |n| -> (usize, Vec<OutEdge<F>>)
             {
                 let node_embedded = self.get_embedded_by_nodeid(n);
+                let mut transformed_neighborhood = Vec::<OutEdge<F>>::with_capacity(neighbours[n].len());
                 let mut node_edge_length = F::max_value();
                 for edge in  &neighbours[n] {
                     let ext_embedded = self.get_embedded_by_dataid(&edge.node);
                     // now we can compute distance for corresponding edge in embedded space. We must use L2
                     node_edge_length = distl2(node_embedded.as_slice().unwrap(), &ext_embedded.as_slice().unwrap()).min(node_edge_length);
+                    transformed_neighborhood.push(OutEdge::<F>::new(edge.node, node_edge_length));
                 }
-                return (n, node_edge_length.to_f64().unwrap());
+                // sort transformed_neighborhood
+                transformed_neighborhood.sort_unstable_by(|a,b|  a.weight.partial_cmp(&b.weight).unwrap());
+                return (n, transformed_neighborhood);
             }
             ).collect();
-        // sort
-        best_edge_length.sort_unstable_by(|a,b| a.0.partial_cmp(&b.0).unwrap());
+        // TODO  avoid that reorder  
+        let mut sorted_neighbours_info = Vec::<(usize, Vec<OutEdge<F>>)>::with_capacity(neighbours.len());
+        for i in 0..neighbours.len() {
+            sorted_neighbours_info.push((i, Vec::<OutEdge<F>>::new()));
+        }
+        for i in 0.. transformed_neighbours.len() {
+            let slot = transformed_neighbours[i].0;
+            sorted_neighbours_info[slot] = transformed_neighbours[i].clone();
+        }
         //
-        return Some(best_edge_length); 
-    } // end of get_min_edge_length_from_kgraph
+        return Some(sorted_neighbours_info); 
+    } // end of get_transformed_kgraph
 
 
     /// compute hnsw and kgraph from embedded data and get maximal edge length by node
@@ -429,12 +441,12 @@ where
         //
         let quality = 0f64; 
         // compute min edge length from initial kgraph
-        let embedded_min_edge = self.get_min_edge_length_from_kgraph();
-        if embedded_min_edge.is_none() {
+        let transformed_kgraph = self.get_transformed_kgraph();
+        if transformed_kgraph.is_none() {
             log::error!("cannot ask for embedded quality before embedding");
             std::process::exit(1);
         }
-        let embedded_min_edge  = embedded_min_edge.unwrap();
+        let transformed_kgraph = transformed_kgraph.unwrap();
         // compute max edge length from kgraph constructed from embedded points
         let max_edges_embedded = self.get_max_edge_length_embedded_kgraph(nbng);
         if max_edges_embedded.is_none() {
@@ -443,27 +455,29 @@ where
         }
         let max_edges_embedded = max_edges_embedded.unwrap();
         // now we can for each node see if best of propagated initial edges encounter ball in reconstructed kgraph from embedded data
-        assert_eq!(max_edges_embedded.len(), embedded_min_edge.len());
+        assert_eq!(max_edges_embedded.len(), transformed_kgraph.len());
         let nb_nodes = max_edges_embedded.len();
-        let mut node_quality = Vec::<f64>::with_capacity(nb_nodes);
+        let mut nodes_match = Vec::with_capacity(nb_nodes);
         for i in 0..nb_nodes {
+            // check we speak of same node
             assert_eq!(i, max_edges_embedded[i].0);
-            if (embedded_min_edge[i].1 <= 0.) {
-                log::error!("node i : {}, embedded_min_edge[i].1, {:.3e}", i, embedded_min_edge[i].1);
-                node_quality.push(1.);
-            }
-            else {
-                if embedded_min_edge[i].1 <= max_edges_embedded[i].1 {
- //                   node_quality.push(max_edges_embedded[i].1/embedded_min_edge[i].1);
-                    node_quality.push(1.);
+            assert_eq!(i, transformed_kgraph[i].0);
+            nodes_match.push(0);
+            // how many transformed edges are in optimal neighborhood?
+            let neighbours = &transformed_kgraph[i].1;
+            for e in 0..neighbours.len() {
+                if neighbours[e].weight.to_f64().unwrap() <= max_edges_embedded[i].1 {
+                    nodes_match[i] += 1;
                 }
                 else {
-                    node_quality.push(0.);
+                    break;
                 }
             }
         }
-        let mean_quality: f64 = node_quality.iter().sum::<f64>()/node_quality.len() as f64;
-        log::info!(" mean quality : {:.3e}", mean_quality);
+        // some stats
+        let nb_without_match = nodes_match.iter().fold(0, |acc, x| if *x == 0 {acc +1} else {acc});
+        let mean_quality: f64 = nodes_match.iter().sum::<usize>() as f64 /nodes_match.len() as f64;
+        log::info!(" nb_without_match : {}, mean quality : {:.3e}", nb_without_match, mean_quality);
         //
         let cpu_time: Duration = cpu_start.elapsed();
         log::info!(" quality estimation,  sys time(s) {:?} cpu time {:?}", sys_now.elapsed().unwrap().as_secs(), cpu_time.as_secs());
@@ -1166,7 +1180,6 @@ mod tests {
 
 
     use super::*;
-    use crate::fromhnsw::*;
 
     
     use rand::distributions::{Uniform};
