@@ -366,7 +366,7 @@ pub fn kgraph_from_hnsw_all<T, D, F>(hnsw : &Hnsw<T,D>, nbng : usize) -> std::re
             D : Distance<T> + Send + Sync,
             F : Float + FromPrimitive {
     //
-    log::info!("entering kgraph_from_hnsw_all");
+    log::debug!("entering kgraph_from_hnsw_all");
     //
     let max_nbng = nbng;
     let mut nb_point_below_nbng = 0;

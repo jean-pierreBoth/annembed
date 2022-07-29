@@ -83,7 +83,7 @@ pub struct EmbedderParams {
     pub beta : f64,
     /// exponenent used in embedded space, default 1.
     pub b : f64,
-    /// embedded scale factor. default to 0.5
+    /// embedded scale factor. default to 0.75
     pub scale_rho : f64,
     /// initial gradient step , default to 2.
     pub grad_step : f64,
@@ -104,7 +104,7 @@ impl EmbedderParams {
         let b = 1.;
         let grad_step = 2.;
         let nb_sampling_by_edge = 10;
-        let scale_rho = 0.5;
+        let scale_rho = 0.75;
         let nb_grad_batch = 15;
         let hierarchy_layer = 0;
         EmbedderParams{asked_dim, dmap_init, beta, b, scale_rho, grad_step, nb_sampling_by_edge , nb_grad_batch, hierarchy_layer}

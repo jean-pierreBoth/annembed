@@ -410,7 +410,8 @@ where
         // compute hnsw
         let nb_nodes = embedding.nrows();
         let nb_layer = 16.min((nb_nodes as f32).ln().trunc() as usize);
-        let hnsw = Hnsw::<F, DistL2F>::new(max_nb_connection, nb_nodes, nb_layer, ef_c, DistL2F{});
+        let mut hnsw = Hnsw::<F, DistL2F>::new(max_nb_connection, nb_nodes, nb_layer, ef_c, DistL2F{});
+        hnsw.set_keeping_pruned(true);
         // need to store arrayviews to get a sufficient lifetime to call as_slice later
         let vectors : Vec<ArrayView1<F>> = (0..nb_nodes).into_iter().map(|i| (embedding.row(i))).collect();
         let mut data_with_id = Vec::<(&[F], usize)>::with_capacity(nb_nodes);
@@ -457,6 +458,7 @@ where
         // now we can for each node see if best of propagated initial edges encounter ball in reconstructed kgraph from embedded data
         assert_eq!(max_edges_embedded.len(), transformed_kgraph.len());
         let nb_nodes = max_edges_embedded.len();
+        let mut miss_dist = Vec::<f64>::new();
         let mut nodes_match = Vec::with_capacity(nb_nodes);
         for i in 0..nb_nodes {
             // check we speak of same node
@@ -473,11 +475,15 @@ where
                     break;
                 }
             }
+            if nodes_match[i] == 0 {
+                miss_dist.push(neighbours[0].weight.to_f64().unwrap());
+            }
         }
         // some stats
+        let mean_miss_ratio : f64 = miss_dist.iter().sum::<f64>()/ miss_dist.len() as f64;
         let nb_without_match = nodes_match.iter().fold(0, |acc, x| if *x == 0 {acc +1} else {acc});
         let mean_quality: f64 = nodes_match.iter().sum::<usize>() as f64 /nodes_match.len() as f64;
-        log::info!(" nb_without_match : {}, mean quality : {:.3e}", nb_without_match, mean_quality);
+        log::info!(" nb_without_match : {}, miss dist : {:.3e} , mean quality : {:.3e}", nb_without_match, mean_miss_ratio, mean_quality);
         //
         let cpu_time: Duration = cpu_start.elapsed();
         log::info!(" quality estimation,  sys time(s) {:?} cpu time {:?}", sys_now.elapsed().unwrap().as_secs(), cpu_time.as_secs());
