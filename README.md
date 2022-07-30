@@ -1,7 +1,6 @@
 # A data embedding tool and related data analysis or clustering
 
-The crate provides, **in the form of a library**:
-
+The crate provides mainly in the form of a library (*See documentation of the binary annembed for a small executable*)
 1. Some variations on data embedding tools from t-Sne (2008) to Umap(2018).
    Our implementation is a mix of the various embedding algorithms mentioned in References.
 
@@ -13,7 +12,7 @@ The crate provides, **in the form of a library**:
       - Considering a power of the distance function to neighbours (**See documentation in module EmbedderParams**).  
       - Increase or decrease the impact of the local density of points around each node. There is no symetrization of the graph. (except when initializing the embedding with diffusion maps in this case it is done as in t-sne or LargeVis). We use the diffusion maps algorithm (Lafon-Keller-Coifman).
 
-   - We also use a cross entropy optimization of this initial layout but take into account the initial local density estimate of each point when computing the cauchy weight of an embedded edge.
+   - We also use a cross entropy optimization of this initial layout but take into account the initial local density estimate of each point when computing the cauchy weight of an embedded edge. The corresponding "perplexity" distribution is estimated on the fly. (**See documentation in module EmbedderParams**).
    
  2. Some by-products :
    
@@ -62,7 +61,7 @@ It took 22s of which 9s were spent in the ann construction.
 
 1. **MNIST fashion database** Cf [mnist-fashion](https://github.com/zalandoresearch/fashion-mnist/tree/master/data/fashion)
 
-It conssits in 70000 images of clothes.
+It consists in 70000 images of clothes.
 
 - initialized by an approximated svd.
   
@@ -70,8 +69,7 @@ It conssits in 70000 images of clothes.
 
    time : 29s
 - hierarchical initialization
-  (This is only useful for large data embedding where we initialize the embedding for one layer of the Hnsw structure with the embedding of 
-  of the layer just above to speed up the process).
+  (This is useful for large data embedding where we initialize the embedding with first layers above the deeper populated ones of the Hnsw structure to speed up the process).
 
  ![mnist](Images/mnist-fashion-HB15S0.5G2E10k5-34s-compressed.jpg)
 

@@ -298,7 +298,9 @@ where
     /// This methods fails if data_id do not exist. Use KGraph.get_data_id_from_idx to check before if necessary.
     pub fn get_embedded_by_dataid(&self, data_id : &DataId) -> ArrayView1<F> {
         // we must get data index as stored in IndexSet
-        let kgraph = self.kgraph.unwrap();    // CAVEAT depends on processing state
+        let kgraph = if self.hkgraph.is_some()
+                            { self.hkgraph.as_ref().unwrap().get_large_graph() } 
+                     else   {self.kgraph.as_ref().unwrap() };
         let data_idx = kgraph.get_idx_from_dataid(data_id).unwrap();
         self.embedding.as_ref().unwrap().row(data_idx)
     } // end of get_data_embedding
@@ -363,11 +365,19 @@ where
     /// So we will be able to compare transported kgraph from direct kgraph computed from embedded data.
     fn get_transformed_kgraph(&self) -> Option<Vec<(usize,Vec<OutEdge<F>>) >> {
         // we check we have kgraph
-        if self.kgraph.is_none() {
-            log::info!("kgraph is absent, case with projection to be treated");
-            return None;
+        let kgraph : &KGraph<F>;
+        if self.kgraph.is_some() {
+            kgraph = self.kgraph.unwrap();
+            log::info!("found kgraph");
         }
-        let kgraph = self.kgraph.unwrap();
+        else if self.hkgraph.is_some() {
+            kgraph = self.hkgraph.as_ref().unwrap().get_large_graph();
+            log::info!("found kgraph from projection");
+        }
+        else {
+            log::info!("could not find kgraph");
+            std::process::exit(1);
+        }
         // we loop on kgraph nodes, loop on edges of node, get extremity id , converts to index, compute embedded distance and sum
         let neighbours = kgraph.get_neighbours();
         //
@@ -405,7 +415,7 @@ where
     fn get_max_edge_length_embedded_kgraph(&self, nbng : usize) -> Option<Vec<(usize,f64)>> {
         let embedding = self.embedding.as_ref().unwrap();
         // TODO use the same parameters as the hnsw given to kgraph, and adjust ef_c accordingly
-        let max_nb_connection = 70;
+        let max_nb_connection = nbng;
         let ef_c = 50;
         // compute hnsw
         let nb_nodes = embedding.nrows();
@@ -458,7 +468,7 @@ where
         // now we can for each node see if best of propagated initial edges encounter ball in reconstructed kgraph from embedded data
         assert_eq!(max_edges_embedded.len(), transformed_kgraph.len());
         let nb_nodes = max_edges_embedded.len();
-        let mut miss_dist = Vec::<f64>::new();
+        let mut miss_dist = Vec::<f64>::with_capacity(nb_nodes);
         let mut nodes_match = Vec::with_capacity(nb_nodes);
         for i in 0..nb_nodes {
             // check we speak of same node
@@ -471,12 +481,7 @@ where
                 if neighbours[e].weight.to_f64().unwrap() <= max_edges_embedded[i].1 {
                     nodes_match[i] += 1;
                 }
-                else {
-                    break;
-                }
-            }
-            if nodes_match[i] == 0 {
-                miss_dist.push(neighbours[0].weight.to_f64().unwrap());
+                miss_dist.push(neighbours[0].weight.to_f64().unwrap()/max_edges_embedded[i].1 );
             }
         }
         // some stats
@@ -487,6 +492,8 @@ where
         //
         let cpu_time: Duration = cpu_start.elapsed();
         log::info!(" quality estimation,  sys time(s) {:?} cpu time {:?}", sys_now.elapsed().unwrap().as_secs(), cpu_time.as_secs());
+        // TODO dump an image of miss_dist related to coordinates of embedded data.
+        //
         return Some(quality);
     } // end of get_quality_estimate_from_edge_length
 

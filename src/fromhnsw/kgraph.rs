@@ -375,7 +375,7 @@ pub fn kgraph_from_hnsw_all<T, D, F>(hnsw : &Hnsw<T,D>, nbng : usize) -> std::re
     // We must extract the whole structure , for each point the list of its nearest neighbours and weight<F> of corresponding edge
     let max_nb_conn = hnsw.get_max_nb_connection() as usize;    // morally this the k of knn bu we have that for each layer
     // check consistency between max_nb_conn and nbng
-    if max_nb_conn <= nbng {
+    if max_nb_conn < nbng {
         log::info!("init_from_hnsw_all: number of neighbours must be less than hnsw max_nb_connection : {} ", max_nb_conn);
         println!("init_from_hnsw_all: number of neighbours must be less than hnsw max_nb_connection : {} ", max_nb_conn);
     }
