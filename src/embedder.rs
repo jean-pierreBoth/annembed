@@ -22,6 +22,8 @@ use ndarray_linalg::{Lapack, Scalar};
 
 
 use quantiles::{ckms::CKMS};     // we could use also greenwald_khanna
+use csv::Writer;
+use crate::prelude::write_csv_labeled_array2;
 
 // threading needs
 use rayon::prelude::*;
@@ -441,9 +443,16 @@ where
     } // end of get_max_edge_length_embedded_kgraph
 
 
-    /// This function computes the proportion of points in original space that have a neighborhood, once trasported in embedded space
-    /// that intersect with neighborhood of size nbng in embedded space.
-    /// So it measure concordance in neighborhoods in original space and embedded space
+    /// This function defines and extracts, with a Hnsw structure a neighbourhood in embedded space of nbng points.
+    /// In each neighbourhood of a point, taken as center in the initial space, we search the point that has minimal (non null) distance to the center
+    /// of the neighbourhood of corresponding center point in embedded space.
+    /// The quantiles on these distance are then dumped.
+    /// It gives a rough idea of the continuity of the embedding. 
+    /// We dump also the number of points in the originan space that have no neighbours sent in the corresponding 
+    /// embeded neighborhood (*nb_without_match) and also the mean number of matches for points that have a match
+    /// **The lesser is the distance the more continous the embedding can be**. 
+    /// As the computation takes place in the embedded space (which is of dimension 2 or of this order), nbng can be greater than for doing 
+    /// the embedding (100 or 200 for Mnist digits or fashion), and the estimation of distances is better.
     #[allow(unused)]
     pub fn get_quality_estimate_from_edge_length(&self, nbng : usize) -> Option<f64> {
         //
@@ -467,6 +476,7 @@ where
         let max_edges_embedded = max_edges_embedded.unwrap();
         // now we can for each node see if best of propagated initial edges encounter ball in reconstructed kgraph from embedded data
         assert_eq!(max_edges_embedded.len(), transformed_kgraph.len());
+        let mut missed_dist_q = CKMS::<f64>::new(0.01);
         let nb_nodes = max_edges_embedded.len();
         let mut miss_dist = Vec::<f64>::with_capacity(nb_nodes);
         let mut nodes_match = Vec::with_capacity(nb_nodes);
@@ -481,18 +491,26 @@ where
                 if neighbours[e].weight.to_f64().unwrap() <= max_edges_embedded[i].1 {
                     nodes_match[i] += 1;
                 }
-                miss_dist.push(neighbours[0].weight.to_f64().unwrap()/max_edges_embedded[i].1 );
             }
+            let missed_d = neighbours[0].weight.to_f64().unwrap()/max_edges_embedded[i].1;
+            miss_dist.push(neighbours[0].weight.to_f64().unwrap()/max_edges_embedded[i].1 );
+            missed_dist_q.insert(missed_d);
         }
         // some stats
-        let mean_miss_ratio : f64 = miss_dist.iter().sum::<f64>()/ miss_dist.len() as f64;
         let nb_without_match = nodes_match.iter().fold(0, |acc, x| if *x == 0 {acc +1} else {acc});
-        let mean_quality: f64 = nodes_match.iter().sum::<usize>() as f64 /nodes_match.len() as f64;
-        log::info!(" nb_without_match : {}, miss dist : {:.3e} , mean quality : {:.3e}", nb_without_match, mean_miss_ratio, mean_quality);
+        let mean_nbmatch: f64 = nodes_match.iter().sum::<usize>() as f64 /nodes_match.len() as f64;
+        println!("\n\n a guess at quality ");
+        println!("\n nb_without_match : {},  mean nb match if match : {:.3e}", nb_without_match,  mean_nbmatch);
+        println!("\n best distance in neighbourhood quantiles at 0.05 : {:.2e} , 0.25 : {:.2e}, 0.5 :  {:.2e}, 0.75 : {:.2e} 0.95 : {:.2e}, 0.99 : {:.2e} \n\n", 
+            missed_dist_q.query(0.05).unwrap().1, missed_dist_q.query(0.25).unwrap().1, missed_dist_q.query(0.5).unwrap().1, 
+            missed_dist_q.query(0.75).unwrap().1, missed_dist_q.query(0.95).unwrap().1, missed_dist_q.query(0.99).unwrap().1);
+        //
+        let mut csv_dist = Writer::from_path("first_dist.csv").unwrap();
+        let _res = write_csv_labeled_array2(&mut csv_dist, miss_dist.as_slice(), &self.get_embedded_reindexed());
+        csv_dist.flush().unwrap();
         //
         let cpu_time: Duration = cpu_start.elapsed();
         log::info!(" quality estimation,  sys time(s) {:?} cpu time {:?}", sys_now.elapsed().unwrap().as_secs(), cpu_time.as_secs());
-        // TODO dump an image of miss_dist related to coordinates of embedded data.
         //
         return Some(quality);
     } // end of get_quality_estimate_from_edge_length
@@ -1067,9 +1085,8 @@ fn get_scale_from_proba_normalisation<F> (kgraph : & KGraph<F>, scale_rho : f32,
 
 
 // restrain value
-#[allow(unused)]
 fn clip<F>(f : F, max : f64) -> F 
-    where     F: Float + num_traits::FromPrimitive  {
+    where  F: Float + num_traits::FromPrimitive {
     let f_r = f.to_f64().unwrap();
     let truncated = if f_r > max {
         log::trace!("truncated >");
@@ -1084,6 +1101,8 @@ fn clip<F>(f : F, max : f64) -> F
     };
     return F::from(truncated).unwrap();
 }   // end clip
+
+
 
 
 
@@ -1114,14 +1133,6 @@ where
     return weight_f;
 } // end of cauchy_edge_weight
 
-
-
-#[allow(unused)]
-fn l2_dist<F>(y1: &ArrayView1<'_, F> , y2 : &ArrayView1<'_, F>) -> F 
-where F :  Float + std::iter::Sum + num_traits::cast::FromPrimitive {
-    //
-    y1.iter().zip(y2.iter()).map(|(v1,v2)| (*v1 - *v2) * (*v1- *v2)).sum()
-}  // end of l2_dist
 
 
 
