@@ -1,20 +1,22 @@
 # A data embedding tool and related data analysis or clustering
 
-The crate provides mainly in the form of a library (*See documentation of the binary annembed for a small executable*)
+The crate provides mainly in the form of a library (*See documentation of the binary annembed for a small executable reading csv files*)
 1. Some variations on data embedding tools from t-Sne (2008) to Umap(2018).
    Our implementation is a mix of the various embedding algorithms mentioned in References.
 
    - The graph is initialized by the Hnsw nearest neighbour algorithm as implemented in: [hnsw_rs](https://crates.io/crates/hnsw_rs).   
      This provides for free, sub-sampling in the data to embed by considering only less densely occupied layers (the upper layers). This corresponds generally to a subsampling of 2%-4%, but can give a guarantee as the distance beetween points leaved out the sampling and its nearest sampled neighbour are known. The hnsw structure thus enables also an iterative/hierarchical initialization of the embedding by taking into account an increasing number of layers.
   
-   - The preliminary graph built for the embedding uses an exponential function of distances to neighbour nodes (as in Umap),but keeps a      probability normalization constraint with respect to neighbours (as in T-sne).
+   - The preliminary graph built for the embedding uses an exponential function of distances to neighbour nodes (as in Umap),but keeps a    probability normalization constraint with respect to neighbours (as in T-sne).
     It is possible to modulate the initial edge weight by :
       - Considering a power of the distance function to neighbours (**See documentation in module EmbedderParams**).  
       - Increase or decrease the impact of the local density of points around each node. There is no symetrization of the graph. (except when initializing the embedding with diffusion maps in this case it is done as in t-sne or LargeVis). We use the diffusion maps algorithm (Lafon-Keller-Coifman).
 
    - We also use a cross entropy optimization of this initial layout but take into account the initial local density estimate of each point when computing the cauchy weight of an embedded edge. The corresponding "perplexity" distribution is estimated on the fly. (**See documentation in module EmbedderParams**).
-   
- 2. Some by-products :
+
+    - We provide a tentative assesment of the continuity of the embedding to help selecting among varying results between runs for a given data set. This is detailed in the documentation of function *Embedder::get_quality_estimate_from_edge_length*.
+    
+ 1. Some by-products :
    
     - an implementation of range approximation and approximated SVD for dense and/or row compressed matrices as described in explicited in the svdapprox module and the paper of Halko-Tropp (Cf. [Tsvd](https://arxiv.org/abs/0909.4061)).
 
@@ -23,10 +25,9 @@ The crate provides mainly in the form of a library (*See documentation of the bi
   
     - a Diffusion Maps implementation.
 
-
 ## *Future work*
 
-The crate will provide a single-linkage hierarchical clustering function and an implementation of the Mapper algorithm using the C++ **Ripser** module from U. Bauer.
+The crate will provide a link to Ripserer.jl, the Julia implementation of the C++ **Ripser** module from U. Bauer.
 
 ## Building
 
@@ -46,15 +47,15 @@ Sources of examples are in corresponding directory.
 It consists in 70000 images of handwritten digits of 784 pixels
 
 - initialized by an approximated svd.
-It tooks 20s to run, of which 9s were spent in the ann construction.
+It tooks 26s to run, of which 9s were spent in the ann construction.
 
-![mnist](Images/mnist-digits-B15S0.5E10G3k8-v3-20s-compressed.jpg)
+![mnist](Images/mnist_digit-B30S1E10k6-26s.csv-2.-compressed.jpg)
 
 - hierarchical initialization
 
-![mnist](Images/mnist-digits-HB15S0.5E10G3k8-v3-22s-compressed.jpg)
+![mnist](Images/mnist_digits-HB30S1E10k6-25s.csv-2-compressed.jpg)
 
-It took 22s of which 9s were spent in the ann construction.
+It took 25s of which 9s were spent in the ann construction.
 
 - The estimated intrinsic dimension of the data is 18.5 with standard deviation depending on points: 7.2
   taking into account sorted neighbours around each point between the 9-th and 20-th first ranks.
@@ -65,15 +66,16 @@ It consists in 70000 images of clothes.
 
 - initialized by an approximated svd.
   
-  ![mnist](Images/mnist-fashion-B15S0.5G2E10k5-29s-compressed.jpg)
+  ![mnist](Images/mnist_fashionB15S1E10k6-35s.csv-2compressed.jpg)
 
-   time : 29s
+   time : 35s
+
 - hierarchical initialization
   (This is useful for large data embedding where we initialize the embedding with first layers above the deeper populated ones of the Hnsw structure to speed up the process).
 
- ![mnist](Images/mnist-fashion-HB15S0.5G2E10k5-34s-compressed.jpg)
+ ![mnist](Images/mnist_fashionHB15S1E10k6-37s.csv-1-compressed.jpg)
 
- time : 34s 
+ time : 37s 
    
 - The estimated intrinsic dimension of the data is 21.9 with standard deviation depending on points : 12.2 taking into account sorted neighbours around each point between the 9-th and 20-th first ranks.
 ### Usage
@@ -92,7 +94,7 @@ It consists in 70000 images of clothes.
     embed_params.nb_grad_batch = 15;
     embed_params.scale_rho = 1.;
     embed_params.beta = 1.;
-    embed_params.grad_step = 3.;
+    embed_params.grad_step = 1.;
     embed_params.nb_sampling_by_edge = 10;
     embed_params.dmap_init = true;
     // conversion of the hnsw to a graph structure

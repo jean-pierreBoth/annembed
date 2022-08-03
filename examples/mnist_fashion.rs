@@ -233,10 +233,10 @@ pub fn main() {
     hnsw.dump_layer_info();
     //
     let mut embed_params = EmbedderParams::default();
-    embed_params.nb_grad_batch = 20;
-    embed_params.scale_rho = 0.5;
+    embed_params.nb_grad_batch = 25;
+    embed_params.scale_rho = 1.;
     embed_params.beta = 1.;
-    embed_params.grad_step = 2.;
+    embed_params.grad_step = 1.;
     embed_params.nb_sampling_by_edge = 10;
     embed_params.dmap_init = true;
 
@@ -245,7 +245,7 @@ pub fn main() {
     let graphprojection;
     let hierarchical = false;
     if !hierarchical {
-        let knbn = 5;
+        let knbn = 6;
         kgraph = kgraph_from_hnsw_all(&hnsw, knbn).unwrap();
         embedder = Embedder::new(&kgraph, embed_params);
         let embed_res = embedder.embed();
@@ -253,7 +253,7 @@ pub fn main() {
         assert!(embedder.get_embedded().is_some());
     }
     else {
-        let knbn = 5;
+        let knbn = 6;
         log::debug!("trying graph projection");
         graphprojection =  KGraphProjection::<f32>::new(&hnsw, knbn, 1);
         embedder = Embedder::from_hkgraph(&graphprojection, embed_params);
@@ -275,11 +275,10 @@ pub fn main() {
     let _res = write_csv_labeled_array2(&mut csv_w, labels.as_slice(), &embedder.get_embedded_reindexed());
     csv_w.flush().unwrap();
     //
-    let quality = embedder.get_quality_estimate_from_edge_length();
+    let _quality = embedder.get_quality_estimate_from_edge_length(200);
     // Get some statistics on induced graph. This is not related to the embedding process
     let knbn = 25;
     let kgraph : KGraph<f32>;
-    log::info!("calling kgraph.init_from_hnsw_all");
     kgraph = kgraph_from_hnsw_all(&hnsw, knbn).unwrap();
     log::info!("minimum number of neighbours {}", kgraph.get_max_nbng());
     log::info!("dimension estimation...");

@@ -1,4 +1,9 @@
-# Julia exploration of Csv dumps
+# Julia exploration of Csv dumps.
+
+# Note that Makie can need entering Julia after : export LD_PRELOAD=/lib/x86_64-linux-gnu/libstdc++.so.6
+#                to force julia to use system libstdc++.so.6 if it is more recent than the one embedded in Julia
+#                see https://github.com/JuliaGL/GLFW.jl/issues/198
+#                Otherwise julia does not find OpenGl access.
 
 using CSV
 using Colors, ColorSchemes

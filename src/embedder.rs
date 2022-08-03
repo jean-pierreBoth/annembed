@@ -443,16 +443,27 @@ where
     } // end of get_max_edge_length_embedded_kgraph
 
 
-    /// This function defines and extracts, with a Hnsw structure a neighbourhood in embedded space of nbng points.
+    /// This function is an attempt to quantify the quality of the embedding. 
+    /// It tries to assess how neighbourhood of points in original and neighbourhood of size *nbng* in embedded space match.  
+    /// 
     /// In each neighbourhood of a point, taken as center in the initial space, we search the point that has minimal (non null) distance to the center
-    /// of the neighbourhood of corresponding center point in embedded space.
-    /// The quantiles on these distance are then dumped.
+    /// of the corresponding neighbourhood in embedded space. The quantiles on these distance are then dumped.
+    /// We also count the number of points for which the distance is in the radius of the neighbourhood (of size *nbng*) in embedded space 
+    /// and for neighbourhood that have a match , the mean number of matches. 
     /// It gives a rough idea of the continuity of the embedding. 
-    /// We dump also the number of points in the originan space that have no neighbours sent in the corresponding 
-    /// embeded neighborhood (*nb_without_match) and also the mean number of matches for points that have a match
-    /// **The lesser is the distance the more continous the embedding can be**. 
+    ///  
+    /// **The lesser are the median distance, and the number of points without a match,  the more continous the embedding can be.**
+    /// **Inversely the higher the mean number of matches, the more we can expect the embedding to be continuous** 
+    ///
     /// As the computation takes place in the embedded space (which is of dimension 2 or of this order), nbng can be greater than for doing 
-    /// the embedding (100 or 200 for Mnist digits or fashion), and the estimation of distances is better.
+    /// the embedding (100 or 200 for Mnist digits or fashion runs in 3s), and the estimation of distances is better.
+    ///
+    /// For example the image displayed in README for the Fashion case with 70000 points (file mnist_fashionHB15S1E10k6-37s.csv-1-compressed.jpg)
+    /// give : nb_without_match : 32407,  mean nb match if match : 2.343e0 and median of distance =  9.17e-1
+    /// 
+    /// Whereas the image mnist_fashionB15S1E10k6-35s.csv-1-badqual-compressed.jpg found in the Images directory of this crate
+    /// give nb_without_match : 44702,  mean nb match if match : 1.745e0 and median of distance found =  1.90e0
+    /// 
     #[allow(unused)]
     pub fn get_quality_estimate_from_edge_length(&self, nbng : usize) -> Option<f64> {
         //
