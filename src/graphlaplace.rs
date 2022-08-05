@@ -2,10 +2,10 @@
 
 use std::collections::HashMap;
 
-use ndarray::{Array1, Array2, Array, Axis};
+use ndarray::{Array1, Array2, Axis};
 use sprs::{CsMat, TriMatBase};
 
-use lax::{layout::MatrixLayout, UVTFlag, SVDDC_};
+use ndarray_linalg::{UVTFlag, SVDDC};
 
 use crate::tools::{svdapprox::*,nodeparam::*};
 
@@ -53,7 +53,6 @@ impl GraphLaplacian {
         let b = self.sym_laplacian.get_full_mut().unwrap();
         log::trace!("GraphLaplacian ... size nbrow {} nbcol {} ", b.shape()[0], b.shape()[1]);
 
-        let layout = MatrixLayout::C { row: b.shape()[0] as i32, lda: b.shape()[1] as i32 };
         let slice_for_svd_opt = b.as_slice_mut();
         if slice_for_svd_opt.is_none() {
             println!("direct_svd Matrix cannot be transformed into a slice : not contiguous or not in standard order");
@@ -61,7 +60,7 @@ impl GraphLaplacian {
         }
         // use divide conquer (calls lapack gesdd), faster but could use svd (lapack gesvd)
         log::trace!("direct_svd calling svddc driver");
-        let res_svd_b = f32::svddc(layout,  UVTFlag::Some, slice_for_svd_opt.unwrap());
+        let res_svd_b = b.svddc(UVTFlag::Some);
         if res_svd_b.is_err()  {
             log::info!("GraphLaplacian do_full_svd svddc failed");
             return Err(String::from("GraphLaplacian svddc failed"));
@@ -72,19 +71,10 @@ impl GraphLaplacian {
         // now we must match results
         // u is (m,r) , vt must be (r, n) with m = self.data.shape()[0]  and n = self.data.shape()[1]
         let res_svd_b = res_svd_b.unwrap();
-        let r = res_svd_b.s.len();
-        let m = b.shape()[0];
         // must truncate to asked dim
-        let s : Array1<f32> = res_svd_b.s.iter().map(|x| *x).collect::<Array1<f32>>();
+        let s : Array1<f32> = res_svd_b.1;
         //
-        let s_u : Option<Array2<f32>>;
-        if let Some(u_vec) = res_svd_b.u {
-            s_u = Some(Array::from_shape_vec((m, r), u_vec).unwrap());
-        }
-        else {
-            s_u = None;
-        }
-        Ok(SvdResult{s : Some(s), u: s_u, vt : None})
+        Ok(SvdResult{s : Some(s), u: res_svd_b.0, vt : None})
     }  // end of do_full_svd
 
 

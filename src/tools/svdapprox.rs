@@ -39,9 +39,9 @@ use rand_xoshiro::rand_core::SeedableRng;
 use ndarray::{Dim, Array, Array1, Array2, ArrayBase, Dimension, ArrayView, ArrayView1, ArrayViewMut1, ArrayView2 , Ix1, Ix2};
 
 // pub to avoid to re-import everywhere explicitly
-pub use ndarray_linalg::{Scalar, Lapack};
+pub use ndarray_linalg::{layout::MatrixLayout, UVTFlag, Scalar, Lapack, QR};
 
-use lax::{layout::MatrixLayout, UVTFlag, QR_};
+// use lax::QR_;
 
 use std::marker::PhantomData;
 
@@ -981,10 +981,11 @@ fn orthogonalize_with_q<F:Scalar + ndarray::ScalarOperand >(q: &[Array1<F>], y: 
 
 
 // do qr decomposition (calling Lax q function) of mat (m, n) which must be in C order
+// instead of calling mat.qr() and returning res.0
 // The purpose of this function is just to avoid the R allocation in Lax qr 
 //
 fn do_qr<F> (layout : MatrixLayout, mat : &mut Array2<F>)
-    where F : Float + Lapack + Scalar + QR_ + ndarray::ScalarOperand 
+    where F : Float + Lapack + Scalar + ndarray::ScalarOperand 
 {
     let (_, _) = match layout {
         MatrixLayout::C { row, lda } => (row as usize , lda as usize),
