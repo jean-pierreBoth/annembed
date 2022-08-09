@@ -370,6 +370,7 @@ pub fn kgraph_from_hnsw_all<T, D, F>(hnsw : &Hnsw<T,D>, nbng : usize) -> std::re
     //
     let max_nbng = nbng;
     let mut nb_point_below_nbng = 0;
+    let mut mean_deficient_neighbour_size: usize = 0;   
     let mut minimum_nbng = nbng;
     let mut mean_nbng = 0u64;
     // We must extract the whole structure , for each point the list of its nearest neighbours and weight<F> of corresponding edge
@@ -416,10 +417,11 @@ pub fn kgraph_from_hnsw_all<T, D, F>(hnsw : &Hnsw<T,D>, nbng : usize) -> std::re
         // keep only the asked size. Could we keep more ?
         if vec_tmp.len() < nbng {
             nb_point_below_nbng += 1;
+            mean_deficient_neighbour_size += vec_tmp.len();
             log::trace!("neighbours must have {} neighbours, point {} got only {}", max_nbng, point_id, vec_tmp.len());
             if vec_tmp.len() == 0 {
                 let p_id = point.get_point_id();
-                log::warn!(" graph will not be connected, isolated point at layer {}  , pos in layer {} ", p_id.0, p_id.1);
+                log::warn!(" graph will not be connected, isolated point at layer {}  , pos in layer : {} ", p_id.0, p_id.1);
             }
         }
         vec_tmp.truncate(nbng);
@@ -437,8 +439,9 @@ pub fn kgraph_from_hnsw_all<T, D, F>(hnsw : &Hnsw<T,D>, nbng : usize) -> std::re
     // now we can fill some statistics on density and incoming degrees for nodes!
     log::info!("mean number of neighbours obtained = {:.3e}, minimal number of neighbours {}", mean_nbng as f64 / nb_point as f64, minimum_nbng);
     if nb_point_below_nbng > 0 {
-        log::info!("number of points with less than : {} neighbours = {} ", nbng, nb_point_below_nbng);
-    }
+        log::info!("number of points with less than : {} neighbours = {},  mean size for deficient neighbourhhod {:.3e}", nbng, nb_point_below_nbng, 
+                    mean_deficient_neighbour_size as f64/nb_point_below_nbng as f64 );
+        }
     let mean_nbng = mean_nbng as f64 / nb_point as f64;
     if mean_nbng < nbng as f64 {
         log::warn!(" mean number of neighbours obtained : {:.3e}", mean_nbng);
@@ -464,7 +467,8 @@ pub fn kgraph_from_hnsw_all<T, D, F>(hnsw : &Hnsw<T,D>, nbng : usize) -> std::re
         log::trace!("init_from_hnsw_layer");
         //
         let max_nbng = nbng;
-        let mut nb_point_below_nbng = 0;
+        let mut nb_point_below_nbng: usize = 0;
+        let mut mean_deficient_neighbour_size: usize = 0;
         let mut minimum_nbng = nbng;
         let mut mean_nbng = 0u64;
         let max_nb_conn = hnsw.get_max_nb_connection() as usize;
@@ -518,11 +522,11 @@ pub fn kgraph_from_hnsw_all<T, D, F>(hnsw : &Hnsw<T,D>, nbng : usize) -> std::re
                 // keep only the asked size. Could we keep more ?
                 if vec_tmp.len() < nbng {
                     nb_point_below_nbng += 1;
-                    log::warn!("neighbours must have {} neighbours, got only {}", max_nbng, vec_tmp.len());
-                    log::warn!(" layer {}  , pos in layer {} ", p_id.0, p_id.1);
+                    mean_deficient_neighbour_size += vec_tmp.len();
+                    log::trace!("neighbours must have {} neighbours, got only {}. layer {}  , pos in layer : {}", nbng, vec_tmp.len(),  p_id.0, p_id.1);
                     if vec_tmp.len() == 0 {
                         let p_id = point.get_point_id();
-                        log::warn!(" graph will not be connected, isolated point at layer {}  , pos in layer {} ", p_id.0, p_id.1);
+                        log::warn!(" graph will not be connected, isolated point at layer {}  , pos in layer : {} ", p_id.0, p_id.1);
                         node_set.remove(&index);
                         continue;
                     }
@@ -543,7 +547,8 @@ pub fn kgraph_from_hnsw_all<T, D, F>(hnsw : &Hnsw<T,D>, nbng : usize) -> std::re
         let mean_nbng = mean_nbng as f64 / nb_point_collected as f64;
         log::info!("mean number of neighbours obtained = {:.3e} minimal number of neighbours {}", mean_nbng, minimum_nbng);
         if nb_point_below_nbng > 0 {
-            log::info!("number of points with less than : {} neighbours = {} ", nbng, nb_point_below_nbng);
+            log::info!("number of points with less than : {} neighbours = {},  mean size for deficient neighbourhhod {:.3e}", nbng, nb_point_below_nbng, 
+                    mean_deficient_neighbour_size as f64/nb_point_below_nbng as f64 );
         }
         if mean_nbng < nbng as f64 {
             println!(" mean number of neighbours obtained : {:.3e}", mean_nbng);

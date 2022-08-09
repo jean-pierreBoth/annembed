@@ -65,7 +65,7 @@ pub(crate) fn get_header_size(filepath : &Path) -> anyhow::Result<usize> {
     let fileres = OpenOptions::new().read(true).open(&filepath);
     if fileres.is_err() {
         log::error!("fn get_header_size : could not open file {:?}", filepath.as_os_str());
-        println!("directed_from_csv could not open file {:?}", filepath.as_os_str());
+        println!("fn get_header_size : could not open file {:?}", filepath.as_os_str());
         return Err(anyhow!("fn get_header_size : could not open file {}", filepath.display()));            
     }
     let mut file = fileres?;
@@ -149,8 +149,8 @@ pub fn get_toembed_from_csv<F> (filepath : &Path, delim : u8) -> anyhow::Result<
                     v.push(val);
                 }
                 else {
-                    log::debug!("error decoding field 1 of record {}", num_record);
-                    return Err(anyhow!("error decoding field 1 of record  {}",num_record)); 
+                    log::error!("error decoding field {} of record  {}, field : {:?}",j, num_record, field);
+                    return Err(anyhow!("error decoding field {} of record  {}, field : {:?}",j, num_record, field)); 
                 }
             }
             toembed.push(v);

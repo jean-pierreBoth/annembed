@@ -167,6 +167,7 @@ where
         println!(" first step embedding sys time(ms) {:.2e} cpu time(ms) {:.2e}", sys_start.elapsed().unwrap().as_millis(), cpu_start.elapsed().as_millis());
         // get initial embedding
         let large_graph = graph_projection.get_large_graph();
+        log::info!("computing proba edges for large graph ...");
         self.initial_space = Some(to_proba_edges(large_graph, self.parameters.scale_rho as f32, self.parameters.beta as f32));
         let nb_nodes_large = large_graph.get_nb_nodes();
         let first_embedding = embedder_first_step.get_embedded().unwrap();
@@ -414,6 +415,7 @@ where
 
 
     /// compute hnsw and kgraph from embedded data and get maximal edge length by node
+    /// This function can require much memory for large number of nodes with large nbng
     fn get_max_edge_length_embedded_kgraph(&self, nbng : usize) -> Option<Vec<(usize,f64)>> {
         let embedding = self.embedding.as_ref().unwrap();
         // TODO use the same parameters as the hnsw given to kgraph, and adjust ef_c accordingly
@@ -446,7 +448,7 @@ where
     /// This function is an attempt to quantify the quality of the embedding. 
     /// It tries to assess how neighbourhood of points in original and neighbourhood of size *nbng* in embedded space match.  
     /// 
-    /// In each neighbourhood of a point, taken as center in the initial space, we search the point that has minimal (non null) distance to the center
+    /// In each neighbourhood of a point, taken as center in the initial space, we search the point that has minimal distance to the center
     /// of the corresponding neighbourhood in embedded space. The quantiles on these distance are then dumped.
     /// We also count the number of points for which the distance is in the radius of the neighbourhood (of size *nbng*) in embedded space 
     /// and for neighbourhood that have a match , the mean number of matches. 
@@ -459,10 +461,10 @@ where
     /// the embedding (100 or 200 for Mnist digits or fashion runs in 3s), and the estimation of distances is better.
     ///
     /// For example the image displayed in README for the Fashion case with 70000 points (file mnist_fashionHB15S1E10k6-37s.csv-1-compressed.jpg)
-    /// give : nb_without_match : 32407,  mean nb match if match : 2.343e0 and median of distance =  9.17e-1
+    /// give : *nb_without_match : 32407,  mean nb match if match : 2.343e0 and median of distance =  9.17e-1.*
     /// 
     /// Whereas the image mnist_fashionB15S1E10k6-35s.csv-1-badqual-compressed.jpg found in the Images directory of this crate
-    /// give nb_without_match : 44702,  mean nb match if match : 1.745e0 and median of distance found =  1.90e0
+    /// give : *nb_without_match : 44702,  mean nb match if match : 1.745e0 and median of distance found =  1.90e0*
     /// 
     #[allow(unused)]
     pub fn get_quality_estimate_from_edge_length(&self, nbng : usize) -> Option<f64> {
@@ -1048,46 +1050,65 @@ fn get_scale_from_proba_normalisation<F> (kgraph : & KGraph<F>, scale_rho : f32,
     // exp(- (first_dist -last_dist)/scale) >= PROBA_MIN
     // TODO do we need some optimization with respect to this 1 ? as we have lambda for high variations
     let scale = scale_rho * mean_rho;
-    // now we adjust scale so that the ratio of proba of last neighbour to first neighbour do not exceed epsil. CAVEAT
+    // now we adjust scale so that the ratio of proba of last neighbour to first neighbour do not exceed epsil.
+    let mut all_equal = false;
     let first_dist = neighbours[0].weight.to_f32().unwrap();
-    assert!(first_dist > 0.);
-    let last_n = neighbours.iter().rfind(|&n| n.weight.to_f32().unwrap() > 0.).unwrap();
-    let last_dist = last_n.weight.to_f32().unwrap();
-    assert!(last_dist > 0.);
-    assert!(last_dist >= first_dist);
+    // it happens first dist = 0 , Cf Higgs Boson data
+    let last_n = neighbours.iter().rfind(|&n| n.weight.to_f32().unwrap() > 0.);
+    if last_n.is_none() {
+        // means all distances are 0! (encountered in Higgs Boson bench)
+        all_equal = true;
+    }
     //
     let remap_weight = | w : F , shift : f32, scale : f32 , beta : f32| (-((w.to_f32().unwrap() - shift).max(0.)/ scale).pow(beta)).exp();
     //
-    if last_dist > first_dist {
-        //
-        if remap_weight(F::from(last_dist).unwrap(), first_dist, scale, beta )/remap_weight(F::from(first_dist).unwrap(), first_dist, scale, beta) < PROBA_MIN.ln() {
-            log::info!("too large variation of neighbours probablities , increase scale_rho or reduce beta");
-            // we could rescale by augmenting scale... or impose an edge weight of PROBA_MIN...
+    if !all_equal {
+        let last_dist = last_n.unwrap().weight.to_f32().unwrap();
+        if last_dist > first_dist {
+            //
+            if remap_weight(F::from(last_dist).unwrap(), first_dist, scale, beta )/remap_weight(F::from(first_dist).unwrap(), first_dist, scale, beta) < PROBA_MIN.ln() {
+                log::info!("too large variation of neighbours probablities , increase scale_rho or reduce beta");
+                // we could rescale by augmenting scale... or impose an edge weight of PROBA_MIN...
+            }
+            let mut probas_edge = neighbours
+                .iter()
+                .map(|n| OutEdge::<f32>::new(n.node, remap_weight(n.weight, first_dist, scale, beta).max(PROBA_MIN)) )
+                .collect::<Vec<OutEdge<f32>>>();
+            //
+            let proba_range = probas_edge[probas_edge.len() - 1].weight / probas_edge[0].weight;
+            log::trace!(" first dist {:2e} last dist {:2e}", first_dist, last_dist);
+            log::trace!("scale : {:.2e} , first neighbour proba {:2e}, last neighbour proba {:2e} proba gap {:.2e}", scale, probas_edge[0].weight, 
+                            probas_edge[probas_edge.len() - 1].weight,
+                            proba_range);
+            if proba_range < PROBA_MIN {
+                log::error!(" first dist {:2e} last dist {:2e}", first_dist, last_dist);
+                log::error!("scale : {:.2e} , first neighbour proba {:2e}, last neighbour proba {:2e} proba gap {:.2e}", scale, probas_edge[0].weight, 
+                                probas_edge[probas_edge.len() - 1].weight,
+                                proba_range);            
+            }
+            assert!(proba_range >= PROBA_MIN, "proba range {:.2e} too low edge proba, increase scale_rho or reduce beta", proba_range);
+            //
+            let sum = probas_edge.iter().map(|e| e.weight).sum::<f32>();
+            for i in 0..nbgh {
+                probas_edge[i].weight = probas_edge[i].weight / sum;
+            }
+            return NodeParam::new(scale, probas_edge);
         }
-        let mut probas_edge = neighbours
-            .iter()
-            .map(|n| OutEdge::<f32>::new(n.node, remap_weight(n.weight, first_dist, scale, beta)) )
-            .collect::<Vec<OutEdge<f32>>>();
-        //
-        let proba_range = probas_edge[probas_edge.len() - 1].weight / probas_edge[0].weight;
-        log::trace!(" first dist {:2e} last dist {:2e}", first_dist, last_dist);
-        log::trace!("scale : {:.2e} , first neighbour proba {:2e}, last neighbour proba {:2e} proba gap {:.2e}", scale, probas_edge[0].weight, 
-                        probas_edge[probas_edge.len() - 1].weight,
-                        proba_range);
-        assert!(proba_range >= PROBA_MIN, "proba range {:.2e} too low edge proba, increase scale_rho or reduce beta", proba_range);
-        //
-        let sum = probas_edge.iter().map(|e| e.weight).sum::<f32>();
-        for i in 0..nbgh {
-            probas_edge[i].weight = probas_edge[i].weight / sum;
+        else {
+            all_equal = true;
         }
-        return NodeParam::new(scale, probas_edge);
-    } else {
+    }
+    if all_equal  {
         // all neighbours are at the same distance!
         let probas_edge = neighbours
             .iter()
             .map(|n| OutEdge::<f32>::new(n.node, 1.0 / nbgh as f32))
             .collect::<Vec<OutEdge<f32>>>();
         return NodeParam::new(scale, probas_edge);
+    }
+    else {
+        log::error!("fatal error in get_scale_from_proba_normalisation, should not happen!");
+        std::panic!("incoherence error");
     }
 } // end of get_scale_from_proba_normalisation
     
