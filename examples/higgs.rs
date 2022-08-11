@@ -1,4 +1,7 @@
-//! test HIGGS data  <https://archive.ics.uci.edu/ml/datasets/HIGGS>
+//! test of embedding for HIGGS boson data 
+//! The data can be retrieved at <https://archive.ics.uci.edu/ml/datasets/HIGGS>.
+//! An example of this data set processing is given in the paper by Amid and Warmuth
+//! Cf <https://arxiv.org/abs/1910.00204>
 //! 
 
 use anyhow::{anyhow};
@@ -10,6 +13,7 @@ use std::path::{PathBuf};
 
 use csv::Writer;
 
+use ndarray::{Array2, ArrayView};
 
 use hnsw_rs::prelude::*;
 use hnsw_rs::hnswio::{load_description, load_hnsw};
@@ -22,7 +26,7 @@ use annembed::prelude::*;
 use std::time::{Duration, SystemTime};
 use cpu_time::ProcessTime;
 
-use annembed::fromhnsw::kgraph::{KGraph,kgraph_from_hnsw_all};
+use annembed::fromhnsw::kgraph::{kgraph_from_hnsw_all};
 use annembed::fromhnsw::kgproj::KGraphProjection;
 
 const HIGGS_DIR : &'static str = "/home/jpboth/Data/";
@@ -31,7 +35,7 @@ const HIGGS_DIR : &'static str = "/home/jpboth/Data/";
 /// return a vector of labels, and a list of vectors to embed
 /// First field of record is label, then the 21 following field are the data. 
 /// 11 millions records!
-fn read_higgs_csv(fname : String) -> anyhow::Result<(Vec<u8>, Vec<Vec<f32>>)> {
+fn read_higgs_csv(fname : String) -> anyhow::Result<(Vec<u8>, Array2<f32>)> {
     //
     let nb_fields = 29;
     let to_parse = 22;
@@ -46,7 +50,7 @@ fn read_higgs_csv(fname : String) -> anyhow::Result<(Vec<u8>, Vec<Vec<f32>>)> {
     let file = fileres?;
     let bufreader = BufReader::new(file);
     let mut labels = Vec::<u8>::new();
-    let mut data = Vec::<Vec<f32>>::new();
+    let mut data = Array2::<f32>::zeros((0,21));
     let mut rdr = csv::Reader::from_reader(bufreader);
     for result in rdr.records() {
         // The iterator yields Result<StringRecord, Error>, so we check the
@@ -76,14 +80,35 @@ fn read_higgs_csv(fname : String) -> anyhow::Result<(Vec<u8>, Vec<Vec<f32>>)> {
             }
         } // end for j
         assert_eq!(new_data.len(), 21);
-        data.push(new_data.clone());
+        data.push_row(ArrayView::from(&new_data)).unwrap();
     }
     //
-    assert_eq!(data.len(), labels.len());
+    assert_eq!(data.dim().0, labels.len());
     log::info!("number of records read : {}", data.len());
     //
     Ok((labels, data))
 }  // end of read_higgs_csv
+
+
+
+fn rescale(data : &mut Array2<f32>) -> Vec<Vec<f32>> {
+
+    let (nb_row, nb_col) = data.dim();
+    let mut datavec = Vec::<Vec<f32>>::with_capacity(nb_row);
+    // 
+    for j in 0..nb_col {
+        let mut col = data.column_mut(j);
+        let mean = col.mean().unwrap();
+        let sigma = col.var(1.).sqrt();
+        col.mapv_inplace(|x| (x - mean)/sigma );
+    }
+    // reformat in vetors
+    for i in 0..nb_row {
+        datavec.push(data.row(i).to_vec());
+    }
+    //
+    return datavec;
+}  // end of rescale
 
 
 fn reload_higgshnsw() -> std::io::Result<Hnsw::<f32, DistL2>> {
@@ -113,7 +138,7 @@ fn reload_higgshnsw() -> std::io::Result<Hnsw::<f32, DistL2>> {
     let cpu_time = ProcessTime::now();
     let hnsw_description = load_description(&mut graph_in).unwrap();
     let hnsw_loaded : std::io::Result<Hnsw<f32, DistL2>> = load_hnsw(&mut graph_in, &hnsw_description, &mut data_in);
-    println!(" higgs ann reload sys time(s) {:?} cpu time {:?}", sys_now.elapsed().unwrap().as_secs(), cpu_time.as_secs());
+    println!(" higgs ann reload sys time(s) {:?} cpu time {:?}", sys_now.elapsed().unwrap().as_secs(), cpu_time.elapsed().as_secs());
     //
     return hnsw_loaded;
 }  // end of reload_higgshnsw
@@ -133,23 +158,32 @@ pub fn main() {
         log::error!("error reading Higgs.csv {:?}", &res.as_ref().err().as_ref());
         std::process::exit(1);
     }
-    let res = res.unwrap();
+    let mut res = res.unwrap();
     let labels = res.0;
-    let mut data = res.1;
+    let data = rescale(&mut res.1);
+    drop(res.1);     // we do not need res.1 anymore
+    assert_eq!(data.len(), labels.len());
+    let cpu_start = ProcessTime::now();
+    let sys_now = SystemTime::now();
     // DO we have a dump ?
     let res_reload = reload_higgshnsw();
     if res_reload.is_ok() {
         hnsw = res_reload.unwrap();
-        data.clear();
+        let cpu_time: Duration = cpu_start.elapsed();
+        println!(" higgs ann reload sys time(s) {:?} cpu time {:?}", sys_now.elapsed().unwrap().as_secs(), cpu_time.as_secs());
+        drop(data);
     }
     else  { // need to construct hnsw
         log::info!("no Hnsw dump found in directory, reconstructing Hnsw structure");
+        //
+        let cpu_start_hnsw = ProcessTime::now();
+        let sys_start_hnsw = SystemTime::now();
+        //
         let ef_c = 400;
         let max_nb_connection = 24;
         let nbdata = data.len();
         let nb_layer = 16.min((nbdata as f32).ln().trunc() as usize);
-        let cpu_start = ProcessTime::now();
-        let sys_now = SystemTime::now();
+        //
         hnsw = Hnsw::<f32, DistL2>::new(max_nb_connection, nbdata, nb_layer, ef_c, DistL2{});
 //        hnsw.set_keeping_pruned(true);
         // we insert by block of 1_000_000
@@ -167,8 +201,7 @@ pub fn main() {
             numblock += 1;
         }
         // images as vectors of f32 and send to hnsw
-        let cpu_time: Duration = cpu_start.elapsed();
-        println!(" higgs ann construction sys time(s) {:?} cpu time {:?}", sys_now.elapsed().unwrap().as_secs(), cpu_time.as_secs());
+        println!(" higgs ann construction sys time(s) {:?} cpu time {:?}", sys_start_hnsw.elapsed().unwrap().as_secs(), cpu_start_hnsw.elapsed().as_secs());
         hnsw.dump_layer_info();
         // save hnsw to avoid reconstruction runs in 1 hour...on my laptop
         let fname = String::from("Higgs");
@@ -177,7 +210,6 @@ pub fn main() {
     //
     // now we embed
     //
-    let sys_now = SystemTime::now();
     let mut embed_params = EmbedderParams::default();
     embed_params.nb_grad_batch = 25;
     embed_params.scale_rho = 1.;
@@ -185,7 +217,7 @@ pub fn main() {
     embed_params.grad_step = 1.;
     embed_params.nb_sampling_by_edge = 10;
     embed_params.dmap_init = true;
-    let hierarchical = false;
+    let hierarchical = true;
 
     let mut embedder;
     let kgraph;
@@ -201,13 +233,14 @@ pub fn main() {
     else {
         let knbn = 6;
         log::debug!("trying graph projection");
+        embed_params.nb_grad_batch = 25;
         graphprojection =  KGraphProjection::<f32>::new(&hnsw, knbn, 2);
         embedder = Embedder::from_hkgraph(&graphprojection, embed_params);
         let embed_res = embedder.embed();        
         assert!(embed_res.is_ok()); 
         assert!(embedder.get_embedded().is_some());
     }
-    println!(" ann embed time time {:.2e} s", sys_now.elapsed().unwrap().as_secs());
+    println!(" ann embed total sys time(s) {:.2e}  cpu time {:.2e}", sys_now.elapsed().unwrap().as_secs(), cpu_start.elapsed().as_secs());
     // dump
     log::info!("dumping initial embedding in csv file");
     let mut csv_w = Writer::from_path("higgs_initial_embedded.csv").unwrap();
