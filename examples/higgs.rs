@@ -1,5 +1,5 @@
-//! test of embedding for HIGGS boson data 
-//! The data can be retrieved at <https://archive.ics.uci.edu/ml/datasets/HIGGS>.
+//! test of embedding for HIGGS boson data that consists in 11 millions of points in dimension 21.
+//! The data is described and can be retrieved at <https://archive.ics.uci.edu/ml/datasets/HIGGS>.
 //! An example of this data set processing is given in the paper by Amid and Warmuth
 //! Cf <https://arxiv.org/abs/1910.00204>
 //! 

@@ -91,6 +91,9 @@ pub struct EmbedderParams {
     pub nb_sampling_by_edge : usize,
     /// number of gradient batch. default to 15
     pub nb_grad_batch : usize,
+    /// the number of gradient batch in hierarchical case is nb_grad_batch multiplied by grad_factor.
+    /// As the first iterations run on few points we can do more iterations. Default is 5.
+    pub grad_factor : usize, 
     /// if layer > 0 means we have hierarchical initialization
     pub hierarchy_layer : usize
 } // end of EmbedderParams
@@ -106,8 +109,9 @@ impl EmbedderParams {
         let nb_sampling_by_edge = 10;
         let scale_rho = 1.;
         let nb_grad_batch = 15;
+        let grad_factor : usize = 5;
         let hierarchy_layer = 0;
-        EmbedderParams{asked_dim, dmap_init, beta, b, scale_rho, grad_step, nb_sampling_by_edge , nb_grad_batch, hierarchy_layer}
+        EmbedderParams{asked_dim, dmap_init, beta, b, scale_rho, grad_step, nb_sampling_by_edge , nb_grad_batch, grad_factor, hierarchy_layer}
     }
 
 
@@ -120,6 +124,7 @@ impl EmbedderParams {
         log::info!("\t beta : {}", self.beta);
         log::info!("\t scale factor : {}", self.scale_rho);
         log::info!("\t number of gradient batch : {}", self.nb_grad_batch);
+        log::info!("\t factor for nbgradient batch in first hierarchical pass is  : {}", self.grad_factor);
         log::info!("\t hierarchy layer  : {}", self.hierarchy_layer);
     }
 
