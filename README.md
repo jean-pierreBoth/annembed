@@ -60,7 +60,7 @@ It took 25s of which 9s were spent in the ann construction.
 - The estimated intrinsic dimension of the data is 18.5 with standard deviation depending on points: 7.2
   taking into account sorted neighbours around each point between the 9-th and 20-th first ranks.
 
-1. **MNIST fashion database** Cf [mnist-fashion](https://github.com/zalandoresearch/fashion-mnist/tree/master/data/fashion)
+2. **MNIST fashion database** Cf [mnist-fashion](https://github.com/zalandoresearch/fashion-mnist/tree/master/data/fashion)
 
 It consists in 70000 images of clothes.
 
@@ -78,6 +78,18 @@ It consists in 70000 images of clothes.
  time : 37s 
    
 - The estimated intrinsic dimension of the data is 21.9 with standard deviation depending on points : 12.2 taking into account sorted neighbours around each point between the 9-th and 20-th first ranks.
+
+3. **Higgs boson** Cf [Higgs-data](https://archive.ics.uci.edu/ml/datasets/HIGGS) 
+
+It consists in 11 millions float vectors of dimension 21.
+- hierarchical initialization
+    
+    We run with 25 batches on full data and 75 batches in the first pass by using only layers above the 2 lower (most populated) ones.
+    The hsnw structure needs 1h30 for initialization. The gradient iterations needs 2hours, the whole embedding runs in 3h30.
+    Quality estimation do not run, presently due to the size of data. 
+
+![higgs](Images/)
+
 ### Usage
 ```rust
     // allocation of a Hnsw structure to store data
