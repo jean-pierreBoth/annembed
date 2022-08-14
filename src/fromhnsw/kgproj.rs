@@ -269,8 +269,10 @@ impl <F> KGraphProjection<F>
         log::info!("\n =====================================");
         let _graph_stats = whole_graph.get_kraph_stats();
         // 
-        log::info!("number of points with less than : {} neighbours = {},  mean size for deficient neighbourhhod {:.3e}", nbng, nb_point_below_nbng, 
-                    mean_deficient_neighbour_size as f64/nb_point_below_nbng as f64 );
+        if nb_point_below_nbng > 0 {
+            log::info!("number of points with less than : {} neighbours = {},  mean size for deficient neighbourhhod {:.3e}", nbng, 
+                nb_point_below_nbng, mean_deficient_neighbour_size as f64/nb_point_below_nbng as f64);
+        }
         log::trace!("Projection exiting from new");
         //
         KGraphProjection{ layer, small_graph : upper_graph, proj_data : proj_data, large_graph : whole_graph}

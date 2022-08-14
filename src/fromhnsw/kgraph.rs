@@ -547,8 +547,8 @@ pub fn kgraph_from_hnsw_all<T, D, F>(hnsw : &Hnsw<T,D>, nbng : usize) -> std::re
         let mean_nbng = mean_nbng as f64 / nb_point_collected as f64;
         log::info!("mean number of neighbours obtained = {:.3e} minimal number of neighbours {}", mean_nbng, minimum_nbng);
         if nb_point_below_nbng > 0 {
-            log::info!("number of points with less than : {} neighbours = {},  mean size for deficient neighbourhhod {:.3e}", nbng, nb_point_below_nbng, 
-                    mean_deficient_neighbour_size as f64/nb_point_below_nbng as f64 );
+            log::info!("number of points with less than : {} neighbours = {},  mean size for deficient neighbourhhod {:.3e}", nbng, 
+                nb_point_below_nbng,  mean_deficient_neighbour_size as f64/nb_point_below_nbng as f64);
         }
         if mean_nbng < nbng as f64 {
             println!(" mean number of neighbours obtained : {:.3e}", mean_nbng);
