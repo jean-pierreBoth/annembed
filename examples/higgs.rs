@@ -169,6 +169,7 @@ pub fn main() {
     let res_reload = reload_higgshnsw();
     if res_reload.is_ok() {
         hnsw = res_reload.unwrap();
+        hnsw.dump_layer_info();
         let cpu_time: Duration = cpu_start.elapsed();
         println!(" higgs ann reload sys time(s) {:?} cpu time {:?}", sys_now.elapsed().unwrap().as_secs(), cpu_time.as_secs());
         drop(data);
