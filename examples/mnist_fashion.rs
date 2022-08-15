@@ -5,7 +5,7 @@
 //! 
 //! The data can be downloaded in the same format as the FASHION database from:  
 //! 
-//! https://github.com/zalandoresearch/fashion-mnist/tree/master/data/fashion
+//! <https://github.com/zalandoresearch/fashion-mnist/tree/master/data/fashion>
 //! 
 
 
@@ -55,7 +55,7 @@ impl MnistData {
         } )
     } // end of new for MnistData
 
-    /// returns labels of images. lables[k] is the label of the k th image.
+    /// returns labels of images. lables\[k\] is the label of the k th image.
     pub fn get_labels(&self) -> &Array1::<u8> {
         &self.labels
     }
@@ -243,7 +243,7 @@ pub fn main() {
     let mut embedder;
     let kgraph;
     let graphprojection;
-    let hierarchical = false;
+    let hierarchical = true;
     if !hierarchical {
         let knbn = 6;
         kgraph = kgraph_from_hnsw_all(&hnsw, knbn).unwrap();
@@ -254,7 +254,9 @@ pub fn main() {
     }
     else {
         let knbn = 6;
+        embed_params.nb_grad_batch = 20;
         log::debug!("trying graph projection");
+        embed_params.grad_factor = 4;
         graphprojection =  KGraphProjection::<f32>::new(&hnsw, knbn, 1);
         embedder = Embedder::from_hkgraph(&graphprojection, embed_params);
         let embed_res = embedder.embed();        

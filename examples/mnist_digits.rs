@@ -240,7 +240,7 @@ pub fn main() {
     let graphprojection: KGraphProjection<f32>;
     //
     let mut embed_params = EmbedderParams::default();
-    embed_params.nb_grad_batch = 30;
+    embed_params.nb_grad_batch = 25;
     embed_params.scale_rho = 1.;
     embed_params.beta = 1.;
     embed_params.b = 1.;
@@ -249,7 +249,7 @@ pub fn main() {
     embed_params.dmap_init = true;
     //
     let mut embedder;
-    let hierarchical = false;
+    let hierarchical = true;
     if !hierarchical {
         let knbn = 6;
         log::info!("calling kgraph.init_from_hnsw_all");
@@ -262,7 +262,9 @@ pub fn main() {
     }
     else {
         log::info!("graph projection");
+        embed_params.nb_grad_batch = 20;
         let knbn = 6;
+        embed_params.grad_factor = 4; // default in fact
         graphprojection =  KGraphProjection::<f32>::new(&hnsw, knbn, 1);
         embedder = Embedder::from_hkgraph(&graphprojection, embed_params);
         let embed_res = embedder.embed();        
