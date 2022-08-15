@@ -22,8 +22,6 @@ use std::collections::HashMap;
 use indexmap::set::*;
 use quantiles::{ckms::CKMS};     // we could use also greenwald_khanna
 
-#[allow(unused)]
-use ndarray::{Array2};
 
 
 use hnsw_rs::prelude::*;
@@ -143,8 +141,6 @@ impl <F> KGraphProjection<F>
                     if vec_tmp.len() == 0 {
                         let p_id = point.get_point_id();
                         log::warn!(" graph will not be connected, isolated point at layer {}  , pos in layer : {} ", p_id.0, p_id.1);
-                        upper_index_set.remove(&index);
-                        index_set.remove(&index);
                         continue;
                     }
                 } 
@@ -253,7 +249,6 @@ impl <F> KGraphProjection<F>
                     log::trace!("neighbours must have {} neighbours, got only {}. layer {}  , pos in layer : {}", nbng, vec_tmp.len(),  p_id.0, p_id.1);
                     if vec_tmp.len() == 0 {
                         log::warn!(" graph will not be connected, isolated point at layer {}  , pos in layer : {} ", p_id.0, p_id.1);
-                        index_set.remove(&index);
                         continue;
                     }
                 } 

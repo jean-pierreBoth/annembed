@@ -175,7 +175,7 @@ where
         // use projection to initialize large graph
         let quant = graph_projection.get_projection_distance_quant();
         if quant.count() > 0 {
-            println!("projecion distance quantile at 0.05 : {:.2e} , 0.5 :  {:.2e}, 0.95 : {:.2e}, 0.99 : {:.2e}", 
+            println!(" projection distance quantile at 0.05 : {:.2e} , 0.5 :  {:.2e}, 0.95 : {:.2e}, 0.99 : {:.2e}", 
                         quant.query(0.05).unwrap().1, quant.query(0.5).unwrap().1, 
                         quant.query(0.95).unwrap().1, quant.query(0.99).unwrap().1);
         };

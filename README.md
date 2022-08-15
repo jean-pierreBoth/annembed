@@ -84,14 +84,18 @@ It consists in 70000 images of clothes.
 It consists in 11 millions float vectors of dimension 21.
 - hierarchical initialization
     
-    The hsnw structure needs 1h30 for initialization and uses 6 layers.  
-    We run 100 batches in the first pass by using the 4 upper layers (less populated ones). The first batches runs thus on 19000 nodes. Then 25 batches are done on the 11 millions points.  
-    The gradient iterations needs 2 hours, the whole embedding runs in 3h30.  
+    The hsnw structure needs 1.45 hours for initialization.    
+    We run 100 batches in the first pass by using layers from layer 2 (included) to the upper layer. The first batches runs thus on about 19000 nodes. Then 25 batches are done on the 11 millions points.  
+    The gradient iterations needs 1.45 hours, the whole embedding runs in 3h30.  
     Quality estimation do not run, presently, due to the size of data. 
 
 ![higgs](Images/Higgs-embedded-H4-1000B25S1E10k6.csv.jpg)
 
-- Diffusion Maps initilaization in the non hierarchical case.
+- Diffusion Maps initialization in the non hierarchical case.
+
+    In the direct case the initial diffusion maps with approximated svd runs in 1650 sec and produces the following initialization image:
+
+![higgs_dmap](Images/higgs_initial_dmap.png.jpg)
 
 ### Usage
 ```rust
