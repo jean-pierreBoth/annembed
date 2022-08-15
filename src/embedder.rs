@@ -191,13 +191,17 @@ where
             }
         }
         let median_dist =  quant.query(0.5).unwrap().1;
+        // we sample a random position around first embedding position
+        // TODO amount of clipping
         let normal = Normal::<f32>::new(0., 1.0).unwrap();
         for i in nb_nodes_small..nb_nodes_large {
             let projected_edge = graph_projection.get_projection_by_nodeidx(&i);
+            // we get looseness around projected point depend on where we are in quantiles on distance
             let ratio = projected_edge.weight.to_f32().unwrap() / median_dist;
+            let correction = (ratio/dim as f32).sqrt();
             for j in 0..dim { 
-                let exp_correction = clip((ratio/dim as f32) * normal.sample(&mut rng), 2.);  // CAVEAT
-                second_step_init[[i,j]] = first_embedding[[projected_edge.node,j]] + F::from(exp_correction).unwrap();
+                let clipped_correction = clip(correction * normal.sample(&mut rng), 2.);
+                second_step_init[[i,j]] = first_embedding[[projected_edge.node,j]] + F::from(clipped_correction).unwrap();
             }
         }
         log::debug!("projection done");
@@ -869,8 +873,8 @@ impl <'a, F> EntropyOptim<'a,F>
             coeff =  2. * b * cauchy_weight / (scale*scale);
         }
         if d_ij_scaled > 0. {
-            // repulsion annhinilate  attraction if P<= 1. / (alfa + 1)
-            let alfa = 100.;
+            // repulsion annhinilate  attraction if P<= 1. / (alfa + 1). choose 0.1/ PROBA_MIN 
+            let alfa = 1000.;
             let coeff_repulsion = 1. / (d_ij_scaled*d_ij_scaled).max(alfa);
             // clipping makes each point i or j making at most half way to the other in case of attraction
             let coeff_ij = (grad_step * coeff * (- weight + (1.-weight) * coeff_repulsion)).max(-0.49);
@@ -982,8 +986,8 @@ pub(crate) fn to_proba_edges<F>(kgraph : & KGraph<F>, scale_rho : f32, beta : f3
     for opt_param in &opt_node_params {
         match opt_param {
             (i, Some(param)) => {
-                scale_q.insert(param.0);
-                perplexity_q.insert(param.1.get_perplexity());
+                perplexity_q.insert(param.0);
+                scale_q.insert(param.1.scale);
                 // choose random edge to audit
                 let j = thread_rng().gen_range(0..param.1.edges.len());
                 weight_q.insert(param.1.edges[j].weight);
