@@ -31,10 +31,18 @@ The crate will provide a link to Ripserer.jl, the Julia implementation of the C+
 
 ## Building
 
- The crate provides 2 features to choose between openblas-static, intel-mkl-static as defined in the  **ndarray-linalg** crate. 
-So **--features "openblas-static"** ,  **--features "intel-mkl-static"** or 
-**--features "openblas-system"**  must be passed to cargo to compile. 
-(In the openblas-system case you must have an openblas library compiled with INTERFACE64=0, corresponding to 32bit fortran integers). 
+ The crate provides 3 features to choose between openblas-static, intel-mkl-static or openblas-system as defined in the  **ndarray-linalg** crate. 
+
+ compile with : 
+
+* cargo build --release --features="openblas-static" to link statically with rust downloaded openblas
+  
+* cargo build --release --features="intel-mkl-static" to link with mkl intel's library 
+    (intel mkl will be automatically downloaded, see README.md of crate ndarray-linalg)
+
+* cargo build --release --features="openblas-system" to link with system installed openblas library.
+(In this case you must have an openblas library compiled with INTERFACE64=0, corresponding to 32bit fortran integers). 
+
 Alternatively define the default in Cargo.toml.
 
 ## Results
@@ -135,17 +143,6 @@ The implementation covers dense matrices or matrices in compressed row storage a
 Two algorithms for range approximation used in approximated SVD are:
 - *subspace_iteration_csr* , corresponds to algo 4.4 in Tropp paper. It uses QR stabilization.  
 - *adaptative_range_finder_matrep* correponds to algo 4.2 in Tropp paper.  The algorithm is less precise than *subspace_iteration_csr*  but can work on larger matrices for example on sparse matrices with a million rows.
-
-
-
-## Installation
-
-compile with : 
-
-* cargo build --release --features "openblas-static" to link statically with rust downloaded openblas
-  
-* cargo build --release --features "intel-mkl-static" to link with mkl intel's library 
-    (intel mkl will be automatically downloaded, see README.md of crate ndarray-linalg)
 
 
 ## References
