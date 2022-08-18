@@ -1,8 +1,8 @@
 //!  (Kind of) Diffusion maps embedding.
 //! 
-//! This module (presently) computes a diffusion embedding for the kernel constructed in Umap like embedding
-//! in module embedder.  
-//! **In particular the kernel set a the diagonal to 0 and nearest neighbour weight to 1.**
+//! This module (presently) computes a diffusion embedding for the kernel constructed from nearest neighbours
+//! stored in a Hnsw structure, see in module [embedder](crate::embedder).  
+//! In particular the kernel sets the diagonal to 0 and nearest neighbour weight to 1.
 //! 
 //! 
 

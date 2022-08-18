@@ -8,8 +8,10 @@
 //! **A more complete description of the model used can be found in module embedparams with hints to
 //! initialize parameters**.
 //! 
-//!  To go through the entropy optimization the type F defining the probability of edges must statisfy
-//!  F: Float + NumAssign + std::iter::Sum + num_traits::cast::FromPrimitive + Send + Sync + ndarray::ScalarOperand 
+//!  To go through the entropy optimization the type F defining the probability of edges must satisfy:  
+//! 
+//!  F: Float + NumAssign + std::iter::Sum + num_traits::cast::FromPrimitive + Send + Sync + ndarray::ScalarOperand
+//!  
 //!  in fact it is f32 or f64.
 
 
@@ -466,10 +468,14 @@ where
     /// the embedding (100 or 200 for Mnist digits or fashion runs in 3s), and the estimation of distances is better.
     ///
     /// For example the image displayed in README for the Fashion case with 70000 points (file mnist_fashionHB15S1E10k6-37s.csv-1-compressed.jpg)
-    /// give : *nb_without_match : 32407,  mean nb match if match : 2.343e0 and median of distance =  9.17e-1.*
+    /// give : 
+    /// 
+    /// *nb_without_match : 32407,  mean nb match if match : 2.343e0 and median of distance =  9.17e-1.*
     /// 
     /// Whereas the image mnist_fashionB15S1E10k6-35s.csv-1-badqual-compressed.jpg found in the Images directory of this crate
-    /// give : *nb_without_match : 44702,  mean nb match if match : 1.745e0 and median of distance found =  1.90e0*
+    /// give : 
+    /// 
+    /// *nb_without_match : 44702,  mean nb match if match : 1.745e0 and median of distance found =  1.90e0*
     /// 
     #[allow(unused)]
     pub fn get_quality_estimate_from_edge_length(&self, nbng : usize) -> Option<f64> {

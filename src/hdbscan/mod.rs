@@ -2,7 +2,7 @@
 //! 
 //! The implementation here is a Single Linkage algorithm. 
 //! It is a fast algorithm based on an a k-nn algorithm and minimum spanning tree.
-//! The coice of the Single Linkage Algorithm is justified by the Carlsson, Memoli paper
+//! The choice of the Single Linkage Algorithm is justified by the Carlsson, Memoli paper
 //! cited below.
 //! 
 //! We build upon the crates hnsw-rs for the k-nn implementation and petgraph 
@@ -14,7 +14,7 @@
 //! - Density-Based Clustering Based on Hierarchical Density Estimates.
 //!   Campello Moulavi Sander (2013)
 //! 
-//! -Characterization, Stability and Convergence of Hierarchical Clustering Methods
+//! - Characterization, Stability and Convergence of Hierarchical Clustering Methods
 //!  Carlsson, Memoli. 2010
 //!
 //! - Consistent procedures for cluster tree estimation 

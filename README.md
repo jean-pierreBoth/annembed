@@ -18,7 +18,7 @@ The crate provides mainly in the form of a library (*See documentation of the bi
     
  1. Some by-products :
    
-    - an implementation of range approximation and approximated SVD for dense and/or row compressed matrices as described in explicited in the svdapprox module and the paper of Halko-Tropp (Cf. [Tsvd](https://arxiv.org/abs/0909.4061)).
+    - an implementation of range approximation and approximated SVD for dense and/or row compressed matrices as described in the svdapprox module and the paper of Halko-Tropp (Cf. [Tsvd](https://arxiv.org/abs/0909.4061)).
 
     - An estimation of the data intrinsic dimension as described in:  
             Levina E. and Bickel P.J NIPS 2004.  See [paper](https://www.stat.berkeley.edu/~bickel/mldim.pdf).
@@ -32,7 +32,11 @@ The crate will provide a link to Ripserer.jl, the Julia implementation of the C+
 ## Building
 
  The crate provides 2 features to choose between openblas-static, intel-mkl-static as defined in the  **ndarray-linalg** crate. 
-So **--features "openblas-static"** or  **--features "intel-mkl-static"** must be passed to cargo to compile. Alternatively define the default in Cargo.toml.
+So **--features "openblas-static"** ,  **--features "intel-mkl-static"** or 
+**--features "openblas-system"**  must be passed to cargo to compile. 
+(In the openblas-system case you must have an openblas library compiled with INTERFACE64=0, corresponding to 32bit fortran integers). 
+Alternatively define the default in Cargo.toml.
+
 ## Results
 
 
