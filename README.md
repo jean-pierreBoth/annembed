@@ -25,9 +25,9 @@ The crate provides mainly in the form of a library (*See documentation of the bi
   
     - a Diffusion Maps implementation.
 
-## *Future work*
-
-The crate will provide a link to Ripserer.jl, the Julia implementation of the C++ **Ripser** module from U. Bauer.
+    - A link to the  Topological Data Analysis Julia package Ripserer.jl (See the directory Julia in the crate).  
+    The distance matrix between points in a neighbourhood or from a reduced projected graph can be dumped to further processsing (see docs in module *fromhnsw::toripserer*). 
+    It is thus possible to produce persistence diagrams/barcodes of cloud points with the aid of the julia functions provided in the Julia directory of this crate.
 
 ## Building
 
@@ -44,6 +44,8 @@ The crate will provide a link to Ripserer.jl, the Julia implementation of the C+
 (In this case you must have an openblas library compiled with INTERFACE64=0, corresponding to 32bit fortran integers). 
 
 Alternatively define the default in Cargo.toml.
+
+* Julia can be downloaded from [julia](https://julialang.org/downloads/). Packages mentionned by a **using** clause in julia sources must then be installed see [Pkg](https://docs.julialang.org/en/v1/stdlib/Pkg/#Pkg). Then in a Julia REPL, **include("annembed.jl")** give access to functions Annembed.localPersistency and Annembed.localPersistency.
 
 ## Results
 
