@@ -1,4 +1,4 @@
-# Julia exploration of Csv dumps.
+# Julia exploration of embeddings dumped in Csv files.
 
 # Note that Makie can need entering Julia after : export LD_PRELOAD=/lib/x86_64-linux-gnu/libstdc++.so.6
 #                to force julia to use system libstdc++.so.6 if it is more recent than the one embedded in Julia

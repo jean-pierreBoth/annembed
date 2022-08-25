@@ -1,4 +1,5 @@
 # Some Julia utilities to link exports to Julia Ripserer package
+# Ripserer seems oriented towards Plots...
 
 using Logging
 using Base.CoreLogging
@@ -16,9 +17,10 @@ global_logger(logger)
 
 """
 This function reads a matrix in the triplet form i j val and returns
-a CSC SparseArrays
+a CSC SparseArrays.
+Correspond to data coming from a GraphProjection
 """
-function toripserer(fname)
+function cscmatLoad(fname)
     io = open(fname)
     I = Vector{Int64}()
     J = Vector{Int64}()
@@ -44,8 +46,9 @@ end
 
 """
     Reload a lower inferior matrix distance matrix from rust, in a Bson format
+    Corresponds to local graph data
 """
-function lowiMatReload(fname) 
+function lowimatLoadBson(fname) 
     bsonv = BSON.load(fname)
     v = bsonv[:limat]
     v = Vector{Float64}(v)
@@ -69,11 +72,33 @@ end
 
 
 """
-    This function reloads the dump of Rust annembed::fromhnsw::kgproj
+    This function reloads the Bson matrix of distances dumped from Rust annembed::fromhnsw::kgproj
+    It produces png files of persistence diagrams and barcodes corresponding to point cloud analyzed.
+    dim_max is the maximum dimension for which homology is computed. 
 """
-function PersistencyAnalyze(fname)
-    cscmat = toripserer(fname)
-
-    pers = ripserer(cscmat, dim_max = 3)
-    Plots.plot(pers, markersize = 2)
+function localPersistency(fname; dim_max = 1)
+    # implicit use of GR!
+    mat = lowimatLoadBson(fname)
+    pers = ripserer(mat, dim_max = dim_max)
+    persplot = Plots.plot(pers, markersize = 2)
+    Plots.png(persplot, fname*"-pers")
+    barplot = barcode(pers)
+    Plots.png(barplot, fname*"-bar")
 end
+
+
+
+"""
+    This function reloads the a csc matrix of distances dumped from Rust annembed::fromhnsw::kgproj
+    It produces png files of persistence diagrams and barcodes corresponding to point cloud analyzed.
+    dim_max is the maximum dimension for which homology is computed. 
+"""
+function projectedPersistency(fname; dim_max = 1)
+    mat = cscmatLoad(fname)
+    pers = ripserer(mat, dim_max = dim_max)
+    persplot = Plots.plot(pers, markersize = 2)
+    Plots.png(persplot, fname*"-pers")
+    barplot = barcode(pers)
+    Plots.png(barplot, fname*"-bar")
+end
+

@@ -54,7 +54,9 @@ impl <F> KGraphProjection<F>
     //  - Then we project : for points of others layers store the shorter edge from point to graph just constructed
     //  - at last we construct graph for the lower (more populated layers)
     //
-    /// construct graph from layers above layer, projects data of aother layers on point in layers above layer
+    /// construct graph from layers above layer, projects data of another layers on point in layers above layer arg
+    /// nbng is the maximum number of neighours to keep. It should be comparable to
+    /// the parameter *max_nb_conn* used in the Hnsw structure.
     pub fn new<T, D>(hnsw : &Hnsw<T,D>, nbng : usize, layer : usize) -> Self 
                     where T : Clone + Send + Sync,
                           D: Distance<T> + Send + Sync {
@@ -315,7 +317,7 @@ impl <F> KGraphProjection<F>
     }
 
     /// compute approximate barcodes from projected graph.
-    /// As we know the distance between the 2 graphs we know the error on bar codes due to stability theorem
+    /// As we know the distance between the 2 graphs we can assess the error on bar codes due to stability theorem
     /// This is done by using the Ripser module.
     pub fn dump_sparse_mat_for_ripser(&self, fname : &str)  -> Result<(), anyhow::Error> {
         let path = Path::new(fname);

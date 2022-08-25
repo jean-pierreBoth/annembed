@@ -1,6 +1,6 @@
 [package]
 name = "annembed"
-version = "0.0.6"
+version = "0.0.7"
 authors = ["jeanpierre.both@gmail.com"]
 repository = "https://github.com/jean-pierreBoth/annembed"
 description = "a Rust implementation of a dimension reduction à la Umap "
@@ -40,7 +40,7 @@ path = "examples/higgs.rs"
 
 
 [[bin]]
-name = "annembed"
+name = "embed"
 path = "src/bin/annembed.rs"
 
 

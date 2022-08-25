@@ -141,15 +141,9 @@ pub fn read_label_file(io_in: &mut dyn Read) -> Array1<u8>{
 use std::time::{Duration, SystemTime};
 use cpu_time::ProcessTime;
 
-use ndarray::{Array2};
-use bson;
-use std::path::{Path};
-use std::io::{BufWriter};
 
 
-#[allow(unused)]
-use annembed::fromhnsw::kgraph::{KGraph};
-use annembed::fromhnsw::kgproj::KGraphProjection;
+use annembed::fromhnsw::toripserer::ToRipserer;
 
 // The directory where the files t10k-images-idx3-ubyte  t10k-labels-idx1-ubyte  train-images-idx3-ubyte  
 // and train-labels-idx1-ubyte reside
@@ -193,7 +187,7 @@ pub fn main() {
     } // drop mnist_train_data
 
     let ef_c = 400;
-    let max_nb_connection = 12;
+    let max_nb_connection = 48;
     let nbimages = images_as_v.len();
     let nb_layer = 16.min((nbimages as f32).ln().trunc() as usize);
     let cpu_start = ProcessTime::now();
@@ -207,71 +201,27 @@ pub fn main() {
     let cpu_time: Duration = cpu_start.elapsed();
     println!(" ann construction sys time(s) {:?} cpu time {:?}", sys_now.elapsed().unwrap().as_secs(), cpu_time.as_secs());    //
     log::info!("calling kgraph.init_from_hnsw_layer");
-    let knbn = 10;
-    // define a projection on some layer
+    //
+    // extract projection data for persistence
+    //
+    let knbn = 20;
     let layer = 1;
-    let graph_projection = KGraphProjection::<f32>::new(&hnsw, knbn , layer);
-    let quant = graph_projection.get_projection_distance_quant();
-    if quant.count() > 0 {
-        println!("\n\n projection distance from lower layers to upper layers");
-        println!("\n quantile at 0.05 : {:.2e} , 0.5 :  {:.2e}, 0.95 : {:.2e}, 0.99 : {:.2e}", 
-                quant.query(0.05).unwrap().1, quant.query(0.5).unwrap().1, 
-                quant.query(0.95).unwrap().1, quant.query(0.99).unwrap().1);
-    }
-    // testing output for ripser
-    let fname = "fashion.ripser";
-    log::info!("output fashion projection for ripser : {}", fname);
-    let res = graph_projection.dump_sparse_mat_for_ripser(fname);
+    //
+    let toripserer = ToRipserer::new(&hnsw);
+    let outfile =  String::from("fashionproj.ripser");
+    let res = toripserer.extract_projection_to_ripserer(knbn, layer, &outfile);
+    // define a projection on some layer
     if res.is_err() {
         log::info!("graph_projection dump_sparse_mat_for_ripser failed");
     }
-    log::debug!("extracting matrix of distances around first point");
+    //
     // try to get local persistent data around first images (which is automatically in layer 0) 
+    //
+    log::debug!("extracting matrix of distances around first point");
     let center = data_with_id[0].0;
-    let point_indexation = hnsw.get_point_indexation();
-    log::debug!("asking for 500 points");
-    let neighbour_0 = hnsw.search(&center, 500, ef_c);
-    let nb_points = neighbour_0.len();
-    log::debug!("got nb neighbours : {}", nb_points);
-    let mut dist_mat = Array2::zeros((nb_points, nb_points));
-    let distance = hnsw.get_distance();
-    for i in 0..neighbour_0.len() {
-        let data_i = point_indexation.get_point_data(&neighbour_0[i].p_id).unwrap();
-        for j in 0..i {
-            let point_j =  point_indexation.get_point_data(&neighbour_0[j].p_id).unwrap();
-            dist_mat[[i,j]] = distance.eval(&data_i, &point_j);
-        }
-    } // end of for i
-    let vlen = nb_points * (nb_points + 1) / 2;
-    let mut v = Vec::<f32>::with_capacity(vlen);
-    for i in 0..neighbour_0.len() {
-        for j in 0..i {
-            v.push(dist_mat[[i,j]]);
-        }
-        v.push(0.);
-    }
-    // we must dump matrice as a lower inferior matrix
-    log::debug!("serializing , first values : {} {} {} , last : {}", v[0], v[1], v[2], v[v.len()-2]);
-    let serializer = bson::Serializer::new();
-    let res = serde::ser::Serialize::serialize::<bson::Serializer>(&v, serializer);
-    if !res.is_ok() {
-        panic!("serialization failed")
-    }
-    let bson_v = res.unwrap();
-    let path = Path::new("localdistmat.bson");
-    let fileres = OpenOptions::new().write(true).create(true).open(path);
-    let file;
-    if fileres.is_ok() {
-        file = fileres.unwrap();
-    }
-    else {
-        panic!("could not open file : {}", path.display());
-    }
-    let mut doc = bson::Document::new();
-    doc.insert("limat", bson_v);
-    let bufwriter = BufWriter::new(file);
-    let res = doc.to_writer(bufwriter);
+    let outbson = String::from("fashionlocal.bson");
+    let res = toripserer.extract_neighbourhood(&center, 2000, ef_c, &outbson);
     if res.is_err() {
-        panic!("dump of bson failed: {}", res.err().unwrap());
+        panic!("ToRipserer.extract_neighbourhood{}", res.err().unwrap());
     }
 } // end of main

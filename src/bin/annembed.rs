@@ -1,13 +1,28 @@
 //! annembed binary.  
 //! 
 //! This module provides just access to floating point data embedding.  
-//! Command syntax is embed input --csv csvfile [--delim u8] [hnsw params] [embed params]
-//! The default delimiter is ','.   
+//! Command syntax is embed input --csv csvfile  [--outfile | -o  output_name] [--delim u8] [hnsw params] [embed params].  
 //! 
-//! hnsw is an optional command to change default parameters of the Hnsw structure. See [hnsw_rs](https://crates.io/crates/hnsw_rs)
+//!  --outf or -o to specify the name of csv file containing embedded vectors.  
+//!     By default the name is "embedded.csv"
+//! 
+//! hnsw is an optional command to change default parameters of the Hnsw structure. See [hnsw_rs](https://crates.io/crates/hnsw_rs).  
 //! embed is an optional command to change default parameters related to the embedding: gradient, edge sampling etc. See [EmbedderParams]
 //! 
-//! The csv file must have one record by vector to embed. The output is a csv file with embedded vectors.
+//! - Parameters for embed subcommand. The options give access to some fields of the [EmbedderParams] structure.  
+//!  --stepg    : a float value , initial gradient step, default is 2.
+//!  --scale    : a float value, scale modification factor, default is 1.
+//!  --nbsample : number of edge sampling , default is 10   
+//!  --layer    : in case of hierarchical embedding num of the lower layer we consider to run preliminary step.  
+//! 
+//! - Parameters for the hnsw subcommand. For more details see   
+//! --nbconn  : defines the number of connections by node in a layer.   
+//! --dist    : name of distance to use: DistL1, DistL2, DistCosine, DistJeyffreys 
+//! --ef      : controls the with of the search. 
+//! --knbn    : the number of nodes to use in retrieval requests.  
+//!     
+//! The csv file must have one record by vector to embed. The default delimiter is ','.  
+//! The output is a csv file with embedded vectors.
 //! The Julia directory provide helpers to vizualize and some Topological Data analysis tools
 
 
@@ -19,7 +34,7 @@ use cpu_time::ProcessTime;
 
 use anyhow::{anyhow};
 use clap::{Arg, ArgMatches, Command};
-//use std::io::prelude::*;
+
 
 
 use hnsw_rs::prelude::*;
@@ -35,7 +50,7 @@ pub struct HnswParams {
     max_conn : usize,
     /// width of search in hnsw
     ef_c : usize,
-    /// 
+    /// number of neighbours asked for
     knbn : usize,
     /// distance to use in Hnsw. Default is "DistL2". Other choices are "DistL1", "DistCosine", DistJeffreys
     distance : String,
@@ -58,7 +73,7 @@ impl HnswParams {
 //==========================================================
 
 
-#[doc(hidden)]
+
 fn parse_hnsw_cmd(matches : &ArgMatches) ->  Result<HnswParams, anyhow::Error> {
     log::debug!("in parse_hnsw_cmd");
 
@@ -102,18 +117,6 @@ fn parse_hnsw_cmd(matches : &ArgMatches) ->  Result<HnswParams, anyhow::Error> {
         _      => { return Err(anyhow!("could not parse knbn"));}
     };  // end of match knbn
 
-    match matches.value_of("knbn") {
-        Some(str) =>  { 
-            let res = str.parse::<usize>();
-            match res {
-                Ok(val) => { hnswparams.knbn = val},
-                _       => { return Err(anyhow!("could not parse knbn parameter"));
-                            },
-            } 
-        } 
-        _      => { return Err(anyhow!("could not parse knbn"));}
-    };  // end of match knbn
-
 
     match matches.value_of("dist") {
         Some(str) =>  { 
@@ -122,7 +125,6 @@ fn parse_hnsw_cmd(matches : &ArgMatches) ->  Result<HnswParams, anyhow::Error> {
                 "DistL1"          => { hnswparams.distance = String::from("DistL1");}
                 "DistCosine"      => { hnswparams.distance = String::from("DistCosine");}
                 "DistJeffreys"    => { hnswparams.distance = String::from("DistJeffreys");}
-
                 _                 => { return Err(anyhow!("not a valid distance"));}
             }
         },
@@ -275,7 +277,6 @@ fn get_kgraphproj_with_distname(data_with_id : &Vec<(&Vec<f64>, usize)>, hnswpar
 
 
 
-#[doc(hidden)]
 pub fn main() {
     println!("initializing default logger from environment ...");
     let _ = env_logger::Builder::from_default_env().init();
@@ -343,6 +344,11 @@ pub fn main() {
             .takes_value(true)
             .required(true)
             .help("expecting a csv file"))
+        .arg(Arg::new("outfile")
+            .long("out")
+            .short('o')
+            .takes_value(true)
+            .help("expecting output file name"))
         .arg(Arg::new("delim")
             .long("delim")
             .short('d')
@@ -402,13 +408,25 @@ pub fn main() {
             fname = csv_file.clone();
         }
     }
-
     //
     let delim_opt = matches.get_one::<u8>("delim");
     let delim = match delim_opt {
         Some(c)  => { *c},
         None     => { b','},
     };
+    // set output filename and check if option is present in command
+    let mut csv_output = String::from("embedded.csv");
+    if matches.is_present("outfile") {
+        let csv_out = matches.value_of("outfile").ok_or("").unwrap().parse::<String>().unwrap();
+        if csv_out == "" {
+            println!("parsing of output file name failed");
+            std::process::exit(1);
+        }
+        else {
+            log::info!("input file : {:?}", csv_out.clone());
+            csv_output = csv_out.clone();
+        }
+    }
 
     // open file
     let filepath = std::path::Path::new(&fname);
@@ -427,7 +445,6 @@ pub fn main() {
     let cpu_start = ProcessTime::now();
     let sys_now = SystemTime::now();
 
-    let csv_output = String::from("embedded.csv");
     log::info!("dumping in csv file {}", csv_output);
     let mut csv_w = csv::Writer::from_path(csv_output).unwrap();
     //
