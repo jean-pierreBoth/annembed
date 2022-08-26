@@ -3,27 +3,26 @@
 //! This module provides just access to floating point data embedding.  
 //! Command syntax is embed input --csv csvfile  [--outfile | -o  output_name] [--delim u8] [hnsw params] [embed params].  
 //! 
-//!  --outf or -o to specify the name of csv file containing embedded vectors.  
-//!     By default the name is "embedded.csv"
+//!  --outfile or -o to specify the name of csv file containing embedded vectors. By default the name is "embedded.csv"
 //! 
-//! hnsw is an optional command to change default parameters of the Hnsw structure. See [hnsw_rs](https://crates.io/crates/hnsw_rs).  
-//! embed is an optional command to change default parameters related to the embedding: gradient, edge sampling etc. See [EmbedderParams]
+//! hnsw is an optional subcommand to change default parameters of the Hnsw structure. See [hnsw_rs](https://crates.io/crates/hnsw_rs).  
+//! embed is an optional subcommand to change default parameters related to the embedding: gradient, edge sampling etc. See [EmbedderParams]
 //! 
 //! - Parameters for embed subcommand. The options give access to some fields of the [EmbedderParams] structure.  
-//!  --stepg    : a float value , initial gradient step, default is 2.
-//!  --scale    : a float value, scale modification factor, default is 1.
+//!  --stepg    : a float value , initial gradient step, default is 2.  
+//!  --scale    : a float value, scale modification factor, default is 1.  
 //!  --nbsample : number of edge sampling , default is 10   
 //!  --layer    : in case of hierarchical embedding num of the lower layer we consider to run preliminary step.  
 //! 
-//! - Parameters for the hnsw subcommand. For more details see   
+//! - Parameters for the hnsw subcommand. For more details see [hnsw_rs](https://crates.io/crates/hnsw_rs).   
 //! --nbconn  : defines the number of connections by node in a layer.   
 //! --dist    : name of distance to use: DistL1, DistL2, DistCosine, DistJeyffreys 
 //! --ef      : controls the with of the search. 
 //! --knbn    : the number of nodes to use in retrieval requests.  
 //!     
 //! The csv file must have one record by vector to embed. The default delimiter is ','.  
-//! The output is a csv file with embedded vectors.
-//! The Julia directory provide helpers to vizualize and some Topological Data analysis tools
+//! The output is a csv file with embedded vectors.  
+//! The Julia directory provides helpers to get Persistence diagrams and barcodes and vizualize them using Ripserer.jl
 
 
 

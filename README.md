@@ -1,6 +1,6 @@
 # A data embedding tool and related data analysis or clustering
 
-The crate provides mainly in the form of a library (*See documentation of the binary annembed for a small executable reading csv files*)
+The crate provides mainly in the form of a library (*See documentation of the binary embed for a small executable embedding data in csv files*)
 1. Some variations on data embedding tools from t-Sne (2008) to Umap(2018).
    Our implementation is a mix of the various embedding algorithms mentioned in References.
 
@@ -45,7 +45,7 @@ The crate provides mainly in the form of a library (*See documentation of the bi
 
 Alternatively define the default in Cargo.toml.
 
-* Julia can be downloaded from [julia](https://julialang.org/downloads/). Packages mentionned by a **using** clause in julia sources must then be installed see [Pkg](https://docs.julialang.org/en/v1/stdlib/Pkg/#Pkg). Then in a Julia REPL, **include("annembed.jl")** give access to functions Annembed.localPersistency and Annembed.localPersistency.
+* Julia can be downloaded from [julia](https://julialang.org/downloads/). Packages mentionned by a **using** clause in julia sources must then be installed see [Pkg](https://docs.julialang.org/en/v1/stdlib/Pkg/#Pkg). Then in a Julia REPL, **include("annembed.jl")** give access to functions Annembed.localPersistency and Annembed.projectedPersistency.
 
 ## Results
 
@@ -170,5 +170,3 @@ Licensed under either of
 2. MIT license [LICENSE-MIT](LICENSE-MIT) or <http://opensource.org/licenses/MIT>
 
 at your option.
-
-This software was written on my own while working at [CEA](http://www.cea.fr/)
