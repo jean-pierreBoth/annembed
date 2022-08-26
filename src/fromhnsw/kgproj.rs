@@ -290,7 +290,7 @@ impl <F> KGraphProjection<F>
 
 
     /// returns the distance to nearest element in projected (small) graph
-    /// The argument is a NodeIdx
+    /// The argument is a DataId
     pub fn get_distance_to_projection_by_dataid(&self, data_id : &DataId) -> F {
         let edge = self.proj_data.get(&data_id).unwrap();
         self.proj_data.get(&edge.node).unwrap().weight
@@ -316,9 +316,7 @@ impl <F> KGraphProjection<F>
         quant
     }
 
-    /// compute approximate barcodes from projected graph.
-    /// As we know the distance between the 2 graphs we can assess the error on bar codes due to stability theorem
-    /// This is done by using the Ripser module.
+    /// dump csc matrix of distances between pointsfrom projected graph.
     pub fn dump_sparse_mat_for_ripser(&self, fname : &str)  -> Result<(), anyhow::Error> {
         let path = Path::new(fname);
         log::debug!("in to_ripser_sparse_dist : fname : {}", path.display());

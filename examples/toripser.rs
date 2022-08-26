@@ -3,7 +3,10 @@
 //!      - a graph projection enabling dump of sparse distance matrix between sampled points from the data
 //!      - the possibility to extract the neighbourhood of a point and extract a small matrix of distance between points around a node.
 //! 
-//! The small Julia module in the crate, using the **Ripserer module** associated can reload these matrices and computes homology on these extracted data
+//! The small Julia module in the crate, using the **Ripserer module** associated can reload these matrices 
+//! and computes homology on these extracted data.  
+//! 
+//! Change the variable locating mnist data files to your convenience.
 //! 
 
 use std::io::prelude::*;
@@ -20,7 +23,10 @@ use byteorder::{BigEndian, ReadBytesExt};
 
 use hnsw_rs::prelude::*;
 
-
+// The directory where the files t10k-images-idx3-ubyte  t10k-labels-idx1-ubyte  train-images-idx3-ubyte  
+// and train-labels-idx1-ubyte reside
+// one directory for mnist_digits and a directory for fashion_mnist
+const MNIST_DATA_DIR : &'static str = "/home/jpboth/Data/Fashion-MNIST/";
 
 /// A struct to load/store for Fashion Mnist in the same format as [MNIST data](http://yann.lecun.com/exdb/mnist/)  
 /// stores labels (i.e : FASHION between 0 and 9) coming from file train-labels-idx1-ubyte      
@@ -145,10 +151,7 @@ use cpu_time::ProcessTime;
 
 use annembed::fromhnsw::toripserer::ToRipserer;
 
-// The directory where the files t10k-images-idx3-ubyte  t10k-labels-idx1-ubyte  train-images-idx3-ubyte  
-// and train-labels-idx1-ubyte reside
-// one directory for mnist_digits and a directory for fashion_mnist
-const MNIST_DATA_DIR : &'static str = "/home/jpboth/Data/Fashion-MNIST/";
+
 
 pub fn main() {
     //
@@ -220,7 +223,7 @@ pub fn main() {
     log::debug!("extracting matrix of distances around first point");
     let center = data_with_id[0].0;
     let outbson = String::from("fashionlocal.bson");
-    let res = toripserer.extract_neighbourhood(&center, 2000, ef_c, &outbson);
+    let res = toripserer.extract_neighbourhood(&center, 1000, ef_c, &outbson);
     if res.is_err() {
         panic!("ToRipserer.extract_neighbourhood{}", res.err().unwrap());
     }
