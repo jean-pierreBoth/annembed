@@ -4,7 +4,7 @@
 //!      - the possibility to extract the neighbourhood of a point and extract a small matrix of distance between points around a node.
 //! 
 //! The small Julia module in the crate, using the **Ripserer module** associated can reload these matrices 
-//! and computes homology on these extracted data.  
+//! and computes homology on these extracted data and dumps persistence graphics 
 //! 
 //! Change the variable locating mnist data files to your convenience.
 //! 
