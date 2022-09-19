@@ -1,3 +1,0 @@
-cargo:rustc-link-search=/usr/local/opt/openblas/lib
-cargo:rustc-link-lib=dylib=openblas
-cargo:rustc-link-lib=dylib=openblas
