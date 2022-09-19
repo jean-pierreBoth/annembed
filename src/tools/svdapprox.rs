@@ -39,9 +39,9 @@ use rand_xoshiro::rand_core::SeedableRng;
 use ndarray::{Dim, Array, Array1, Array2, ArrayBase, Dimension, ArrayView, ArrayView1, ArrayViewMut1, ArrayView2 , Ix1, Ix2};
 
 // pub to avoid to re-import everywhere explicitly
-pub use ndarray_linalg::{layout::MatrixLayout, UVTFlag, Scalar, Lapack, QR};
+pub use ndarray_linalg::{Scalar, Lapack};
 
-// use lax::QR_;
+use lax::{layout::MatrixLayout, UVTFlag, QR_};
 
 use std::marker::PhantomData;
 
@@ -404,7 +404,7 @@ impl <'a, F > RangeApprox<'a, F>
 // TODO Oversampling between 5 and 10 ?
 // Nota : if nbiter == 0 We get Tropp Algo 4.1 or Algo 2.1 of Wei-Zhang-Chen
 pub fn subspace_iteration_full<F> (mat : &Array2<F>, rank : usize, nbiter : usize) -> Array2<F>
-            where F : Send + Sync + Float + Scalar  + Lapack + ndarray::ScalarOperand {
+            where F : Send + Sync + Float + Scalar  + Lapack + ndarray::ScalarOperand + lax::QR_ {
     //
     let mut rng = RandomGaussianGenerator::<F>::new();
     let data_shape = mat.shape();
@@ -446,7 +446,7 @@ pub fn subspace_iteration_full<F> (mat : &Array2<F>, rank : usize, nbiter : usiz
 /// It implements the QR iterations as descibed in Algorithm 4.4 from Halko-Tropp
 /// 
 pub fn subspace_iteration_csr<F> (csrmat: &CsMat<F>, rank : usize, nbiter : usize) -> Array2<F>
-            where F : Send + Sync + Float + Scalar  + Lapack + ndarray::ScalarOperand + sprs::MulAcc {
+            where F : Send + Sync + Float + Scalar  + Lapack + ndarray::ScalarOperand + sprs::MulAcc + lax::QR_ {
     //
     log::debug!("in svdapprox::subspace_iteration_csr rank: {:?}, nbiter : {:?}", rank, nbiter);
     //
@@ -981,11 +981,10 @@ fn orthogonalize_with_q<F:Scalar + ndarray::ScalarOperand >(q: &[Array1<F>], y: 
 
 
 // do qr decomposition (calling Lax q function) of mat (m, n) which must be in C order
-// instead of calling mat.qr() and returning res.0
 // The purpose of this function is just to avoid the R allocation in Lax qr 
 //
 fn do_qr<F> (layout : MatrixLayout, mat : &mut Array2<F>)
-    where F : Float + Lapack + Scalar + ndarray::ScalarOperand 
+    where F : Float + Lapack + Scalar + QR_ + ndarray::ScalarOperand 
 {
     let (_, _) = match layout {
         MatrixLayout::C { row, lda } => (row as usize , lda as usize),

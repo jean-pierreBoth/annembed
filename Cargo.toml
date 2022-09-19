@@ -62,12 +62,13 @@ num_cpus = {version = "1.8.0"}
 cpu-time = {version = "1.0"}
 
 ndarray = {version = "0.15", features=["rayon", "serde"]}
-ndarray-linalg = {version = "0.14",default-features = false}
+ndarray-linalg = {version = "0.15",default-features = false}
+lax = {version = "0.15.0"}
 sprs = {version = "0.11"}
 
 indexmap = {version = "1.6"}
 # hnsw_rs =  {git = "https://gitlab.com/jpboth/hnswlib-rs.git"}
-# hnsw_rs = {path = "../hnswlib-rs", features = ["simdeez_f"]}
+##hnsw_rs = {path = "../hnswlib-rs"}
 hnsw_rs = {version = "0.1.16", features=["simdeez_f"]}
 
 # rand utilis
@@ -93,13 +94,15 @@ log = { version = "0.4"}
 env_logger = { version = "0.9"}
 
 # hack to avoid interaction bug with intel-mkl
-anyhow = { version = "<=1.0.48" }
+anyhow = { version = "<=1.0.58" }
 katexit = {version = "0.1.0"}
 
 
 [features]
 
 default = []
+
+intel-mkl-system = ["ndarray/blas","ndarray-linalg/intel-mkl-system"]
 
 intel-mkl-static = ["ndarray/blas","ndarray-linalg/intel-mkl-static"]
 
