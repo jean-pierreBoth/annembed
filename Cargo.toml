@@ -84,7 +84,7 @@ csv = {version = "1.1"}
 serde= {version = "1.0", features = ["derive"] }
 bincode = {version = "1.3"}
 byteorder = {version = "1.4"}
-bson = {version = "2.2"}
+bson = {version = "2.4"}
 
 # decreasing order of log for debug build : (max_level_)trace debug info warn error off
 # decreasing order of log for release build (release_max_level_)  .. idem
@@ -92,7 +92,7 @@ bson = {version = "2.2"}
 log = { version = "0.4"}
 env_logger = { version = "0.9"}
 
-# hack to avoid interaction bug with intel-mkl
+# no more interaction bug with intel-mkl
 anyhow = {version = "1.0.58"}
 katexit = {version = "0.1"}
 
