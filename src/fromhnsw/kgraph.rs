@@ -174,7 +174,7 @@ impl <F> KGraph<F>
                 return (n, node_edge_length);
             }
             ).collect();
-        // sort
+        // in max_edge_length we have for each node its largest edge, but due to // iter nodes are to be reset in order!
         max_edge_length.sort_unstable_by(|a,b| a.0.partial_cmp(&b.0).unwrap()); 
         max_edge_length
     } // end of compute_max_edge

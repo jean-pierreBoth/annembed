@@ -39,7 +39,7 @@ end
 
 
 """
-    This function reads reloads the "first distance" file. See Rus crate function Embedder::get_quality_estimate_from_edge_length
+    This function reads reloads the "first distance" file. See Rust crate function Embedder::get_quality_estimate_from_edge_length
     It draws a heatmap of log(distance) and dumps it in fname.png
 """
 function plotCsvDist(fname) 
@@ -73,12 +73,15 @@ function plotCsvDist(fname)
     dist = dist ./ max.(count, 1)
     dmax = maximum(dist)
     distremap = map(x -> if x > 0 log(x) else -dmax end , dist)
-    #
-    fig, ax, hm = GLMakie.heatmap(xs, ys, distremap)
-    Colorbar(fig[:, end+1], hm)
+    @info "file reloaded"
     #
     pngname = fname*".png"
     fig, ax, hm = CairoMakie.heatmap(xs, ys, distremap)
     Colorbar(fig[:, end+1], hm)
     CairoMakie.save(pngname, fig)
+    @info "image dumped in : ", pngname
+    #
+    fig, ax, hm = GLMakie.heatmap(xs, ys, distremap)
+    Colorbar(fig[:, end+1], hm)
+    #
 end

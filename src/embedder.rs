@@ -372,7 +372,9 @@ where
 
 
     /// For each node we in the orginal kgraph compute the transformed neighbourhood info in the embedded space.
-    /// So we will be able to compare transported kgraph from direct kgraph computed from embedded data.
+    /// Precisely: for each node n1 in initial space, for each neighbour n2 of n1, we compute l2dist of 
+    /// embedded points corresponding to n1, n2. So we have an embedded edge, 
+    /// and we will be able to compare transported kgraph from direct kgraph computed from embedded data.
     fn get_transformed_kgraph(&self) -> Option<Vec<(usize,Vec<OutEdge<F>>) >> {
         // we check we have kgraph
         let kgraph : &KGraph<F>;
@@ -407,7 +409,8 @@ where
                 return (n, transformed_neighborhood);
             }
             ).collect();
-        // TODO  avoid that reorder  
+        // We need to ensure that parallel iter did not permute data. 
+        // TODO avoid this reordering ?
         let mut sorted_neighbours_info = Vec::<(usize, Vec<OutEdge<F>>)>::with_capacity(neighbours.len());
         for i in 0..neighbours.len() {
             sorted_neighbours_info.push((i, Vec::<OutEdge<F>>::new()));
@@ -528,6 +531,8 @@ where
         println!("\n best distance in neighbourhood quantiles at 0.05 : {:.2e} , 0.25 : {:.2e}, 0.5 :  {:.2e}, 0.75 : {:.2e} 0.95 : {:.2e}, 0.99 : {:.2e} \n\n", 
             missed_dist_q.query(0.05).unwrap().1, missed_dist_q.query(0.25).unwrap().1, missed_dist_q.query(0.5).unwrap().1, 
             missed_dist_q.query(0.75).unwrap().1, missed_dist_q.query(0.95).unwrap().1, missed_dist_q.query(0.99).unwrap().1);
+        // The smaller the better!
+        let quality = missed_dist_q.query(0.5).unwrap().1;
         //
         let mut csv_dist = Writer::from_path("first_dist.csv").unwrap();
         let _res = write_csv_labeled_array2(&mut csv_dist, miss_dist.as_slice(), &self.get_embedded_reindexed());
