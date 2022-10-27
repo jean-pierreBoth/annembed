@@ -148,7 +148,7 @@ use cpu_time::ProcessTime;
 
 use annembed::fromhnsw::kgraph::{KGraph,kgraph_from_hnsw_all};
 use annembed::fromhnsw::kgproj::KGraphProjection;
-
+use annembed::fromhnsw::hubness;
 
 const MNIST_DIGITS_DIR : &'static str = "/home/jpboth/Data/MNIST/";
 
@@ -302,11 +302,18 @@ pub fn main() {
     println!(" dimension estimation sys time(ms) : {:.3e},  cpu time(ms) {:?}", sys_now.elapsed().unwrap().as_millis(), cpu_time.as_millis());
     if dim_stat.is_ok() {
         let dim_stat = dim_stat.unwrap();
-        log::info!(" dimension estimation with nbpoints : {}, dim : {:.3e}, sigma = {:.3e}", 
+        log::info!("\n dimension estimation with nbpoints : {}, dim : {:.3e}, sigma = {:.3e} \n", 
             sampling_size, dim_stat.0, dim_stat.1);
         println!(" dimension estimation with nbpoints : {}, dim : {:.3e}, sigma = {:.3e}", 
             sampling_size, dim_stat.0, dim_stat.1); 
     }
+    //
+    // hubness estimation
+    //
+    let hubness = hubness::Hubness::new(&kgraph);
+    let s3_hubness = hubness.get_standard3m();
+    log::info!("\n graph hubness estimation : {:.3e}", s3_hubness);
+    println!("\n graph hubness estimation : {:.3e} \n", s3_hubness);
 }  // end of main digits
 
 

@@ -572,6 +572,8 @@ use std::io::BufWriter;
 use rand::distributions::{Uniform};
 use rand::prelude::*;
 
+use crate::fromhnsw::hubness;
+
 #[cfg(test)]
 fn log_init_test() {
     let res = env_logger::builder().is_test(true).try_init();
@@ -635,6 +637,11 @@ fn test_full_hnsw() {
     let dimension = dimension.unwrap();
     log::info!("\n estimation of dimension : {:.3e}, sigma : {:.3e} ", dimension.0 , dimension.1);
     println!("\n estimation of dimension : {:.3e}, sigma : {:.3e} ", dimension.0 , dimension.1);
+    // test hubness estimation
+    let hubness = self::hubness::Hubness::new(&kgraph);
+    let s3 = hubness.get_standard3m();
+    log::info!(" estimation of hubness : {:.3e}", s3);
+
 }  // end of test_full_hnsw
 
 

@@ -22,6 +22,9 @@ The crate provides mainly in the form of a library (*See documentation of the bi
 
     - An estimation of the data intrinsic dimension as described in:  
             Levina E. and Bickel P.J NIPS 2004.  See [paper](https://www.stat.berkeley.edu/~bickel/mldim.pdf).
+
+    - An estimation of the hubness of the graph of the Hnsw structure as described in:
+            Radovanovic M., Nanopoulos A. and Ivanovic M. See [paper](https://www.jmlr.org/papers/volume11/radovanovic10a/radovanovic10a.pdf)
   
     - a Diffusion Maps implementation.
 
@@ -45,7 +48,8 @@ The crate provides mainly in the form of a library (*See documentation of the bi
 
 Alternatively define the default in Cargo.toml.
 
-* Julia can be downloaded from [julia](https://julialang.org/downloads/). Packages mentionned by a **using** clause in julia sources must then be installed see [Pkg](https://docs.julialang.org/en/v1/stdlib/Pkg/#Pkg). Then in a Julia REPL, **include("annembed.jl")** give access to functions Annembed.localPersistency and Annembed.projectedPersistency.
+* Julia can be downloaded from [julia](https://julialang.org/downloads/). Packages mentionned by a **using** clause in julia sources must then be installed see [Pkg](https://docs.julialang.org/en/v1/stdlib/Pkg/#Pkg). Then in a Julia REPL, **include("annembed.jl")** give access to functions Annembed.localPersistency and Annembed.projectedPersistency.   
+Possibly you will need to run *export LD_PRELOAD=/lib/x86_64-linux-gnu/libstdc++.so.6* or equivalent to force Julia to use your C++ library, due to subtle interaction between GPU drivers and GLFW.jl [see](https://discourse.julialang.org/t/makie-glfwerror/51006).
 
 ## Results
 
