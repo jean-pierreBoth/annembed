@@ -78,6 +78,8 @@ quantiles = {version = "0.7"}
 
 num-traits = {version = "0.2"}
 lazy_static = { version = "1.4"}
+hdrhistogram =  {version = "7.5"}
+
 
 # for io
 csv = {version = "1.1"}

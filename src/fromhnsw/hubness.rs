@@ -13,8 +13,12 @@
 use std::sync::atomic::{AtomicU32, Ordering};
 use rayon::iter::{ParallelIterator,IntoParallelIterator};
 
+use anyhow;
+
 use num_traits::{Float};
 use num_traits::cast::FromPrimitive;
+
+use hdrhistogram::Histogram;
 
 use super::kgraph::*;
 
@@ -79,6 +83,43 @@ impl <'a,F> Hubness<'a,F>
         //
         return s3m;
     }  // end of get_standard3m
+
+
+
+    /// get an histogram of hubness counts and prints histogram summary
+    pub fn get_hubness_histogram(&self) -> Result<Histogram::<u32>, anyhow::Error> {
+        // record histogram length from 1 to readmaxsize with slot of size readmaxsize/10**prec
+        // lowest value arg in init must be >= 1
+        let max_value = 2 * (self.counts.len() as f64).sqrt() as u64;
+        let prec = 1u32;
+        assert!(prec >= 1, "precision for histogram construction should range >= 1");
+        let histo = Histogram::<u32>::new_with_bounds(1, max_value, 1);
+        if histo.is_err() {
+            log::error!("hubness::get_hubness_histogram, could not create histogram , error : {:?}", histo.as_ref().err());
+            return Err(anyhow::anyhow!("histogram construction failed"));
+        }
+        let mut histo = histo.unwrap();
+        let mut nb_out_histo = 0u32;
+        for v in &self.counts {
+            let res = histo.record(*v as u64);
+            if res.is_err() {
+                nb_out_histo += 1;
+            }
+        }
+        // display result
+        if nb_out_histo > 0 {
+            println!("number of too large values : {}, maximum value : {}", nb_out_histo, max_value);
+        }
+        let quantiles = vec![0.1, 0.25, 0.5, 0.6, 0.7, 0.8, 0.9 , 0.99];
+        let thresholds = quantiles.iter().map(|f| histo.value_at_quantile(*f)).collect::<Vec<u64>>();
+        //
+        println!("quantiles : {:?}", quantiles);
+        println!("thresholds : {:?}", thresholds);
+        //
+        Ok(histo)
+    }  // end of get_hubness_histogram
+
+
 }  // end of impl block for Hubness
 
 

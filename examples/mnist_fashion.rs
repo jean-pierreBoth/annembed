@@ -303,6 +303,7 @@ pub fn main() {
     let s3_hubness = hubness.get_standard3m();
     log::info!("\n graph hubness estimation : {:.3e}", s3_hubness);
     println!("\n graph hubness estimation : {:.3e} \n", s3_hubness);
+    let _histo = hubness.get_hubness_histogram();
     //
     let _kgraph_stats = kgraph.get_kraph_stats();
 } // end of main
