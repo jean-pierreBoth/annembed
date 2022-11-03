@@ -1,4 +1,6 @@
-//! Definition of graph projection.
+//! Definition of graph projection on less densley populated layers of a Hnsw structure.
+//! This can be used in hierarchical initialization of the embedding.
+//! 
 //! We extract from the Hnw structure a graph as in [KGraph](../KGraph) but
 //! also construct a smaller graph by considering only upper layers of the Hnsw structure.  
 //! Links from each point of the lower (denser) layers to the smaller graph are stored 
