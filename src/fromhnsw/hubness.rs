@@ -62,6 +62,12 @@ impl <'a,F> Hubness<'a,F>
         Hubness{kgraph : &kgraph, counts : counts}
     } // end of new
 
+    /// returns counts by index
+    pub fn get_counts(&self) -> &Vec<u32> {
+        &self.counts
+    } // end of get_counts
+
+
     /// get standardized 3 moment of occurences (See Radovanovic paper cited above)
     pub fn get_standard3m(&self) -> f64 {
         //
