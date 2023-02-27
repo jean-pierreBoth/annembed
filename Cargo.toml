@@ -56,7 +56,7 @@ clap = { version = "3.1", features = ["derive"] }
 
 # for //
 parking_lot = "0.12"
-rayon = {version = "1.5"}
+rayon = {version = "1.6"}
 num_cpus = {version = "1.8.0"}
 
 cpu-time = {version = "1.0"}
@@ -65,10 +65,11 @@ ndarray = {version = "0.15", features=["rayon", "serde"]}
 ndarray-linalg = {version = "0.15",default-features = false}
 sprs = {version = "0.11"}
 
-indexmap = {version = "1.6"}
+indexmap = {version = "1.9"}
+
 # hnsw_rs =  {git = "https://gitlab.com/jpboth/hnswlib-rs.git"}
-# hnsw_rs = {path = "../hnswlib-rs", features = ["simdeez_f"]}
-hnsw_rs = {version = "0.1.16", features=["simdeez_f"]}
+#hnsw_rs = {path = "../hnswlib-rs", features = ["simdeez_f"]}
+hnsw_rs = {version = "0.1.18", features=["simdeez_f"]}
 
 # rand utilis
 rand = {version = "0.8"}
@@ -94,7 +95,7 @@ bson = {version = "2.4"}
 # decreasing order of log for release build (release_max_level_)  .. idem
 #log = { version = "0.4", features = ["max_level_debug", "release_max_level_info"] }
 log = { version = "0.4"}
-env_logger = { version = "0.9"}
+env_logger = { version = "0.10"}
 
 # no more interaction bug with intel-mkl
 anyhow = {version = "1.0.58"}

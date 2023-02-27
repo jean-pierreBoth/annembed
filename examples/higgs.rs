@@ -111,7 +111,8 @@ fn rescale(data : &mut Array2<f32>) -> Vec<Vec<f32>> {
 }  // end of rescale
 
 
-fn reload_higgshnsw() -> std::io::Result<Hnsw::<f32, DistL2>> {
+fn reload_higgshnsw<D>() -> std::io::Result<Hnsw::<f32, D>> 
+    where D : Distance<f32> + std::default::Default + std::marker::Send + std::marker::Sync {
     // look for 
     log::info!("trying to reload Higgs.hnsw.graph and Higgs.hnsw.data");
     let graphfname = String::from("Higgs.hnsw.graph");
@@ -137,7 +138,7 @@ fn reload_higgshnsw() -> std::io::Result<Hnsw::<f32, DistL2>> {
     let sys_now = SystemTime::now();
     let cpu_time = ProcessTime::now();
     let hnsw_description = load_description(&mut graph_in).unwrap();
-    let hnsw_loaded : std::io::Result<Hnsw<f32, DistL2>> = load_hnsw(&mut graph_in, &hnsw_description, &mut data_in);
+    let hnsw_loaded : std::io::Result<Hnsw<f32, D>> = load_hnsw::<f32, D>(&mut graph_in, &hnsw_description, &mut data_in);
     println!(" higgs ann reload sys time(s) {:?} cpu time {:?}", sys_now.elapsed().unwrap().as_secs(), cpu_time.elapsed().as_secs());
     //
     return hnsw_loaded;
@@ -232,7 +233,7 @@ pub fn main() {
         assert!(embedder.get_embedded().is_some());
     } 
     else {
-        let knbn = 6;
+        let knbn = 10;
         log::debug!("trying graph projection");
         embed_params.nb_grad_batch = 25;
         graphprojection =  KGraphProjection::<f32>::new(&hnsw, knbn, 2);
