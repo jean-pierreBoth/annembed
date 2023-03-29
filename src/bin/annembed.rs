@@ -15,9 +15,9 @@
 //!  --layer    : in case of hierarchical embedding num of the lower layer we consider to run preliminary step.  
 //! 
 //! - Parameters for the hnsw subcommand. For more details see [hnsw_rs](https://crates.io/crates/hnsw_rs).   
-//! --nbconn  : defines the number of connections by node in a layer.   
-//! --dist    : name of distance to use: DistL1, DistL2, DistCosine, DistJeyffreys 
-//! --ef      : controls the with of the search. 
+//! --nbconn  : defines the number of connections by node in a layer.   Can range from 4 to 64 or more if necessary and enough memory
+//! --dist    : name of distance to use: "DistL1", "DistL2", "DistCosine", "DistJeyffreys" 
+//! --ef      : controls the with of the search, a good guess is between 24 and 64 or more if necessay
 //! --knbn    : the number of nodes to use in retrieval requests.  
 //!     
 //! The csv file must have one record by vector to embed. The default delimiter is ','.  
@@ -32,7 +32,7 @@ use std::time::{Duration, SystemTime};
 use cpu_time::ProcessTime;
 
 use anyhow::{anyhow};
-use clap::{Arg, ArgMatches, Command};
+use clap::{Arg, ArgMatches, ArgAction, Command};
 
 
 
@@ -78,48 +78,16 @@ fn parse_hnsw_cmd(matches : &ArgMatches) ->  Result<HnswParams, anyhow::Error> {
 
     let mut hnswparams = HnswParams::default();
 
-    match matches.value_of("nbconn") {
+    hnswparams.max_conn = *matches.get_one::<usize>("nbconn").unwrap();
+
+    hnswparams.ef_c = *matches.get_one::<usize>("ef").unwrap();
+
+    hnswparams.knbn = *matches.get_one::<usize>("knbn").unwrap();
+
+
+    match matches.get_one::<String>("dist") {
         Some(str) =>  { 
-            let res = str.parse::<usize>();
-            match res {
-                Ok(val) => { hnswparams.max_conn = val},
-                _       => { return Err(anyhow!("could not parse nbconn parameter"));
-                            },
-            } 
-        } 
-        _      => { return Err(anyhow!("could not parse nbconn"));}
-    };  // end of match  nbconn
-
-
-    match matches.value_of("ef") {
-        Some(str) =>  { 
-            let res = str.parse::<usize>();
-            match res {
-                Ok(val) => { hnswparams.ef_c = val},
-                _       => { return Err(anyhow!("could not parse ef_c parameter"));
-                            },
-            } 
-        } 
-        _      => { return Err(anyhow!("could not parse ef"));}
-    };  // end of match ef
-
-
-    match matches.value_of("knbn") {
-        Some(str) =>  { 
-            let res = str.parse::<usize>();
-            match res {
-                Ok(val) => { hnswparams.knbn = val},
-                _       => { return Err(anyhow!("could not parse knbn parameter"));
-                            },
-            } 
-        } 
-        _      => { return Err(anyhow!("could not parse knbn"));}
-    };  // end of match knbn
-
-
-    match matches.value_of("dist") {
-        Some(str) =>  { 
-            match str {
+            match str.as_str() {
                 "DistL2"          => { hnswparams.distance = String::from("DistL2");}
                 "DistL1"          => { hnswparams.distance = String::from("DistL1");}
                 "DistCosine"      => { hnswparams.distance = String::from("DistCosine");}
@@ -142,42 +110,11 @@ fn parse_embed_cmd(matches : &ArgMatches) ->  Result<EmbedderParams, anyhow::Err
     //
     let mut embedparams  = EmbedderParams::default();
 
-    match matches.value_of("scale") {
-        Some(str) =>  { 
-            let res = str.parse::<f64>();
-            match res {
-                Ok(val) => { embedparams.scale_rho = val},
-                _       => { return Err(anyhow!("could not parse scale_rho parameter"));
-                            },
-            } 
-        } 
-        _               => {}
-    };  // end of match scale_rho
+    embedparams.scale_rho = *matches.get_one::<f64>("scale").unwrap();
 
-    match matches.value_of("nbsample") {
-        Some(str) =>  { 
-            let res = str.parse::<usize>();
-            match res {
-                Ok(val) => { embedparams.nb_sampling_by_edge = val},
-                _       => { return Err(anyhow!("could not parse nbsample parameter"));
-                            },
-            } 
-        } 
-        _               => {}
-    };  // end of match nb_sampling_by_edge
-
-
-    match matches.value_of("hierarchy") {
-        Some(str) =>  { 
-            let res = str.parse::<usize>();
-            match res {
-                Ok(val) => { embedparams.hierarchy_layer = val},
-                _       => { return Err(anyhow!("could not parse hierarchy layer parameter"));
-                            },
-            } 
-        } 
-        _               => {}
-    } // end of match hierarchy
+    embedparams.nb_sampling_by_edge = *matches.get_one::<usize>("nbsample").unwrap();
+ 
+    embedparams.hierarchy_layer = *matches.get_one::<usize>("hierarchy").unwrap();
 
     return Ok(embedparams);
 } // end of parse_embed_cmd
@@ -288,26 +225,31 @@ pub fn main() {
         .arg(Arg::new("step_grap")
             .required(false)
             .long("stepg")
-            .takes_value(true)
+            .action(ArgAction::Set)
+            .value_parser(clap::value_parser!(f64))
             .help("gradient step")
         )
         .arg(Arg::new("nbsample")
             .required(false)
             .long("nbsample")
-            .takes_value(true)
+            .action(ArgAction::Set)
+            .value_parser(clap::value_parser!(usize))
             .help("number of edge sampling")
         )
         .arg(Arg::new("hierarchy")
             .required(false)
             .long("layer")
             .short('l')
-            .takes_value(true)
+            .action(ArgAction::Set)
+            .value_parser(clap::value_parser!(usize))
             .help("expecting a layer num")
         )
         .arg(Arg::new("scale")
             .required(false)
             .long("scale")
-            .takes_value(true)
+            .action(ArgAction::Set)
+            .value_parser(clap::value_parser!(f64))
+            .default_value("1.0 f64")
             .help("spatial scale factor")
         );
 
@@ -316,18 +258,26 @@ pub fn main() {
             .long("dist")
             .short('d')
             .required(true)
+            .action(ArgAction::Set)
+            .value_parser(clap::value_parser!(String))
             .help("distance is required   \"DistL1\" , \"DistL2\", \"DistCosine\", \"DistJeyffreys\"  "))
         .arg(Arg::new("nb_conn")
             .long("nbconn")
-            .takes_value(true)
+            .required(true)
+            .action(ArgAction::Set)
+            .value_parser(clap::value_parser!(usize))
             .help("number of neighbours by layer"))
         .arg(Arg::new("knbn")
             .long("knbn")
-            .takes_value(true)
+            .required(true)
+            .action(ArgAction::Set)
+            .value_parser(clap::value_parser!(usize))
             .help("number of neighbours to use"))
         .arg(Arg::new("ef")
             .long("ef")
-            .takes_value(true)
+            .required(true)
+            .action(ArgAction::Set)
+            .value_parser(clap::value_parser!(usize))
             .help("search factor"));
         
 
@@ -340,18 +290,22 @@ pub fn main() {
         .arg_required_else_help(true)
         .arg(Arg::new("csvfile")
             .long("csv")    
-            .takes_value(true)
+            .action(ArgAction::Set)
+            .value_parser(clap::value_parser!(String))
             .required(true)
             .help("expecting a csv file"))
         .arg(Arg::new("outfile")
             .long("out")
             .short('o')
-            .takes_value(true)
+            .required(false)
+            .action(ArgAction::Set)
+            .value_parser(clap::value_parser!(String))
             .help("expecting output file name"))
         .arg(Arg::new("delim")
             .long("delim")
             .short('d')
-            .takes_value(true)
+            .action(ArgAction::Set)
+            .value_parser(clap::value_parser!(char))
             .help("delimiter can be ' ', ','"))
         .subcommand(embedcmd)
         .subcommand(hnswcmd)
@@ -395,18 +349,8 @@ pub fn main() {
     }
     embedparams.log();
 
-    let mut fname = String::from("");
-    if matches.is_present("csvfile") {
-        let csv_file = matches.value_of("csvfile").ok_or("").unwrap().parse::<String>().unwrap();
-        if csv_file == "" {
-            println!("parsing of request_dir failed");
-            std::process::exit(1);
-        }
-        else {
-            log::info!("input file : {:?}", csv_file.clone());
-            fname = csv_file.clone();
-        }
-    }
+    let csv_file = matches.get_one::<String>("csvfile").unwrap();
+    let fname = csv_file.clone();
     //
     let delim_opt = matches.get_one::<u8>("delim");
     let delim = match delim_opt {
@@ -415,17 +359,11 @@ pub fn main() {
     };
     // set output filename and check if option is present in command
     let mut csv_output = String::from("embedded.csv");
-    if matches.is_present("outfile") {
-        let csv_out = matches.value_of("outfile").ok_or("").unwrap().parse::<String>().unwrap();
-        if csv_out == "" {
-            println!("parsing of output file name failed");
-            std::process::exit(1);
-        }
-        else {
-            log::info!("input file : {:?}", csv_out.clone());
-            csv_output = csv_out.clone();
-        }
+    let csv_out = matches.get_one::<String>("outfile");
+    if csv_out.is_some() {
+        csv_output = csv_out.unwrap().clone();
     }
+    log::info!("output file : {:?}", &csv_output);
 
     // open file
     let filepath = std::path::Path::new(&fname);

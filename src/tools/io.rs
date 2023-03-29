@@ -125,7 +125,7 @@ pub fn get_toembed_from_csv<F> (filepath : &Path, delim : u8) -> anyhow::Result<
         num_record += 1;
         let record = result?;
         if log::log_enabled!(Level::Info) && nb_record <= 2 {
-            log::info!(" record num {:?}, {:?}", nb_record, record);
+            log::debug!(" record num {:?}, {:?}", nb_record, record);
         }
         if nb_record == 0 {
             nb_fields = record.len();
