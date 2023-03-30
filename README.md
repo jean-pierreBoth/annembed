@@ -32,7 +32,7 @@ The crate provides mainly in the form of a library (*See documentation of the bi
 
     - A link to the  Topological Data Analysis Julia package Ripserer.jl (See the directory Julia in the crate).  
     The distance matrix between points in a neighbourhood or from a reduced projected graph can be dumped to further processsing (see docs in module *fromhnsw::toripserer*).
-    It is thus possible to produce persistence diagrams/barcodes of cloud points with the aid of the julia functions provided in the Julia directory of this crate.
+    It is thus possible to produce persistence diagrams/barcodes of cloud points with the aid of the julia functions provided in the Julia directory of this crate (providing also vizualition of the embedded data from the related csv files results).
 
 ## Building
 

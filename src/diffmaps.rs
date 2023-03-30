@@ -141,9 +141,9 @@ pub(crate) fn get_dmap_embedding<F>(initial_space : &NodeParams, asked_dim: usiz
 
 
 
-/// This function runs a parallel insertion of rows of an Array2<T> into a  Hnsw<T,D>
+/// This function runs a parallel insertion of rows of an `Array2<T>` into a  Hnsw<T,D>.  
 /// The hnsw structure must have chosen main parameters as the number of connection and layers, but
-/// be empty. 
+/// be empty.   
 /// Returns number of point inserted if success.
 pub fn array2_insert_hnsw<T,D>(data : &Array2<T>, hnsw : &mut Hnsw<T,D>) -> Result<usize, usize>
          where  T : Clone + Send + Sync,

@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use ndarray::{Array1, Array2, Axis};
 use sprs::{CsMat, TriMatBase};
 
-use ndarray_linalg::{UVTFlag, SVDDC};
+use ndarray_linalg::{svddc::JobSvd, SVDDC};
 
 use crate::tools::{svdapprox::*,nodeparam::*};
 
@@ -60,7 +60,7 @@ impl GraphLaplacian {
         }
         // use divide conquer (calls lapack gesdd), faster but could use svd (lapack gesvd)
         log::trace!("direct_svd calling svddc driver");
-        let res_svd_b = b.svddc(UVTFlag::Some);
+        let res_svd_b = b.svddc(JobSvd::Some);
         if res_svd_b.is_err()  {
             log::info!("GraphLaplacian do_full_svd svddc failed");
             return Err(String::from("GraphLaplacian svddc failed"));

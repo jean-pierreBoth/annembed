@@ -39,7 +39,7 @@ use rand_xoshiro::rand_core::SeedableRng;
 use ndarray::{Dim, Array, Array1, Array2, ArrayBase, Dimension, ArrayView, ArrayView1, ArrayViewMut1, ArrayView2 , Ix1, Ix2};
 
 // pub to avoid to re-import everywhere explicitly
-pub use ndarray_linalg::{layout::MatrixLayout, UVTFlag, Scalar, Lapack, QR};
+pub use ndarray_linalg::{layout::MatrixLayout, svddc::JobSvd, Scalar, Lapack, QR};
 
 // use lax::QR_;
 
@@ -764,7 +764,7 @@ impl <'a, F> SvdApprox<'a, F>
         }
         // use divide conquer (calls lapack gesdd), faster but could use svd (lapack gesvd)
         log::trace!("direct_svd calling svddc driver");
-        let res_svd_b = F::svddc(layout,  UVTFlag::Some, slice_for_svd_opt.unwrap());
+        let res_svd_b = F::svddc(layout,  JobSvd::Some, slice_for_svd_opt.unwrap());
         if res_svd_b.is_err()  {
             println!("direct_svd, svddc failed");
         };

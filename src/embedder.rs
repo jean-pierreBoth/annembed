@@ -459,7 +459,7 @@ where
     /// It tries to assess how neighbourhood of points in original and neighbourhood of size *nbng* in embedded space match.  
     /// 
     /// In each neighbourhood of a point, taken as center in the initial space, we search the point that has minimal distance to the center
-    /// of the corresponding neighbourhood in embedded space. The quantiles on these distance are then dumped.
+    /// of the corresponding neighbourhood in embedded space. The quantiles on these distance are then dumped.  
     /// We also count the number of points for which the distance is in the radius of the neighbourhood (of size *nbng*) in embedded space 
     /// and for neighbourhood that have a match , the mean number of matches. 
     /// It gives a rough idea of the continuity of the embedding. 

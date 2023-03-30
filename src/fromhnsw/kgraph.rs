@@ -250,7 +250,7 @@ impl <F> KGraph<F>
     /// them for array computation.  
     /// At the end we must provide a way to get back to original labels of data.
     /// 
-    /// When we get embedded data as an Array2<F>, row i of data corresponds to
+    /// When we get embedded data as an `Array2<F>`, row i of data corresponds to
     /// the original data with label get_data_id_from_idx(i)
     pub fn get_data_id_from_idx(&self, index:usize) -> Option<&DataId> {
         return self.node_set.get_index(index)
