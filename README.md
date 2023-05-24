@@ -111,7 +111,7 @@ Sources of examples are in corresponding directory.
         The gradient iterations needs 1.5 hours, the whole embedding runs in 2h35.  
         Quality estimation do not run, presently, due to the size of data.
 
-    ![higgs](Images/Higgs-H-B40S0.75k-gf5-5410s-i9.png)
+    ![higgs](Images/Higgs-H-B40S0.75k-gf5-5410s-compressed-i9.png.jpg)
 
     - Diffusion Maps initialization in the non hierarchical case.
 
