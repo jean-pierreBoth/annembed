@@ -101,7 +101,7 @@ Sources of examples are in corresponding directory.
 
 3. **Higgs boson** Cf [Higgs-data](https://archive.ics.uci.edu/ml/datasets/HIGGS)
 
-    It consists in 11 millions float vectors of dimension 28. We use only the first 21 columns, keeping out the last 7 variables
+    It consists in 11 millions float vectors of dimension 28. **We use only the first 21 columns**, keeping out the last 7 variables
     constructed by the physicists to help the discrimination in machine learning tasks.
 
     - hierarchical initialization
