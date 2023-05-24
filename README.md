@@ -55,7 +55,7 @@ Possibly you will need to run *export LD_PRELOAD=/lib/x86_64-linux-gnu/libstdc++
 
 ## Results
 
-Timings are given for a 8-core i7 @2.3 Ghz laptop with 64Gb memory.
+Timings are given for a 24-core (32 threads) i9 laptop with 64Gb memory.
 
 ### Embedder examples
 
@@ -67,15 +67,15 @@ Sources of examples are in corresponding directory.
 
     - initialized by an approximated svd.
 
-    It tooks 26s to run, of which 9s were spent in the ann construction.
+    It tooks 11s (system time) to run (cpu time 270s), of which 3s were spent in the ann construction.
 
-    ![mnist](Images/mnist_digit-B30S1E10k6-26s.csv-2.-compressed.jpg)
+    ![mnist](Images/mnist_digits-B30S1b1k6f4-9s-i9-compressed.png.jpg)
 
     - hierarchical initialization
 
-    ![mnist](Images/mnist_digits-HB30S1E10k6-25s.csv-2-compressed.jpg)
+    ![mnist](Images/mnist_digits-H-B20S1b1k6f4-11s-i9-compressed.png.jpg)
 
-    It took 25s of which 9s were spent in the ann construction.
+    It took 11s to run (334s of cpu time) of which 9s were spent in the ann construction.
 
     - The estimated intrinsic dimension of the data is 18.5 with standard deviation depending on points: 7.2
     taking into account sorted neighbours around each point between the 9-th and 20-th first ranks.
@@ -86,31 +86,32 @@ Sources of examples are in corresponding directory.
 
     - initialized by an approximated svd.
 
-    ![mnist](Images/mnist_fashionB15S1E10k6-35s.csv-2compressed.jpg)
+    ![mnist](Images/mnist_fashion-B25S1k6gf4-14s-i9-compressed.png.jpg)
 
-    time : 35s
+    system time : 14s, cpu time 428s
 
     - hierarchical initialization
     (This is useful for large data embedding where we initialize the embedding with first layers above the deeper populated ones of the Hnsw structure to speed up the process).
 
-    ![mnist](Images/mnist_fashionHB15S1E10k6-37s.csv-1-compressed.jpg)
+    ![mnist](Images/mnist_fashion-HB20S1k6gf4-15s-i9-compressed.png.jpg)
 
-    time : 37s
+    system time : 15s, cpu time 466s
 
     - The estimated intrinsic dimension of the data is 21.9 with standard deviation depending on points is 12.2, taking into account sorted neighbours around each point between the 9-th and 20-th first ranks.
 
 3. **Higgs boson** Cf [Higgs-data](https://archive.ics.uci.edu/ml/datasets/HIGGS)
 
-    It consists in 11 millions float vectors of dimension 21.
+    It consists in 11 millions float vectors of dimension 28. We use only the first 21 columns, keeping out the last 7 variables
+    constructed by the physicists to help the discrimination in machine learning tasks.
 
     - hierarchical initialization
 
-        The hsnw structure needs 1.45 hours for initialization.
-        We run 100 batches in the first pass by using layers from layer 2 (included) to the upper layer. The first batches runs thus on about 19000 nodes. Then 25 batches are done on the 11 millions points.  
-        The gradient iterations needs 1.45 hours, the whole embedding runs in 3h30.  
+        The hsnw structure needs 50mn for initialization.
+        We run 200 batches in the first pass by using layers from layer 1 (included) to the upper layer. The first batches runs thus on about 19000 nodes. Then 40 batches are done on the 11 millions points.  
+        The gradient iterations needs 1.5 hours, the whole embedding runs in 2h35.  
         Quality estimation do not run, presently, due to the size of data.
 
-    ![higgs](Images/Higgs-embedded-H4-1000B25S1E10k6.csv.jpg)
+    ![higgs](Images/Higgs-H-B40S0.75k-gf5-5410s-i9.png)
 
     - Diffusion Maps initialization in the non hierarchical case.
 

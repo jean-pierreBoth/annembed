@@ -194,7 +194,7 @@ where
         }
         let median_dist =  quant.query(0.5).unwrap().1;
         // we sample a random position around first embedding position
-        // TODO amount of clipping
+        // TODO: amount of clipping
         let normal = Normal::<f32>::new(0., 1.0).unwrap();
         for i in nb_nodes_small..nb_nodes_large {
             let projected_edge = graph_projection.get_projection_by_nodeidx(&i);
@@ -210,7 +210,7 @@ where
         //
         self.initial_embedding = Some(second_step_init);
         // cross entropy optimize
-        log::debug!("optimizing second step");
+        log::info!("optimizing second step");
         let embedding_res = self.entropy_optimize(&self.parameters, self.initial_embedding.as_ref().unwrap());
         //
         println!(" first + second step embedding sys time(s) {:.2e} cpu time(s) {:.2e}", sys_start.elapsed().unwrap().as_secs(), cpu_start.elapsed().as_secs());
@@ -616,7 +616,6 @@ where
             let grad_step = grad_step_init * (1.- iter as f64/self.get_nb_grad_batch() as f64);
             ce_optimization.gradient_iteration_threaded(nb_sample_by_iter, grad_step);
 //            let cpu_time: Duration = start.elapsed();
-//            println!("ce after grad iteration time {:?} grad iter {:.2e}",  cpu_time, ce_optimization.ce_compute_threaded());
 //            log::debug!("ce after grad iteration time(ms) {:.2e} grad iter {:.2e}",  cpu_time.as_millis(), ce_optimization.ce_compute_threaded());
         }
         println!(" gradient iterations sys time(s) {:.2e} , cpu_time(s) {:.2e}",  sys_start.elapsed().unwrap().as_secs(), cpu_start.elapsed().as_secs());
@@ -926,11 +925,13 @@ impl <'a, F> EntropyOptim<'a,F>
                     let cauchy_weight = 1./ (1. + d_ik_scaled);
                     coeff = 2. * b * cauchy_weight/ (scale*scale);
                 }
-                // use the same clipping as attractive/repulsion case
-                let alfa = 1./100.;
+                // we know node_j is not in neighbour, we smooth repulsion for point with dist less than scale/4
+                // the part of repulsion comming from coeff is less than 1/(scale * scale)
+                // 
+                let alfa = 1./16.;
                 if d_ik > 0. {
                     let coeff_repulsion = 1. /(d_ik_scaled * d_ik_scaled).max(alfa);  // !!
-                    let coeff_ik =  (grad_step * coeff * coeff_repulsion).min(4.);
+                    let coeff_ik =  (grad_step * coeff * coeff_repulsion).min(2.);
                     gradient = (&y_k - &y_i) * F::from_f64(coeff_ik).unwrap();
                     log::trace!("norm repulsive  coeff gradient {:.2e} {:.2e}", coeff_ik , l2_norm(&gradient.view()).to_f64().unwrap());
                 }
