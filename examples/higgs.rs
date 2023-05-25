@@ -214,13 +214,12 @@ pub fn main() {
     //
     let mut embed_params = EmbedderParams::default();
     embed_params.nb_grad_batch = 25;
-    embed_params.scale_rho = 1.;
+    embed_params.scale_rho = 0.75;
     embed_params.beta = 1.;
     embed_params.grad_step = 1.;
     embed_params.nb_sampling_by_edge = 10;
     embed_params.dmap_init = true;
     let hierarchical = true;
-
     let mut embedder;
     let kgraph;
     let graphprojection;
@@ -233,10 +232,12 @@ pub fn main() {
         assert!(embedder.get_embedded().is_some());
     } 
     else {
-        let knbn = 10;
-        log::debug!("trying graph projection");
-        embed_params.nb_grad_batch = 25;
-        graphprojection =  KGraphProjection::<f32>::new(&hnsw, knbn, 2);
+        let knbn = 6;
+        let projection_layer = 1;
+        embed_params.nb_grad_batch = 40;
+        embed_params.grad_factor = 5;
+        log::info!("graph projection on layer : {}", projection_layer);
+        graphprojection =  KGraphProjection::<f32>::new(&hnsw, knbn, projection_layer);
         embedder = Embedder::from_hkgraph(&graphprojection, embed_params);
         let embed_res = embedder.embed();        
         assert!(embed_res.is_ok()); 
