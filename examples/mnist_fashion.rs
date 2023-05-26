@@ -149,7 +149,7 @@ use annembed::fromhnsw::kgraph::{KGraph,kgraph_from_hnsw_all};
 use annembed::fromhnsw::kgproj::KGraphProjection;
 use annembed::fromhnsw::hubness;
 
-const MNIST_FASHION_DIR : &'static str = "/home/jpboth/Data/Fashion-MNIST/";
+const MNIST_FASHION_DIR : &'static str = "/home/jpboth/Data/ANN/Fashion-MNIST/";
 
 pub fn main() {
     //
@@ -264,7 +264,7 @@ pub fn main() {
         assert!(embed_res.is_ok()); 
         assert!(embedder.get_embedded().is_some());
     }
-    println!(" ann embed time {:.2e} s", sys_now.elapsed().unwrap().as_secs());
+    println!(" ann embed time time {:.2e} s, cpu time : {}", sys_now.elapsed().unwrap().as_secs(), cpu_start.elapsed().as_secs());
     // dump
     log::info!("dumping initial embedding in csv file");
     let mut csv_w = Writer::from_path("mnist_init_fashion.csv").unwrap();

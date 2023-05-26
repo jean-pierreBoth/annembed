@@ -75,7 +75,7 @@ Sources of examples are in corresponding directory.
 
     ![mnist](Images/mnist_digits-H-B20S1b1k6f4-11s-i9-compressed.png.jpg)
 
-    It took 11s to run (334s of cpu time) of which 9s were spent in the ann construction.
+    It took 11s to run (334s of cpu time) of which 3s were spent in the ann construction.
 
     - The estimated intrinsic dimension of the data is 18.5 with standard deviation depending on points: 7.2
     taking into account sorted neighbours around each point between the 9-th and 20-th first ranks.
@@ -103,11 +103,12 @@ Sources of examples are in corresponding directory.
 
     It consists in 11 millions float vectors of dimension 28. **We use only the first 21 columns**, keeping out the last 7 variables
     constructed by the physicists to help the discrimination in machine learning tasks.
+    Basic exploration of the data can be found in a Notebook at [Higgs.jl](https://github.com/jean-pierreBoth/Higgs.jl)
 
     - hierarchical initialization
 
         The hsnw structure needs 50mn for initialization.
-        We run 200 batches in the first pass by using layers from layer 1 (included) to the upper layer. The first batches runs thus on about 19000 nodes. Then 40 batches are done on the 11 millions points.  
+        We run 200 batches in the first pass by using layers from layer 1 (included) to the upper layer. The first batches runs thus on about 460000 nodes. Then 40 batches are done on the 11 millions points.  
         The gradient iterations needs 1.5 hours, the whole embedding runs in 2h35.  
         Quality estimation do not run, presently, due to the size of data.
 
