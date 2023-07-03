@@ -32,7 +32,7 @@ The crate provides mainly in the form of a library (*See documentation of the bi
 
     - A link to the  Topological Data Analysis Julia package Ripserer.jl (See the directory Julia in the crate).  
     The distance matrix between points in a neighbourhood or from a reduced projected graph can be dumped to further processsing (see docs in module *fromhnsw::toripserer*).
-    It is thus possible to produce persistence diagrams/barcodes of cloud points with the aid of the julia functions provided in the Julia directory of this crate (providing also vizualition of the embedded data from the related csv files results).
+    It is thus possible to produce persistence diagrams/barcodes of cloud points with the aid of the julia functions provided in the Julia directory of this crate (providing also visualization of the embedded data from the related csv files results).
 
 ## Building
 
@@ -103,16 +103,18 @@ Sources of examples are in corresponding directory.
 
     It consists in 11 millions float vectors of dimension 28. **We use only the first 21 columns**, keeping out the last 7 variables
     constructed by the physicists to help the discrimination in machine learning tasks.
-    Basic exploration of the data can be found in a Notebook at [Higgs.jl](https://github.com/jean-pierreBoth/Higgs.jl)
+    
 
     - hierarchical initialization
 
         The hsnw structure needs 50mn for initialization.
         We run 200 batches in the first pass by using layers from layer 1 (included) to the upper layer. The first batches runs thus on about 460000 nodes. Then 40 batches are done on the 11 millions points.  
         The gradient iterations needs 1.5 hours, the whole embedding runs in 2h35.  
-        Quality estimation do not run, presently, due to the size of data.
+        Quality estimation do not run, presently, due to the size of data. Nevertheless basic exploration of the data can be found in a Notebook at [Higgs.jl](https://github.com/jean-pierreBoth/Higgs.jl) to assess the quality of the embedding.
 
     ![higgs](Images/Higgs-H-B40S0.75k-gf5-5410s-compressed-i9.png.jpg)
+
+      
 
     - Diffusion Maps initialization in the non hierarchical case.
 
