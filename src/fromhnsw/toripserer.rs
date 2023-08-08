@@ -9,16 +9,16 @@
 //! 
 //! 
 
-use anyhow::{anyhow};
+use anyhow::anyhow;
 
 
 // to dump to ripser
-use std::fs::{OpenOptions};
-use std::path::{Path};
-use std::io::{BufWriter};
+use std::fs::OpenOptions;
+use std::path::Path;
+use std::io::BufWriter;
 
 
-use ndarray::{Array2};
+use ndarray::Array2;
 
 
 use hnsw_rs::prelude::*;
@@ -26,17 +26,17 @@ use hnsw_rs::prelude::*;
 
 use super::kgproj::*;
 
-pub struct ToRipserer<'a,T, D> 
-    where   T : Clone + Send + Sync , 
+pub struct ToRipserer<'a,'b, T, D> 
+    where   T : Clone + Send + Sync + 'b , 
             D : Distance<T> + Send + Sync {
-    hnsw : &'a Hnsw<T,D>,
+    hnsw : &'a Hnsw<'b,T,D>,
 }  // end of ToRipserer
 
-impl <'a, T, D> ToRipserer<'a,T, D>
+impl <'a, 'b, T, D> ToRipserer<'a,'b, T, D>
     where   T : Clone + Send + Sync,
             D : Distance<T> + Send + Sync {
 
-    pub fn new(hnsw : &'a Hnsw<T,D>) -> Self {
+    pub fn new(hnsw : &'a Hnsw<'b, T,D>) -> Self {
         ToRipserer{ hnsw:hnsw}
     }
 

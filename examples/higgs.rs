@@ -4,11 +4,11 @@
 //! Cf <https://arxiv.org/abs/1910.00204>
 //! 
 
-use anyhow::{anyhow};
+use anyhow::anyhow;
 
-use std::io::{BufReader};
-use std::fs::{OpenOptions};
-use std::path::{PathBuf};
+use std::io::BufReader;
+use std::fs::OpenOptions;
+use std::path::PathBuf;
 
 
 use csv::Writer;
@@ -16,7 +16,7 @@ use csv::Writer;
 use ndarray::{Array2, ArrayView};
 
 use hnsw_rs::prelude::*;
-use hnsw_rs::hnswio::{load_description, load_hnsw};
+use hnsw_rs::hnswio::HnswIo;
 
 use annembed::prelude::*;
 
@@ -26,7 +26,7 @@ use annembed::prelude::*;
 use std::time::{Duration, SystemTime};
 use cpu_time::ProcessTime;
 
-use annembed::fromhnsw::kgraph::{kgraph_from_hnsw_all};
+use annembed::fromhnsw::kgraph::kgraph_from_hnsw_all;
 use annembed::fromhnsw::kgproj::KGraphProjection;
 
 const HIGGS_DIR : &'static str = "/home/jpboth/Data/";
@@ -111,40 +111,6 @@ fn rescale(data : &mut Array2<f32>) -> Vec<Vec<f32>> {
 }  // end of rescale
 
 
-fn reload_higgshnsw<D>() -> std::io::Result<Hnsw::<f32, D>> 
-    where D : Distance<f32> + std::default::Default + std::marker::Send + std::marker::Sync {
-    // look for 
-    log::info!("trying to reload Higgs.hnsw.graph and Higgs.hnsw.data");
-    let graphfname = String::from("Higgs.hnsw.graph");
-    let graphpath = PathBuf::from(graphfname);
-    let graphfileres = OpenOptions::new().read(true).open(&graphpath);
-    if graphfileres.is_err() {
-        println!("test_dump_reload: could not open file {:?}", graphpath.as_os_str());
-        return Err(std::io::Error::new(std::io::ErrorKind::Other, "no previous Hnsw dump"));
-    }
-    let graphfile = graphfileres.unwrap();
-    //  
-    let datafname = String::from("Higgs.hnsw.data");
-    let datapath = PathBuf::from(datafname);
-    let datafileres = OpenOptions::new().read(true).open(&datapath);
-    if datafileres.is_err() {
-        println!("test_dump_reload : could not open file {:?}", datapath.as_os_str());
-        std::panic::panic_any("test_dump_reload : could not open file".to_string());            
-    }
-    let datafile = datafileres.unwrap();
-    //
-    let mut graph_in = BufReader::new(graphfile);
-    let mut data_in = BufReader::new(datafile);
-    let sys_now = SystemTime::now();
-    let cpu_time = ProcessTime::now();
-    let hnsw_description = load_description(&mut graph_in).unwrap();
-    let hnsw_loaded : std::io::Result<Hnsw<f32, D>> = load_hnsw::<f32, D>(&mut graph_in, &hnsw_description, &mut data_in);
-    println!(" higgs ann reload sys time(s) {:?} cpu time {:?}", sys_now.elapsed().unwrap().as_secs(), cpu_time.elapsed().as_secs());
-    //
-    return hnsw_loaded;
-}  // end of reload_higgshnsw
-
-
 
 pub fn main() {
     //
@@ -152,7 +118,6 @@ pub fn main() {
     //
     let mut fname = String::from(HIGGS_DIR);
     fname.push_str("HIGGS.csv");
-    let hnsw : Hnsw::<f32, DistL2>;
     // read csv 8Gb data label is in first field as a float. We need to read it to get labels even if we reload a Hnsw
     let res = read_higgs_csv(fname);
     if res.is_err() {
@@ -165,9 +130,18 @@ pub fn main() {
     drop(res.1);     // we do not need res.1 anymore
     assert_eq!(data.len(), labels.len());
     let cpu_start = ProcessTime::now();
-    let sys_now = SystemTime::now();
     // DO we have a dump ?
-    let res_reload = reload_higgshnsw();
+    let sys_now = SystemTime::now();
+    let cpu_time = ProcessTime::now();
+    // The following will try to reload hnsw from files Higgs.hnsw.data and Results/Higgs.hnsw.graph
+    // supposed to be in current directory. 
+    let directory = PathBuf::from(".");
+    // reloader must be declared before hnsw as it holds references used in hnsw
+    // and varibles are dropped in reverse order of declaration!
+    let mut reloader = HnswIo::new(directory, String::from("Higgs"));
+    let hnsw : Hnsw<f32, DistL2>;
+    let res_reload = reloader.load_hnsw::<f32, DistL2>();
+    println!(" higgs ann reload sys time(s) {:?} cpu time {:?}", sys_now.elapsed().unwrap().as_secs(), cpu_time.elapsed().as_secs());
     if res_reload.is_ok() {
         hnsw = res_reload.unwrap();
         hnsw.dump_layer_info();

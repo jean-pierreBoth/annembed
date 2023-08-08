@@ -10,10 +10,10 @@
 //! 
 
 use std::io::prelude::*;
-use std::io::{BufReader};
+use std::io::BufReader;
 use ndarray::{Array3, Array1, s};
-use std::fs::{OpenOptions};
-use std::path::{PathBuf};
+use std::fs::OpenOptions;
+use std::path::PathBuf;
 
 
 use std::io::Cursor;
