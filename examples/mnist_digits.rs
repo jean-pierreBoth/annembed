@@ -6,10 +6,10 @@
 //! to whatever directory you downloaded the [MNIST digits data](http://yann.lecun.com/exdb/mnist/)
 
 use std::io::prelude::*;
-use std::io::{BufReader};
+use std::io::BufReader;
 use ndarray::{Array3, Array1, s};
-use std::fs::{OpenOptions};
-use std::path::{PathBuf};
+use std::fs::OpenOptions;
+use std::path::PathBuf;
 
 
 
@@ -285,7 +285,7 @@ pub fn main() {
     let _res = write_csv_labeled_array2(&mut csv_w, labels.as_slice(), &embedder.get_embedded_reindexed());
     csv_w.flush().unwrap();
     //
-    let _quality = embedder.get_quality_estimate_from_edge_length(200);
+    let _quality = embedder.get_quality_estimate_from_edge_length(100);
     //
     // Get some statistics on induced graph. This is not related to the embedding process
     //

@@ -5,17 +5,17 @@
 
 
 use log::*;
-use anyhow::{anyhow};
+use anyhow::anyhow;
 
-use std::fs::{OpenOptions};
-use std::path::{Path};
+use std::fs::OpenOptions;
+use std::path::Path;
 use std::io::{Read, BufReader, BufRead};
 
-use num_traits::{Float};
+use num_traits::Float;
 use std::str::FromStr;
 
 
-use ndarray::{Array2};
+use ndarray::Array2;
 
 use csv::*;
 

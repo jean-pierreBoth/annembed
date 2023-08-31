@@ -16,7 +16,7 @@ The crate provides mainly in the form of a library (*See documentation of the bi
 
 - We also use a cross entropy optimization of this initial layout but take into account the initial local density estimate of each point when computing the cauchy weight of an embedded edge. The corresponding "perplexity" distribution is estimated on the fly. (**See documentation in module EmbedderParams**).
 
-- We provide a tentative assesment of the continuity of the embedding to help selecting among varying results between runs for a given data set. This is detailed in the documentation of function *Embedder::get_quality_estimate_from_edge_length*.
+- We provide a tentative assesment of the continuity of the embedding to help selecting among varying results between runs for a given data set. This is detailed in the documentation of function *Embedder::get_quality_estimate_from_edge_length* and is illustrated in examples directory.
 
  1. Some by-products :
 
@@ -101,20 +101,46 @@ Sources of examples are in corresponding directory.
 
 3. **Higgs boson** Cf [Higgs-data](https://archive.ics.uci.edu/ml/datasets/HIGGS)
 
-    It consists in 11 millions float vectors of dimension 28. **We use only the first 21 columns**, keeping out the last 7 variables
-    constructed by the physicists to help the discrimination in machine learning tasks.
+    It consists in 11 millions float vectors of dimension 28. First we run  on the first 21 columns, keeping out the last 7 variables constructed by the physicists to help the discrimination in machine learning tasks and then on the 28 variables.
     
+    In both cases we use hierarchical initialization. 
+    We run 200 batches in the first pass by using layers from layer 1 (included) to the upper layer. The first batches runs thus on about 460000 nodes. Then 40 batches are done on the 11 millions points. 
+     
+     Run times are in both cases around 2 hours (45' for the Hnsw construction and 75' for the entropy imterations)
 
-    - hierarchical initialization
+    - Images for the 28 and 21 variables full data
+ 
+        Quality estimation requires data subsampling due to the size of data (see examples and results). 
+        Moreover a basic exploration of the data can be found in a Notebook at [Higgs.jl](https://github.com/jean-pierreBoth/Higgs.jl) to assess the quality of the embedding via random projections.
 
-        The hsnw structure needs 50mn for initialization.
-        We run 200 batches in the first pass by using layers from layer 1 (included) to the upper layer. The first batches runs thus on about 460000 nodes. Then 40 batches are done on the 11 millions points.  
-        The gradient iterations needs 1.5 hours, the whole embedding runs in 2h35.  
-        Quality estimation do not run, presently, due to the size of data. Nevertheless basic exploration of the data can be found in a Notebook at [Higgs.jl](https://github.com/jean-pierreBoth/Higgs.jl) to assess the quality of the embedding.
+                    21 variables case
 
-    ![higgs](Images/Higgs-H-B40S0.75k-gf5-5410s-compressed-i9.png.jpg)
+    ![higgs-21](Images/Higgs-H-B40S0.75k-gf5-5410s-compressed-i9.png.jpg "21 variables case")
 
-      
+                    28 variables case
+   
+    ![higgs-28](Images/higgs_embedded-28-H-B40-S0.75k6-gf5.csv.png.jpg)
+
+    - Quality estimation with a subsampling factor of 0.15
+
+        Running with subsampling factor 0.15 on the data with 28 variables (1.65 million data points) we get in 16':
+
+        **nb neighbourhoods without a match : 869192,  mean number of neighbours conserved when match : 5.449e0**
+
+        half of the original neighborhoods are embedded within a factor 1.51 of the radius of neighbourhood in embedded graph 
+
+        **quantiles on ratio : distance in embedded space of neighbours of origin space / distance of neighbours in embedded space**
+
+        **quantiles at  0.25 : 1.98e-1, 0.5 :  1.51e0,  0.75 : 4.93e0 0.85 : 8.13e0, 0.95 : 1.63e1** 
+
+                embedding image
+
+    ![higgs-28-subs0.15](Images/Higgs-embedded-28-sub0.15-28-H-B40-50S0.75k6-gf5.csv.png.jpg)
+
+                density of points obtained by transforming distance to first neighbour (See visu.jl)
+
+    ![higgs-28-density](Images/Higgs-28-sub0.15-28-H-B40-50S0.75k6-gf5.firstdist.png.jpg)
+
 
     - Diffusion Maps initialization in the non hierarchical case.
 

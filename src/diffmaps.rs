@@ -8,11 +8,11 @@
 
 
 
-use num_traits::{Float};
+use num_traits::Float;
 use num_traits::cast::FromPrimitive;
 
-use ndarray::{Array2};
-use ndarray_linalg::{Scalar};
+use ndarray::Array2;
+use ndarray_linalg::Scalar;
 
 
 use hnsw_rs::prelude::*;

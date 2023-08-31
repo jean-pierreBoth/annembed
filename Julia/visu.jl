@@ -40,7 +40,7 @@ end
 
 """
     This function reads reloads the "first distance" file. See Rust crate function Embedder::get_quality_estimate_from_edge_length
-    It draws a heatmap of log(distance) and dumps it in fname.png
+    It draws a heatmap of exp(distance-mindist) and dumps it in fname.png
 """
 function plotCsvDist(fname) 
     data = DataFrame(CSV.File(fname, header=false))
@@ -53,7 +53,7 @@ function plotCsvDist(fname)
     #
     # we bin the images in size*size to avoid too many points
     #
-    nbdelta = 1000
+    nbdelta = 2000
     nbpoints = nbdelta + 1
     dist = zeros(nbpoints, nbpoints)
     count = zeros(Int64, nbpoints, nbpoints)
@@ -71,8 +71,9 @@ function plotCsvDist(fname)
         count[ix, iy] += 1
     end
     dist = dist ./ max.(count, 1)
-    dmax = maximum(dist)
-    distremap = map(x -> if x > 0 log(x) else -dmax end , dist)
+    dmin = minimum(dist)
+    # enhance constrast by dmin correction
+    distremap = map(x -> if x > 0 exp(-(x-dmin)) else 0 end , dist)
     @info "file reloaded"
     #
     pngname = fname*".png"

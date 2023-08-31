@@ -23,18 +23,18 @@ use ndarray::{Array1, Array2, ArrayView1};
 use ndarray_linalg::{Lapack, Scalar};
 
 
-use quantiles::{ckms::CKMS};     // we could use also greenwald_khanna
+use quantiles::ckms::CKMS;     // we could use also greenwald_khanna
 use csv::Writer;
 use crate::prelude::write_csv_labeled_array2;
 
 // threading needs
 use rayon::prelude::*;
-use parking_lot::{RwLock};
+use parking_lot::RwLock;
 use std::sync::Arc;
 
 use rand::{Rng, thread_rng};
-use rand::distributions::{Uniform};
-use rand_distr::{WeightedAliasIndex};
+use rand::distributions::Uniform;
+use rand_distr::WeightedAliasIndex;
 use rand_distr::{Normal, Distribution};
 
 use indexmap::set::*;
@@ -249,7 +249,7 @@ where
             set_data_box(&mut initial_embedding, 1.);
         }
         else {
-        // if we use random initialization we must have a box size coherent with renormalizes scales, so box size is 1.
+            // if we use random initialization we must have a box size coherent with renormalizes scales, so box size is 1.
             initial_embedding = self.get_random_init(1.);
         }
         let embedding_res = self.entropy_optimize(&self.parameters, &initial_embedding);
@@ -373,8 +373,9 @@ where
 
     /// For each node we in the orginal kgraph compute the transformed neighbourhood info in the embedded space.
     /// Precisely: for each node n1 in initial space, for each neighbour n2 of n1, we compute l2dist of 
-    /// embedded points corresponding to n1, n2. So we have an embedded edge, 
+    /// embedded points corresponding to n1, n2. So we have an embedded edge.
     /// and we will be able to compare transported kgraph from direct kgraph computed from embedded data.
+    /// Function returns for each node , increasing sorted distances to its neighbours in original space. 
     fn get_transformed_kgraph(&self) -> Option<Vec<(usize,Vec<OutEdge<F>>) >> {
         // we check we have kgraph
         let kgraph : &KGraph<F>;
@@ -399,7 +400,7 @@ where
                 let mut transformed_neighborhood = Vec::<OutEdge<F>>::with_capacity(neighbours[n].len());
                 let mut node_edge_length = F::max_value();
                 for edge in  &neighbours[n] {
-                    let ext_embedded = self.get_embedded_by_dataid(&edge.node);
+                    let ext_embedded = self.get_embedded_by_nodeid(edge.node);
                     // now we can compute distance for corresponding edge in embedded space. We must use L2
                     node_edge_length = distl2(node_embedded.as_slice().unwrap(), &ext_embedded.as_slice().unwrap()).min(node_edge_length);
                     transformed_neighborhood.push(OutEdge::<F>::new(edge.node, node_edge_length));
@@ -425,12 +426,13 @@ where
 
 
     /// compute hnsw and kgraph from embedded data and get maximal edge length by node
+    /// Returns for each node, distance of nbng'th neighbours to node.
     /// This function can require much memory for large number of nodes with large nbng
     fn get_max_edge_length_embedded_kgraph(&self, nbng : usize) -> Option<Vec<(usize,f64)>> {
         let embedding = self.embedding.as_ref().unwrap();
         // TODO use the same parameters as the hnsw given to kgraph, and adjust ef_c accordingly
         let max_nb_connection = nbng;
-        let ef_c = 50;
+        let ef_c = 64;
         // compute hnsw
         let nb_nodes = embedding.nrows();
         let nb_layer = 16.min((nb_nodes as f32).ln().trunc() as usize);
@@ -455,30 +457,36 @@ where
     } // end of get_max_edge_length_embedded_kgraph
 
 
-    /// This function is an attempt to quantify the quality of the embedding. 
-    /// It tries to assess how neighbourhood of points in original and neighbourhood of size *nbng* in embedded space match.  
+    /// This function is an attempt to quantify the quality of the embedding using the graph projection [KGraph](crate::fromhnsw::kgraph::KGraph). 
+    /// It tries to assess how neighbourhood of points in original and neighbourhood of size *nbng* in embedded space match using 
+    /// the graph projection in   
     /// 
-    /// In each neighbourhood of a point, taken as center in the initial space, we search the point that has minimal distance to the center
-    /// of the corresponding neighbourhood in embedded space. The quantiles on these distance are then dumped.  
-    /// We also count the number of points for which the distance is in the radius of the neighbourhood (of size *nbng*) in embedded space 
-    /// and for neighbourhood that have a match , the mean number of matches. 
-    /// It gives a rough idea of the continuity of the embedding. 
+    /// In each neighbourhood of a point, taken as center in the initial space we:
+    /// 
+    ///  - count the number of its neighbours for which the distance to the center is less than the radius of the neighbourhood (of size *nbng*) in embedded space 
+    /// and for neighbourhood that have a match , the mean number of matches.    
+    ///   This quantify the conservation of neighborhoods through the embedding. The lower the number of neighbourhoods without a match and the higher 
+    ///   the mean number of matches, the better is the embedding.
     ///  
-    /// **The lesser are the median distance, and the number of points without a match,  the more continous the embedding can be.**
-    /// **Inversely the higher the mean number of matches, the more we can expect the embedding to be continuous** 
+    ///  -  compute the length of embedded edges joining original neighbours to a node.
+    /// 
+    ///  -  compute the ratio of this distance to the radius of the ball in embedded space corresponding to nbng 'th neighbours in embedded space.  
+    /// The quantiles on ratio these distance are then dumped. The lower the median, the better is the embedding.
+    ///   
+    /// It gives a rough idea of the continuity of the embedding. The lesser the ratio the tighter the embedding.
+    /// 
+    /// For example for the fashion mnist in the hierarchical case we get consistently
+    /// a guess at quality 
     ///
-    /// As the computation takes place in the embedded space (which is of dimension 2 or of this order), nbng can be greater than for doing 
-    /// the embedding (100 or 200 for Mnist digits or fashion runs in 3s), and the estimation of distances is better.
-    ///
-    /// For example the image displayed in README for the Fashion case with 70000 points (file mnist_fashionHB15S1E10k6-37s.csv-1-compressed.jpg)
-    /// give : 
+    /// nb neighbourhoods without a match : 7822,  mean number of neighbours conserved when match : 5.592e0
+    /// quantiles on ratio : distance in embedded space of neighbours of origin space / distance of neighbours in embedded space
+    /// quantiles at 0.05 : 7.21e-3 , 0.25 : 5.05e-2, 0.5 :  2.18e-1, 0.75 : 6.71e-1 0.85 : 1.12e0, 0.95 : 2.42e0 
     /// 
-    /// *nb_without_match : 32407,  mean nb match if match : 2.343e0 and median of distance =  9.17e-1.*
-    /// 
-    /// Whereas the image mnist_fashionB15S1E10k6-35s.csv-1-badqual-compressed.jpg found in the Images directory of this crate
-    /// give : 
-    /// 
-    /// *nb_without_match : 44702,  mean nb match if match : 1.745e0 and median of distance found =  1.90e0*
+    /// So 85% of neighbourhood is conserved within a radius increased by a factor 1.12.
+
+
+
+
     /// 
     #[allow(unused)]
     pub fn get_quality_estimate_from_edge_length(&self, nbng : usize) -> Option<f64> {
@@ -494,7 +502,7 @@ where
             std::process::exit(1);
         }
         let transformed_kgraph = transformed_kgraph.unwrap();
-        // compute max edge length from kgraph constructed from embedded points
+        // compute max edge length from kgraph constructed from embedded points corresponding to nbng neighbours
         let max_edges_embedded = self.get_max_edge_length_embedded_kgraph(nbng);
         if max_edges_embedded.is_none() {
             log::error!("cannot compute mean edge length from embedded data");
@@ -503,41 +511,57 @@ where
         let max_edges_embedded = max_edges_embedded.unwrap();
         // now we can for each node see if best of propagated initial edges encounter ball in reconstructed kgraph from embedded data
         assert_eq!(max_edges_embedded.len(), transformed_kgraph.len());
-        let mut missed_dist_q = CKMS::<f64>::new(0.01);
-        let nb_nodes = max_edges_embedded.len();
-        let mut miss_dist = Vec::<f64>::with_capacity(nb_nodes);
+
+        let mut embedded_radii = CKMS::<f64>::new(0.01);
+        let mut ratio_dist_q = CKMS::<f64>::new(0.01);
+        let mut max_edges_q = CKMS::<f64>::new(0.01);
+        let nb_nodes = max_edges_embedded.len(); 
         let mut nodes_match = Vec::with_capacity(nb_nodes);
+        let mut first_dist = Vec::with_capacity(nb_nodes);
+
         for i in 0..nb_nodes {
             // check we speak of same node
             assert_eq!(i, max_edges_embedded[i].0);
             assert_eq!(i, transformed_kgraph[i].0);
             nodes_match.push(0);
-            // how many transformed edges are in optimal neighborhood?
+            embedded_radii.insert(max_edges_embedded[i].1);
+            max_edges_q.insert(max_edges_embedded[i].1);
+            // how many transformed edges are in maximal neighborhood of size nbng?
             let neighbours = &transformed_kgraph[i].1;
             for e in 0..neighbours.len() {
                 if neighbours[e].weight.to_f64().unwrap() <= max_edges_embedded[i].1 {
-                    nodes_match[i] += 1;
+                    nodes_match[i] += 1;          
                 }
+                ratio_dist_q.insert(neighbours[e].weight.to_f64().unwrap() / max_edges_embedded[i].1);
             }
-            let missed_d = neighbours[0].weight.to_f64().unwrap()/max_edges_embedded[i].1;
-            miss_dist.push(neighbours[0].weight.to_f64().unwrap()/max_edges_embedded[i].1 );
-            missed_dist_q.insert(missed_d);
+            first_dist.push(neighbours[0].weight.to_f64().unwrap());
         }
         // some stats
         let nb_without_match = nodes_match.iter().fold(0, |acc, x| if *x == 0 {acc +1} else {acc});
-        let mean_nbmatch: f64 = nodes_match.iter().sum::<usize>() as f64 /nodes_match.len() as f64;
+        let mean_nbmatch: f64 = nodes_match.iter().sum::<usize>() as f64 / (nodes_match.len() - nb_without_match)  as f64;
         println!("\n\n a guess at quality ");
-        println!("\n nb_without_match : {},  mean nb match if match : {:.3e}", nb_without_match,  mean_nbmatch);
-        println!("\n best distance in neighbourhood quantiles at 0.05 : {:.2e} , 0.25 : {:.2e}, 0.5 :  {:.2e}, 0.75 : {:.2e} 0.95 : {:.2e}, 0.99 : {:.2e} \n\n", 
-            missed_dist_q.query(0.05).unwrap().1, missed_dist_q.query(0.25).unwrap().1, missed_dist_q.query(0.5).unwrap().1, 
-            missed_dist_q.query(0.75).unwrap().1, missed_dist_q.query(0.95).unwrap().1, missed_dist_q.query(0.99).unwrap().1);
+        println!("\n nb neighbourhoods without a match : {},  mean number of neighbours conserved when match : {:.3e}", nb_without_match,  mean_nbmatch);
+        println!("\n embedded radii quantiles at 0.05 : {:.2e} , 0.25 : {:.2e}, 0.5 :  {:.2e}, 0.75 : {:.2e} 0.85 : {:.2e}, 0.95 : {:.2e} \n", 
+            embedded_radii.query(0.05).unwrap().1, embedded_radii.query(0.25).unwrap().1, embedded_radii.query(0.5).unwrap().1, 
+            embedded_radii.query(0.75).unwrap().1, embedded_radii.query(0.85).unwrap().1, embedded_radii.query(0.95).unwrap().1);
+        // we give quantiles on ratio : distance of neighbours in origin space / distance of last neighbour in embedded space
+        println!("\n quantiles on ratio : distance in embedded space of neighbours of origin space / distance of neighbours in embedded space");
+        println!("\n quantiles at 0.05 : {:.2e} , 0.25 : {:.2e}, 0.5 :  {:.2e}, 0.75 : {:.2e} 0.85 : {:.2e}, 0.95 : {:.2e} \n", 
+            ratio_dist_q.query(0.05).unwrap().1, ratio_dist_q.query(0.25).unwrap().1, ratio_dist_q.query(0.5).unwrap().1, 
+            ratio_dist_q.query(0.75).unwrap().1, ratio_dist_q.query(0.85).unwrap().1, ratio_dist_q.query(0.95).unwrap().1);
+        //
+        println!("\n quantiles on max edges in embedded space");
+        println!("\n quantiles at 0.05 : {:.2e} , 0.25 : {:.2e}, 0.5 :  {:.2e}, 0.75 : {:.2e} 0.85 : {:.2e}, 0.95 : {:.2e} \n", 
+            max_edges_q.query(0.05).unwrap().1, max_edges_q.query(0.25).unwrap().1, max_edges_q.query(0.5).unwrap().1, 
+            max_edges_q.query(0.75).unwrap().1, max_edges_q.query(0.85).unwrap().1, max_edges_q.query(0.95).unwrap().1);        
         // The smaller the better!
-        let quality = missed_dist_q.query(0.5).unwrap().1;
+        let quality = ratio_dist_q.query(0.5).unwrap().1;
+        println!("\n quality index. neighborhood are conserved in radius multiplied by : {:.2e}", quality);
         //
         let mut csv_dist = Writer::from_path("first_dist.csv").unwrap();
-        let _res = write_csv_labeled_array2(&mut csv_dist, miss_dist.as_slice(), &self.get_embedded_reindexed());
+        let _res = write_csv_labeled_array2(&mut csv_dist, first_dist.as_slice(), &self.get_embedded_reindexed());
         csv_dist.flush().unwrap();
-        //
+        ///
         let cpu_time: Duration = cpu_start.elapsed();
         log::info!(" quality estimation,  sys time(s) {:?} cpu time {:?}", sys_now.elapsed().unwrap().as_secs(), cpu_time.as_secs());
         //
@@ -884,7 +908,7 @@ impl <'a, F> EntropyOptim<'a,F>
         }
         if d_ij_scaled > 0. {
             // repulsion annhinilate  attraction if P<= 1. / (alfa + 1). choose 0.1/ PROBA_MIN 
-            let alfa = 1000.;
+            let alfa = (1./ PROBA_MIN) as f64;
             let coeff_repulsion = 1. / (d_ij_scaled*d_ij_scaled).max(alfa);
             // clipping makes each point i or j making at most half way to the other in case of attraction
             let coeff_ij = (grad_step * coeff * (- weight + (1.-weight) * coeff_repulsion)).max(-0.49);
@@ -1255,7 +1279,7 @@ mod tests {
     use super::*;
 
     
-    use rand::distributions::{Uniform};
+    use rand::distributions::Uniform;
 
     fn log_init_test() {
         let _ = env_logger::builder().is_test(true).try_init();

@@ -7,12 +7,12 @@
 
 use serde::{Serialize, Deserialize};
 
-use num_traits::{Float};
+use num_traits::Float;
 use num_traits::cast::FromPrimitive;
 
 use std::cmp::Ordering;
 
-use hnsw_rs::hnsw::{Neighbour};
+use hnsw_rs::hnsw::Neighbour;
 
 /// keep a node index compatible with NdArray
 pub type NodeIdx = usize;

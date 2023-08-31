@@ -13,9 +13,8 @@ use indexmap::IndexSet;
 use std::hash::Hash;
 use std::mem;
 
-use num_traits::int::{PrimInt};
+use num_traits::int::PrimInt;
 
-//use num_traits::cast::NumCast;
 
 
 // Our UnionFind is amix between those in petgraph and in pathfinding crates

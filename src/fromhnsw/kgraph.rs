@@ -3,13 +3,13 @@
 //! 
 //! 
 
-use anyhow::{anyhow};
+use anyhow::anyhow;
 
-use num_traits::{Float};
+use num_traits::Float;
 use num_traits::cast::FromPrimitive;
 
 // to dump to ripser
-use std::io::{Write};
+use std::io::Write;
 
 use indexmap::set::*;
 
@@ -17,15 +17,15 @@ use std::cmp::Ordering;
 
 use rand::thread_rng;
 
-use quantiles::{ckms::CKMS};     // we could use also greenwald_khanna
+use quantiles::ckms::CKMS;     // we could use also greenwald_khanna
 
 use rayon::prelude::*;
 
 use hnsw_rs::prelude::*;
-use hnsw_rs::hnsw::{DataId};
+use hnsw_rs::hnsw::DataId;
 
 use crate::tools::{dimension::*,nodeparam::*};
-use rand::distributions::{Distribution};
+use rand::distributions::Distribution;
 
 // morally F should be f32 and f64.  
 // The solution from ndArray is F : Float + AddAssign + SubAssign + MulAssign + DivAssign + RemAssign + Display + Debug + LowerExp + UpperExp + (ScalarOperand + LinalgScalar) + Send + Sync.   
@@ -569,7 +569,7 @@ use std::fs::OpenOptions;
 use std::path::Path;
 use std::io::BufWriter;
 
-use rand::distributions::{Uniform};
+use rand::distributions::Uniform;
 use rand::prelude::*;
 
 use crate::fromhnsw::hubness;

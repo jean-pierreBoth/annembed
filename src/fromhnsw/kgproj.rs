@@ -7,30 +7,30 @@
 //! so we can infer how well the smaller graph represent the whole graph.
 //! 
 
-use anyhow::{anyhow};
+use anyhow::anyhow;
 
-use num_traits::{Float};
+use num_traits::Float;
 use num_traits::cast::FromPrimitive;
 
 // to dump to ripser
-use std::fs::{OpenOptions};
-use std::path::{Path};
-use std::io::{BufWriter};
+use std::fs::OpenOptions;
+use std::path::Path;
+use std::io::BufWriter;
 
 use std::cmp::Ordering;
 use std::sync::Arc;
 
 use std::collections::HashMap;
 use indexmap::set::*;
-use quantiles::{ckms::CKMS};     // we could use also greenwald_khanna
+use quantiles::ckms::CKMS;     // we could use also greenwald_khanna
 
 
 
 use hnsw_rs::prelude::*;
-use hnsw_rs::hnsw::{DataId};
+use hnsw_rs::hnsw::DataId;
 
 use super::kgraph::*;
-use crate::tools::{nodeparam::*};
+use crate::tools::nodeparam::*;
 
 /// Construct a projection Graph from Hnsw data on layers above a given layers.  
 /// Maintain for each point in the Hnsw structure nearest point in projected structure.
@@ -401,7 +401,7 @@ mod tests {
 use super::*;
 
 
-use rand::distributions::{Uniform};
+use rand::distributions::Uniform;
 use rand::prelude::*;
 
 #[cfg(test)]
