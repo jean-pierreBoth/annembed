@@ -228,12 +228,14 @@ pub fn main() {
         // images as vectors of f32 and send to hnsw
         println!(" higgs ann construction sys time(s) {:?} cpu time {:?}", sys_start_hnsw.elapsed().unwrap().as_secs(), cpu_start_hnsw.elapsed().as_secs());
         hnsw.dump_layer_info();
-        // save hnsw to avoid reconstruction runs in 0.4 hour...on my laptop
-        // We dump in Higgs-$nb_var.hnsw.data and Higgs-$nb_var.hnsw.graph
-        let mut fname = String::from("Higgs");
-        fname.push_str("-");
-        fname.push_str(&varstring);
-        let _res = hnsw.file_dump(&fname);
+        if sampling_factor >= 1. {
+            // if we did not subsample we save hnsw to avoid reconstruction runs in 0.4 hour...on my laptop
+            // We dump in Higgs-$nb_var.hnsw.data and Higgs-$nb_var.hnsw.graph
+            let mut fname = String::from("Higgs");
+            fname.push_str("-");
+            fname.push_str(&varstring);
+            let _res = hnsw.file_dump(&fname);
+        }
     }
     //
     // now we embed

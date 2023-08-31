@@ -106,7 +106,7 @@ Sources of examples are in corresponding directory.
     In both cases we use hierarchical initialization. 
     We run 200 batches in the first pass by using layers from layer 1 (included) to the upper layer. The first batches runs thus on about 460000 nodes. Then 40 batches are done on the 11 millions points. 
      
-     Run times are in both cases around 2 hours (45' for the Hnsw construction and 75' for the entropy imterations)
+     Run times are in both cases around 2 hours (45' for the Hnsw construction and 75' for the entropy iterations)
 
     - Images for the 28 and 21 variables full data
  
@@ -115,7 +115,7 @@ Sources of examples are in corresponding directory.
 
                     21 variables case
 
-    ![higgs-21](Images/Higgs-H-B40S0.75k-gf5-5410s-compressed-i9.png.jpg "21 variables case")
+    ![higgs-21](Images/Higgs-embedded-21-H-B40S0.75k6-gf5.csv.png.jpg "21 variables case")
 
                     28 variables case
    
@@ -125,13 +125,15 @@ Sources of examples are in corresponding directory.
 
         Running with subsampling factor 0.15 on the data with 28 variables (1.65 million data points) we get in 16':
 
-        **nb neighbourhoods without a match : 869192,  mean number of neighbours conserved when match : 5.449e0**
+        *nb neighbourhoods without a match : 869192,  mean number of neighbours conserved when match : 5.449e0*
+
+        So about half of the neighbourhoods are respectind in the embedding.
+
+        *quantiles on ratio : distance in embedded space of neighbours of origin space / distance of neighbours in embedded space*
 
         half of the original neighborhoods are embedded within a factor 1.51 of the radius of neighbourhood in embedded graph 
 
-        **quantiles on ratio : distance in embedded space of neighbours of origin space / distance of neighbours in embedded space**
-
-        **quantiles at  0.25 : 1.98e-1, 0.5 :  1.51e0,  0.75 : 4.93e0 0.85 : 8.13e0, 0.95 : 1.63e1** 
+        *quantiles at  0.25 : 1.98e-1, 0.5 :  1.51e0,  0.75 : 4.93e0 0.85 : 8.13e0, 0.95 : 1.63e1*
 
                 embedding image
 
@@ -200,6 +202,10 @@ Two algorithms for range approximation used in approximated SVD are:
 
 - Umap: Uniform Manifold Approximation and Projection for Dimension Reduction.
   L.MacInnes, J.Healy and J.Melville 2018
+
+- Stochastic Cluster Embedding.
+  Zhirong Yang, Yuwei Chen, Denis Sedov, Samuel Kaski,  Jukka Corander 
+  Statistics and Computing 2023. [SCE](https://link.springer.com/article/10.1007/s11222-022-10186-z)
 
 ## License
 

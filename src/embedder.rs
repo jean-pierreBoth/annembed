@@ -457,7 +457,12 @@ where
     } // end of get_max_edge_length_embedded_kgraph
 
 
-    /// This function is an attempt to quantify the quality of the embedding using the graph projection [KGraph](crate::fromhnsw::kgraph::KGraph). 
+    /// This function is an attempt to quantify the quality of the embedding using the graph projection defined in [KGraph](crate::fromhnsw::kgraph::KGraph).  
+    ///  
+    /// The graph projection defines a natural neighborhood of a point as the set of edges around a point. The size of this neighbourhood is related to
+    /// the parameter *max_nb_connection* in Hnsw and roughly correspond to a number of neighbours between 2 and 3 times this parameter.  
+    /// Let us call the number chosen *nbng* .
+    ///   
     /// It tries to assess how neighbourhood of points in original and neighbourhood of size *nbng* in embedded space match using 
     /// the graph projection in   
     /// 
@@ -475,12 +480,15 @@ where
     ///   
     /// It gives a rough idea of the continuity of the embedding. The lesser the ratio the tighter the embedding.
     /// 
-    /// For example for the fashion mnist in the hierarchical case we get consistently
-    /// a guess at quality 
+    /// For example for the **fashion mnist** in the hierarchical case we get consistently (see examples):
+    /// 
+    /// ```text
+    ///   a guess at quality 
     ///
-    /// nb neighbourhoods without a match : 7822,  mean number of neighbours conserved when match : 5.592e0
-    /// quantiles on ratio : distance in embedded space of neighbours of origin space / distance of neighbours in embedded space
-    /// quantiles at 0.05 : 7.21e-3 , 0.25 : 5.05e-2, 0.5 :  2.18e-1, 0.75 : 6.71e-1 0.85 : 1.12e0, 0.95 : 2.42e0 
+    ///   nb neighbourhoods without a match : 7822,  mean number of neighbours conserved when match : 5.592e0.  
+    ///   quantiles on ratio : distance in embedded space of neighbours of origin space / distance of neighbours in embedded space
+    ///   quantiles at 0.05 : 7.21e-3 , 0.25 : 5.05e-2, 0.5 :  2.18e-1, 0.75 : 6.71e-1,  0.85 : 1.12e0, 0.95 : 2.42e0
+    /// ```
     /// 
     /// So 85% of neighbourhood is conserved within a radius increased by a factor 1.12.
 
