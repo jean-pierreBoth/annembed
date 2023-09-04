@@ -14,13 +14,13 @@ use rayon::iter::{ParallelIterator,IntoParallelIterator};
 
 use anyhow;
 
-use num_traits::{Float};
+use num_traits::Float;
 use num_traits::cast::FromPrimitive;
 
 use hdrhistogram::Histogram;
 use indxvec::{Vecops, Indices};
 
-use hnsw_rs::hnsw::{DataId};
+use hnsw_rs::hnsw::DataId;
 
 use super::kgraph::*;
 
@@ -69,6 +69,7 @@ impl <'a,F> Hubness<'a,F>
 
 
     /// get standardized 3 moment of occurences (See Radovanovic paper cited above)
+    /// [Hubs](https://www.jmlr.org/papers/volume11/radovanovic10a/radovanovic10a.pdf)
     pub fn get_standard3m(&self) -> f64 {
         //
         if self.counts.len() <= 1 {
@@ -123,8 +124,11 @@ impl <'a,F> Hubness<'a,F>
         let quantiles = vec![0.1, 0.25, 0.5, 0.75, 0.9 , 0.99, 0.999, 0.9999];
         let thresholds = quantiles.iter().map(|f| histo.value_at_quantile(*f)).collect::<Vec<u64>>();
         //
+        println!("\n hubness quantiles : ");
+        println!("======================");
         println!("quantiles : {:?}", quantiles);
         println!("thresholds : {:?}", thresholds);
+        println!("\n");
         //
         Ok(histo)
     }  // end of get_hubness_histogram
@@ -132,7 +136,7 @@ impl <'a,F> Hubness<'a,F>
 
 
     /// get the DataId of the nodes having first largest hubness
-    pub fn get_largest_hubs_by_dataid(self, first_asked : usize) -> Vec<(DataId, usize)> {
+    pub fn get_largest_hubs_by_dataid(&self, first_asked : usize) -> Vec<(DataId, usize)> {
         let first = first_asked.min(self.counts.len());
         //
         let mut hubs_dataid = Vec::<(DataId, usize)>::with_capacity(first);

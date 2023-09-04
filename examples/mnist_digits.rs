@@ -312,8 +312,8 @@ pub fn main() {
     //
     let hubness = hubness::Hubness::new(&kgraph);
     let s3_hubness = hubness.get_standard3m();
-    log::info!("\n graph hubness estimation : {:.3e}", s3_hubness);
-    println!("\n graph hubness estimation : {:.3e} \n", s3_hubness);
+    log::info!("\n graph hubness asymetry estimation : {:.3e}", s3_hubness);
+    println!("\n graph hubness asymetry estimation : {:.3e} \n", s3_hubness);
     let _histo = hubness.get_hubness_histogram();
     // get the DataId of the first points largest hubness in deacresing order 
     let _largest = hubness.get_largest_hubs_by_dataid(10);

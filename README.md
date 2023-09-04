@@ -127,7 +127,7 @@ Sources of examples are in corresponding directory.
 
         *nb neighbourhoods without a match : 869192,  mean number of neighbours conserved when match : 5.449e0*
 
-        So about half of the neighbourhoods are respectind in the embedding.
+        So about half of the neighbourhoods are partially respected in the embedding.
 
         *quantiles on ratio : distance in embedded space of neighbours of origin space / distance of neighbours in embedded space*
 
@@ -204,7 +204,7 @@ Two algorithms for range approximation used in approximated SVD are:
   L.MacInnes, J.Healy and J.Melville 2018
 
 - Stochastic Cluster Embedding.
-  Zhirong Yang, Yuwei Chen, Denis Sedov, Samuel Kaski,  Jukka Corander 
+  Zhirong Yang, Yuwei Chen, Denis Sedov, Samuel Kaski, Jukka Corander.   
   Statistics and Computing 2023. [SCE](https://link.springer.com/article/10.1007/s11222-022-10186-z)
 
 ## License
