@@ -51,7 +51,7 @@ path = "src/bin/annembed.rs"
 #
 
 
-clap = { version = "4.2", features = ["derive"] }
+clap = { version = "4.4", features = ["derive"] }
 
 
 # for //
@@ -72,9 +72,9 @@ blas-src = { version = "0.8", optional = true, features = ["accelerate"] }
 indexmap = {version = "1.9"}
 
 # hnsw_rs =  {git = "https://gitlab.com/jpboth/hnswlib-rs.git"}
-# hnsw_rs = {git = "https://github.com/jean-pierreBoth/hnswlib-rs"}
-hnsw_rs = {path = "../hnswlib-rs", features = ["simdeez_f"]}
-# hnsw_rs = {version = "0.1.19", features=["simdeez_f"]}
+# hnsw_rs = {git = "https://github.com/jean-pierreBoth/hnswlib-rs", features=["simdeez_f"]}
+#hnsw_rs = {path = "../hnswlib-rs", features = ["simdeez_f"]}
+hnsw_rs = {version = "0.2", features=["simdeez_f"]}
 
 # rand utilis
 rand = {version = "0.8"}

@@ -31,7 +31,7 @@ use log;
 use std::time::{Duration, SystemTime};
 use cpu_time::ProcessTime;
 
-use anyhow::{anyhow};
+use anyhow::anyhow;
 use clap::{Arg, ArgMatches, ArgAction, Command};
 
 
@@ -39,7 +39,7 @@ use clap::{Arg, ArgMatches, ArgAction, Command};
 use hnsw_rs::prelude::*;
 
 use annembed::fromhnsw::kgraph::{KGraph,kgraph_from_hnsw_all};
-use annembed::fromhnsw::kgproj::{KGraphProjection};
+use annembed::fromhnsw::kgproj::KGraphProjection;
 use annembed::prelude::*;
 
 /// Defines parameters to drive ann computations. See the crate [hnsw_rs](https://crates.io/crates/hnsw_rs)
