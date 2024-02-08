@@ -1,6 +1,6 @@
 //! Embedding from GraphK
 //! 
-//! The embedding is based on the graph (see [KGraph](crate::fromhnsw::kgraph::KGraph)) extracted from the Hnsw structure.  
+//! The embedding is based on the graph (see [KGraph]) extracted from the Hnsw structure.  
 //! Edges out a given point are given an exponential weight scaled related to the distance their neighbour.
 //! This weight is modulated locally by a scale parameter computed by the mean of the distance of a point to
 //! its nearest neighbour observed locally around each point.  
@@ -457,26 +457,28 @@ where
     } // end of get_max_edge_length_embedded_kgraph
 
 
-    /// This function is an attempt to quantify the quality of the embedding using the graph projection defined in [KGraph](crate::fromhnsw::kgraph::KGraph).  
+    /// This function is an attempt to quantify the quality of the embedding using the graph projection defined in [KGraph].  
     ///  
     /// The graph projection defines a natural neighborhood of a point as the set of edges around a point. The size of this neighbourhood is related to
     /// the parameter *max_nb_connection* in Hnsw and roughly correspond to a number of neighbours between 2 and 3 times this parameter.  
-    /// Let us call the number chosen *nbng* .
+    /// The argument *nbng* to this function should be set accordingly.
     ///   
-    /// It tries to assess how neighbourhood of points in original and neighbourhood of size *nbng* in embedded space match using 
-    /// the graph projection in   
+    /// It tries to assess how neighbourhood of points in original space and neighbourhood in embedded space match. 
+    /// The size of neighbourhood considered is *nbng*.    
     /// 
     /// In each neighbourhood of a point, taken as center in the initial space we:
     /// 
-    ///  - count the number of its neighbours for which the distance to the center is less than the radius of the neighbourhood (of size *nbng*) in embedded space 
-    /// and for neighbourhood that have a match , the mean number of matches.    
+    ///  - count the number of its neighbours for which the distance to the center is less than the radius of the neighbourhood (of size *nbng*) in embedded space. 
+    ///    For neighbourhood that have a match , we give the mean number of matches.    
     ///   This quantify the conservation of neighborhoods through the embedding. The lower the number of neighbourhoods without a match and the higher 
     ///   the mean number of matches, the better is the embedding.
     ///  
-    ///  -  compute the length of embedded edges joining original neighbours to a node.
+    ///  -  compute the length of embedded edges joining original neighbours to a node and provide quantiles summary.
     /// 
-    ///  -  compute the ratio of this distance to the radius of the ball in embedded space corresponding to nbng 'th neighbours in embedded space.  
-    /// The quantiles on ratio these distance are then dumped. The lower the median, the better is the embedding.
+    ///  -  compute the ratio of these edge length to the radius of the ball in embedded space corresponding to nbng 'th neighbours.
+    ///     (question is: how much do we need to dilate the neighborhood in embedded space to retrieve the neighbours in original space?)  
+    /// 
+    /// The quantiles on ratio these distance are then dumped. The lower the median (or the mean), the better is the embedding.
     ///   
     /// It gives a rough idea of the continuity of the embedding. The lesser the ratio the tighter the embedding.
     /// 
@@ -526,7 +528,7 @@ where
         let nb_nodes = max_edges_embedded.len(); 
         let mut nodes_match = Vec::with_capacity(nb_nodes);
         let mut first_dist = Vec::with_capacity(nb_nodes);
-
+        let mut mean_ratio = (0. , 0usize);
         for i in 0..nb_nodes {
             // check we speak of same node
             assert_eq!(i, max_edges_embedded[i].0);
@@ -541,7 +543,9 @@ where
                     nodes_match[i] += 1;          
                 }
                 ratio_dist_q.insert(neighbours[e].weight.to_f64().unwrap() / max_edges_embedded[i].1);
+                mean_ratio.0 += neighbours[e].weight.to_f64().unwrap() / max_edges_embedded[i].1;
             }
+            mean_ratio.1 += neighbours.len();
             first_dist.push(neighbours[0].weight.to_f64().unwrap());
         }
         // some stats
@@ -549,22 +553,25 @@ where
         let mean_nbmatch: f64 = nodes_match.iter().sum::<usize>() as f64 / (nodes_match.len() - nb_without_match)  as f64;
         println!("\n\n a guess at quality ");
         println!("\n nb neighbourhoods without a match : {},  mean number of neighbours conserved when match : {:.3e}", nb_without_match,  mean_nbmatch);
-        println!("\n embedded radii quantiles at 0.05 : {:.2e} , 0.25 : {:.2e}, 0.5 :  {:.2e}, 0.75 : {:.2e} 0.85 : {:.2e}, 0.95 : {:.2e} \n", 
+        println!("\n embedded radii quantiles at 0.05 : {:.2e} , 0.25 : {:.2e}, 0.5 :  {:.2e}, 0.75 : {:.2e}, 0.85 : {:.2e}, 0.95 : {:.2e} \n", 
             embedded_radii.query(0.05).unwrap().1, embedded_radii.query(0.25).unwrap().1, embedded_radii.query(0.5).unwrap().1, 
             embedded_radii.query(0.75).unwrap().1, embedded_radii.query(0.85).unwrap().1, embedded_radii.query(0.95).unwrap().1);
-        // we give quantiles on ratio : distance of neighbours in origin space / distance of last neighbour in embedded space
-        println!("\n quantiles on ratio : distance in embedded space of neighbours of origin space / distance of neighbours in embedded space");
-        println!("\n quantiles at 0.05 : {:.2e} , 0.25 : {:.2e}, 0.5 :  {:.2e}, 0.75 : {:.2e} 0.85 : {:.2e}, 0.95 : {:.2e} \n", 
-            ratio_dist_q.query(0.05).unwrap().1, ratio_dist_q.query(0.25).unwrap().1, ratio_dist_q.query(0.5).unwrap().1, 
-            ratio_dist_q.query(0.75).unwrap().1, ratio_dist_q.query(0.85).unwrap().1, ratio_dist_q.query(0.95).unwrap().1);
         //
         println!("\n quantiles on max edges in embedded space");
-        println!("\n quantiles at 0.05 : {:.2e} , 0.25 : {:.2e}, 0.5 :  {:.2e}, 0.75 : {:.2e} 0.85 : {:.2e}, 0.95 : {:.2e} \n", 
+        println!("\n quantiles at 0.05 : {:.2e} , 0.25 : {:.2e}, 0.5 :  {:.2e}, 0.75 : {:.2e}, 0.85 : {:.2e}, 0.95 : {:.2e} \n", 
             max_edges_q.query(0.05).unwrap().1, max_edges_q.query(0.25).unwrap().1, max_edges_q.query(0.5).unwrap().1, 
             max_edges_q.query(0.75).unwrap().1, max_edges_q.query(0.85).unwrap().1, max_edges_q.query(0.95).unwrap().1);        
         // The smaller the better!
-        let quality = ratio_dist_q.query(0.5).unwrap().1;
-        println!("\n quality index. neighborhood are conserved in radius multiplied by : {:.2e}", quality);
+        // we give quantiles on ratio : distance of neighbours in origin space / distance of last neighbour in embedded space
+        println!("\n statistics on conservation of neighborhood (of size nbng)");
+        println!("\n quantiles on ratio : distance in embedded space of neighbours of origin space / distance of last neighbour in embedded space");
+        println!("\n quantiles at 0.05 : {:.2e} , 0.25 : {:.2e}, 0.5 :  {:.2e}, 0.75 : {:.2e}, 0.85 : {:.2e}, 0.95 : {:.2e} \n", 
+            ratio_dist_q.query(0.05).unwrap().1, ratio_dist_q.query(0.25).unwrap().1, ratio_dist_q.query(0.5).unwrap().1, 
+            ratio_dist_q.query(0.75).unwrap().1, ratio_dist_q.query(0.85).unwrap().1, ratio_dist_q.query(0.95).unwrap().1);
+        
+        let median_ratio = ratio_dist_q.query(0.5).unwrap().1;
+        println!("\n quality index: ratio of distance to neighbours in origin space / distance to last neighbour in embedded space");
+        println!("\n neighborhood are conserved in radius multiplied by median  : {:.2e}, mean {:.2e} ", median_ratio, mean_ratio.0 / mean_ratio.1 as f64);
         //
         let mut csv_dist = Writer::from_path("first_dist.csv").unwrap();
         let _res = write_csv_labeled_array2(&mut csv_dist, first_dist.as_slice(), &self.get_embedded_reindexed());
