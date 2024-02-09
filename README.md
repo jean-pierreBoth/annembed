@@ -115,6 +115,7 @@ Sources of examples are in corresponding directory.
         Quality estimation requires data subsampling due to the size of data (see examples and results). 
         Moreover a basic exploration of the data can be found in a Notebook at [Higgs.jl](https://github.com/jean-pierreBoth/Higgs.jl) to assess the quality of the embedding via random projections.
 
+      **21 variables image:**
 
     ![higgs-21](Images/Higgs-embedded-21-H-B40S0.75k6-gf5.csv.png.jpg "21 variables image")
 
@@ -138,9 +139,11 @@ Sources of examples are in corresponding directory.
         
        *the mean ratio is : 4.36*
 
+    **28 variable subsampling 0.15:**
+
     ![higgs-28-subs0.15](Images/Higgs-embedded-28-sub0.15-28-H-B40-50S0.75k6-gf5.csv.png.jpg)
 
-      density of points obtained by transforming distance to first neighbour (See visu.jl):
+    **density of points obtained by transforming distance to first neighbour (See visu.jl):**
 
     ![higgs-28-density](Images/Higgs-28-sub0.15-28-H-B40-50S0.75k6-gf5.firstdist.png.jpg)
 
