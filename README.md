@@ -117,11 +117,11 @@ Sources of examples are in corresponding directory.
 
       **21 variables image:**
 
-    ![higgs-21](Images/Higgs-embedded-21-H-B40S0.75k6-gf5.csv.png.jpg "21 variables image")
+    ![higgs-21](Images/Higgs-embedded-21-H-B40S0.75k6-gf5.csv.png.jpg)
 
       **28 variables image:**
    
-    ![higgs-28](Images/higgs_embedded-28-H-B40-S0.75k6-gf5.csv.png.jpg "28 variables image")
+    ![higgs-28](Images/higgs_embedded-28-H-B40-S0.75k6-gf5.csv.png.jpg)
 
     - Quality estimation with a subsampling factor of 0.15
 
