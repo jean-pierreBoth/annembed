@@ -115,13 +115,12 @@ Sources of examples are in corresponding directory.
         Quality estimation requires data subsampling due to the size of data (see examples and results). 
         Moreover a basic exploration of the data can be found in a Notebook at [Higgs.jl](https://github.com/jean-pierreBoth/Higgs.jl) to assess the quality of the embedding via random projections.
 
-                    21 variables case
 
-    ![higgs-21](Images/Higgs-embedded-21-H-B40S0.75k6-gf5.csv.png.jpg "21 variables case")
+    ![higgs-21](Images/Higgs-embedded-21-H-B40S0.75k6-gf5.csv.png.jpg "21 variables image")
 
-                    28 variables case
+      **28 variables image:**
    
-    ![higgs-28](Images/higgs_embedded-28-H-B40-S0.75k6-gf5.csv.png.jpg)
+    ![higgs-28](Images/higgs_embedded-28-H-B40-S0.75k6-gf5.csv.png.jpg "28 variables image")
 
     - Quality estimation with a subsampling factor of 0.15
 
@@ -133,15 +132,15 @@ Sources of examples are in corresponding directory.
 
         *quantiles on ratio : distance in embedded space of neighbours of origin space / distance of neighbours in embedded space*
 
-        half of the original neighborhoods are embedded within a factor 1.51 of the radius of neighbourhood in embedded graph 
+        half of the original neighborhoods are embedded within a factor 1.30 of the radius of neighbourhood in embedded graph 
 
-        *quantiles at  0.25 : 1.98e-1, 0.5 :  1.51e0,  0.75 : 4.93e0 0.85 : 8.13e0, 0.95 : 1.63e1*
-
-                embedding image
+       *quantiles at 0.25 : 7.87e-2, 0.5 :  1.30e0, 0.75 : 4.75e0, 0.85 : 7.94e0, 0.95 : 1.62e1*        
+        
+       *the mean ratio is : 4.36*
 
     ![higgs-28-subs0.15](Images/Higgs-embedded-28-sub0.15-28-H-B40-50S0.75k6-gf5.csv.png.jpg)
 
-                density of points obtained by transforming distance to first neighbour (See visu.jl)
+      density of points obtained by transforming distance to first neighbour (See visu.jl):
 
     ![higgs-28-density](Images/Higgs-28-sub0.15-28-H-B40-50S0.75k6-gf5.firstdist.png.jpg)
 
