@@ -41,6 +41,7 @@ use hnsw_rs::prelude::*;
 use annembed::fromhnsw::kgraph::{KGraph,kgraph_from_hnsw_all};
 use annembed::fromhnsw::kgproj::KGraphProjection;
 use annembed::prelude::*;
+use annembed::fromhnsw::hubness::Hubness;
 
 /// Defines parameters to drive ann computations. See the crate [hnsw_rs](https://crates.io/crates/hnsw_rs)
 #[derive(Debug, Clone)]
@@ -131,6 +132,37 @@ fn get_kgraph<Dist>(data_with_id : &Vec<(&Vec<f64>, usize)>, hnswparams : &HnswP
     hnsw.parallel_insert(&data_with_id);
     hnsw.dump_layer_info();
     let kgraph = kgraph_from_hnsw_all(&hnsw, hnswparams.knbn).unwrap();
+
+    // Local Intrinsic dimension and hubness
+    // Get some statistics on induced graph. This is not related to the embedding process
+    let knbn = 25;
+    let kgraph_new : KGraph<f32>;
+    kgraph_new = kgraph_from_hnsw_all(&hnsw, knbn).unwrap();
+    log::info!("minimum number of neighbours {}", kgraph_new.get_max_nbng());
+    log::info!("dimension estimation...");
+    let sampling_size = 10000;
+    let cpu_start = ProcessTime::now();
+    let sys_now = SystemTime::now();
+    let dim_stat = kgraph_new.estimate_intrinsic_dim(sampling_size);
+    let cpu_time: Duration = cpu_start.elapsed();
+    println!("\n dimension estimation sys time(ms) : {:.3e},  cpu time(ms) {:.3e}\n", sys_now.elapsed().unwrap().as_millis(), cpu_time.as_millis());
+    if dim_stat.is_ok() {
+        let dim_stat = dim_stat.unwrap();
+        log::info!("\n dimension estimation with nbpoints : {}, dim : {:.3e}, sigma = {:.3e} \n", 
+            sampling_size, dim_stat.0, dim_stat.1);
+        println!(" dimension estimation with nbpoints : {}, dim : {:.3e}, sigma = {:.3e}", 
+            sampling_size, dim_stat.0, dim_stat.1); 
+    }
+    // hubness estimation
+    //let hubness = hubness::Hubness::new(&kgraph);
+    let hubness = Hubness::new(&kgraph_new);
+    let s3_hubness = hubness.get_standard3m();
+    log::info!("\n graph hubness estimation : {:.3e}", s3_hubness);
+    println!("\n graph hubness estimation : {:.3e} \n", s3_hubness);
+    let _histo = hubness.get_hubness_histogram();
+    //
+    let _kgraph_stats = kgraph_new.get_kraph_stats();
+
     kgraph
 }  // end of get_kgraph
 

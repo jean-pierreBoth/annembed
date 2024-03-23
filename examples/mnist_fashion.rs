@@ -149,7 +149,7 @@ use annembed::fromhnsw::kgraph::{KGraph,kgraph_from_hnsw_all};
 use annembed::fromhnsw::kgproj::KGraphProjection;
 use annembed::fromhnsw::hubness;
 
-const MNIST_FASHION_DIR : &'static str = "/home/jpboth/Data/ANN/Fashion-MNIST/";
+const MNIST_FASHION_DIR : &'static str = "/storage/home/hcoda1/4/jzhao399/scratch/mnist_fashion/";
 
 pub fn main() {
     //
