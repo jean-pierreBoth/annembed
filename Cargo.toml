@@ -1,6 +1,6 @@
 [package]
 name = "annembed"
-version = "0.1.1"
+version = "0.1.2"
 authors = ["jeanpierre.both@gmail.com"]
 repository = "https://github.com/jean-pierreBoth/annembed"
 description = "a Rust implementation of a dimension reduction à la Umap "
@@ -8,7 +8,7 @@ license = "MIT/Apache-2.0"
 readme = "README.md"
 keywords = ["algorithms", "ann", "embedding", "dimension-reduction", "umap"]
 documentation = "https://docs.rs/annembed"
-edition= "2021"
+edition = "2021"
 
 
 [profile.release]
@@ -44,7 +44,6 @@ name = "embed"
 path = "src/bin/annembed.rs"
 
 
-
 [dependencies]
 # default is version spec is ^ meaning can update up to max non null version number
 # cargo doc --no-deps avoid dependencies doc generation
@@ -56,65 +55,68 @@ clap = { version = "4.4", features = ["derive"] }
 
 # for //
 parking_lot = "0.12"
-rayon = {version = "1.8"}
-num_cpus = {version = "1.16"}
+rayon = { version = "1.8" }
+num_cpus = { version = "1.16" }
 
-cpu-time = {version = "1.0"}
+cpu-time = { version = "1.0" }
 
-ndarray = {version = "0.15", features=["rayon", "serde"]}
-ndarray-linalg = {version = "0.16",default-features = false}
-sprs = {version = "0.11"}
+ndarray = { version = "0.15", features = ["rayon", "serde"] }
+ndarray-linalg = { version = "0.16", default-features = false }
+sprs = { version = "0.11" }
 
 # for macos
 blas-src = { version = "0.8", optional = true, features = ["accelerate"] }
 
 
-indexmap = {version = "1.9"}
+indexmap = { version = "2.2" }
 
 # hnsw_rs =  {git = "https://gitlab.com/jpboth/hnswlib-rs.git"}
 # hnsw_rs = {git = "https://github.com/jean-pierreBoth/hnswlib-rs", features=["simdeez_f"]}
-#hnsw_rs = {path = "../hnswlib-rs", features = ["simdeez_f"]}
-hnsw_rs = {version = "0.2", features=["simdeez_f"]}
+hnsw_rs = { path = "../hnswlib-rs" }
+#hnsw_rs = {version = "0.2", features=["simdeez_f"]}
 
 # rand utilis
-rand = {version = "0.8"}
-rand_distr = {version = "0.4"}
-rand_xoshiro = {version = "0.6"}
-quantiles = {version = "0.7"}
+rand = { version = "0.8" }
+rand_distr = { version = "0.4" }
+rand_xoshiro = { version = "0.6" }
+quantiles = { version = "0.7" }
 
-num-traits = {version = "0.2"}
-lazy_static = { version = "1.4"}
+num-traits = { version = "0.2" }
+lazy_static = { version = "1.4" }
 
 # for hubness stats
-hdrhistogram =  {version = "7.5"}
-indxvec = {version = "1.4"}
+hdrhistogram = { version = "7.5" }
+indxvec = { version = "1.8" }
 
 # for io
-csv = {version = "1.3"}
-serde= {version = "1.0", features = ["derive"] }
-bincode = {version = "1.3"}
-byteorder = {version = "1.4"}
-bson = {version = "2.4"}
+csv = { version = "1.3" }
+serde = { version = "1.0", features = ["derive"] }
+bincode = { version = "1.3" }
+byteorder = { version = "1.4" }
+bson = { version = "2.10" }
 
 # decreasing order of log for debug build : (max_level_)trace debug info warn error off
 # decreasing order of log for release build (release_max_level_)  .. idem
 #log = { version = "0.4", features = ["max_level_debug", "release_max_level_info"] }
-log = { version = "0.4"}
-env_logger = { version = "0.11"}
+log = { version = "0.4" }
+env_logger = { version = "0.11" }
 
 # no more interaction bug with intel-mkl
-anyhow = {version = "1.0.58"}
-katexit = {version = "0.1"}
+anyhow = { version = "1.0.58" }
+katexit = { version = "0.1" }
 
 
 [features]
 
 default = []
 
-intel-mkl-static = ["ndarray/blas","ndarray-linalg/intel-mkl-static"]
+# simd choice
+stdsimd = ["hnsw_rs/stdsimd"]
+simdeez_f = ["hnsw_rs/simdeez_f"]
 
+# blas choice
+intel-mkl-static = ["ndarray/blas", "ndarray-linalg/intel-mkl-static"]
 openblas-static = ["ndarray/blas", "ndarray-linalg/openblas-static"]
-
 openblas-system = ["ndarray/blas", "ndarray-linalg/openblas-system"]
 
 # for macos

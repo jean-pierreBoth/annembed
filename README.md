@@ -36,6 +36,8 @@ The crate provides mainly in the form of a library (*See documentation of the bi
 
 ## Building
 
+### Blas choice 
+
  The crate provides 3 features to choose between openblas-static, intel-mkl-static or openblas-system as defined in the  **ndarray-linalg** crate.
 
  compile with :
@@ -48,11 +50,17 @@ The crate provides mainly in the form of a library (*See documentation of the bi
 - cargo build --release --features="openblas-system" to link with system installed openblas library.
 (In this case you must have an openblas library compiled with INTERFACE64=0, corresponding to 32bit fortran integers).
 
-Alternatively define the default in Cargo.toml.
+You can also add the feature you want in default features.
 
-- On non intel cpu you can desactivate de feature simdeez_f in hnsw.
+### simd 
 
-- Julia can be downloaded from [julia](https://julialang.org/downloads/). Packages mentionned by a **using** clause in julia sources must then be installed see [Pkg](https://docs.julialang.org/en/v1/stdlib/Pkg/#Pkg). Then in a Julia REPL, **include("annembed.jl")** give access to functions Annembed.localPersistency and Annembed.projectedPersistency.
+By default the **simdeez_f** feature is activated. On non intel cpu it is possible to replace it by the **stdsimd** feature.  Or use the  command : 
+*cargo build --release --features="openblas-system,stdsimd"*.   
+**Note this feature requires the nightly compiler** 
+## Julia
+
+Julia scripts provide graphic functions.  
+Julia can be downloaded from [julia](https://julialang.org/downloads/). Packages mentionned by a **using** clause in julia sources must then be installed see [Pkg](https://docs.julialang.org/en/v1/stdlib/Pkg/#Pkg). Then in a Julia REPL, **include("annembed.jl")** give access to functions Annembed.localPersistency and Annembed.projectedPersistency.
 Possibly you will need to run *export LD_PRELOAD=/lib/x86_64-linux-gnu/libstdc++.so.6* or equivalent to force Julia to use your C++ library, due to subtle interaction between GPU drivers and GLFW.jl [see](https://discourse.julialang.org/t/makie-glfwerror/51006).
 
 ## Results

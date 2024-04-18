@@ -5,14 +5,13 @@ use std::collections::HashMap;
 use ndarray::{Array1, Array2, Axis};
 use sprs::{CsMat, TriMatBase};
 
-use ndarray_linalg::{svddc::JobSvd, SVDDC};
+use ndarray_linalg::SVDDC;
 
-use crate::tools::{svdapprox::*,nodeparam::*};
+use crate::tools::{nodeparam::*, svdapprox::*};
 
+const FULL_MAT_REPR: usize = 5000;
 
-const FULL_MAT_REPR : usize = 5000;
-
-const FULL_SVD_SIZE_LIMIT : usize = 5000;
+const FULL_SVD_SIZE_LIMIT: usize = 5000;
 
 /// We use a normalized symetric laplacian to go to the svd.
 /// But we want the left eigenvectors of the normalized R(andom)W(alk) laplacian so we must keep track
@@ -22,23 +21,23 @@ pub(crate) struct GraphLaplacian {
     sym_laplacian: MatRepr<f32>,
     // the vector giving D of the symtrized graph
     pub(crate) degrees: Array1<f32>,
-    // 
-    _s : Option<Array1<f32>>,
     //
-    _u : Option<Array2<f32>>
+    _s: Option<Array1<f32>>,
+    //
+    _u: Option<Array2<f32>>,
 }
 
-
 impl GraphLaplacian {
-
-
     pub fn new(sym_laplacian: MatRepr<f32>, degrees: Array1<f32>) -> Self {
-        GraphLaplacian{sym_laplacian, degrees, _s : None, _u: None}
+        GraphLaplacian {
+            sym_laplacian,
+            degrees,
+            _s: None,
+            _u: None,
+        }
     } // end of new for GraphLaplacian
 
-
-
-#[inline]
+    #[inline]
     fn is_csr(&self) -> bool {
         self.sym_laplacian.is_csr()
     } // end is_csr
@@ -51,7 +50,11 @@ impl GraphLaplacian {
         //
         log::info!("GraphLaplacian doing full svd");
         let b = self.sym_laplacian.get_full_mut().unwrap();
-        log::trace!("GraphLaplacian ... size nbrow {} nbcol {} ", b.shape()[0], b.shape()[1]);
+        log::trace!(
+            "GraphLaplacian ... size nbrow {} nbcol {} ",
+            b.shape()[0],
+            b.shape()[1]
+        );
 
         let slice_for_svd_opt = b.as_slice_mut();
         if slice_for_svd_opt.is_none() {
@@ -61,7 +64,7 @@ impl GraphLaplacian {
         // use divide conquer (calls lapack gesdd), faster but could use svd (lapack gesvd)
         log::trace!("direct_svd calling svddc driver");
         let res_svd_b = b.svddc(JobSvd::Some);
-        if res_svd_b.is_err()  {
+        if res_svd_b.is_err() {
             log::info!("GraphLaplacian do_full_svd svddc failed");
             return Err(String::from("GraphLaplacian svddc failed"));
         };
@@ -72,23 +75,29 @@ impl GraphLaplacian {
         // u is (m,r) , vt must be (r, n) with m = self.data.shape()[0]  and n = self.data.shape()[1]
         let res_svd_b = res_svd_b.unwrap();
         // must truncate to asked dim
-        let s : Array1<f32> = res_svd_b.1;
+        let s: Array1<f32> = res_svd_b.1;
         //
-        Ok(SvdResult{s : Some(s), u: res_svd_b.0, vt : None})
-    }  // end of do_full_svd
-
+        Ok(SvdResult {
+            s: Some(s),
+            u: res_svd_b.0,
+            vt: None,
+        })
+    } // end of do_full_svd
 
     /// do a partial approxlated svd
-    fn do_approx_svd(&mut self, asked_dim : usize) -> Result<SvdResult<f32>, String> {
+    fn do_approx_svd(&mut self, asked_dim: usize) -> Result<SvdResult<f32>, String> {
         assert!(asked_dim >= 2);
         // get eigen values of normalized symetric lapalcian
         //
         //  switch to full or partial svd depending on csr representation and size
         // csr implies approx svd.
-        log::info!("got laplacian, going to approximated svd ... asked_dim :  {}", asked_dim);
+        log::info!(
+            "got laplacian, going to approximated svd ... asked_dim :  {}",
+            asked_dim
+        );
         let mut svdapprox = SvdApprox::new(&self.sym_laplacian);
         // TODO adjust epsil ?
-        // we need one dim more beccause we get rid of first eigen vector as in dmap, and for slowly decreasing spectrum RANK approx is 
+        // we need one dim more beccause we get rid of first eigen vector as in dmap, and for slowly decreasing spectrum RANK approx is
         // better see Halko-Tropp
         let svdmode = RangeApproxMode::RANK(RangeRank::new(20, 5));
         let svd_res = svdapprox.direct_svd(svdmode);
@@ -100,23 +109,15 @@ impl GraphLaplacian {
         return svd_res;
     } // end if do_approx_svd
 
-
-
-    pub fn do_svd(&mut self, asked_dim : usize) -> Result<SvdResult<f32>, String> {
-        if !self.is_csr() && self.get_nbrow() <= FULL_SVD_SIZE_LIMIT {  // try direct svd
+    pub fn do_svd(&mut self, asked_dim: usize) -> Result<SvdResult<f32>, String> {
+        if !self.is_csr() && self.get_nbrow() <= FULL_SVD_SIZE_LIMIT {
+            // try direct svd
             self.do_full_svd()
-        }
-        else {
+        } else {
             self.do_approx_svd(asked_dim)
         }
-     
     } // end of init_from_sv_approx
-
-
 } // end of impl GraphLaplacian
-
-
-
 
 // the function computes a symetric laplacian graph for svd with transition probabilities taken from NodeParams
 // We will then need the lower non zero eigenvalues and eigen vectors.
@@ -128,7 +129,7 @@ impl GraphLaplacian {
 //
 // See also Veerman A Primer on Laplacian Dynamics in Directed Graphs 2020 arxiv https://arxiv.org/abs/2002.02605
 
-pub(crate) fn get_laplacian(initial_space : &NodeParams) -> GraphLaplacian {
+pub(crate) fn get_laplacian(initial_space: &NodeParams) -> GraphLaplacian {
     //
     log::debug!("in get_laplacian");
     //
@@ -150,12 +151,12 @@ pub(crate) fn get_laplacian(initial_space : &NodeParams) -> GraphLaplacian {
                 transition_proba[[i, edge.node]] = edge.weight;
             } // end of for j
         } // end for i
-        log::trace!("full matrix initialized");            
+        log::trace!("full matrix initialized");
         // now we symetrize the graph by taking mean
         // The UMAP formula (p_i+p_j - p_i *p_j) implies taking the non null proba when one proba is null,
         // so UMAP initialization is more packed.
         let mut symgraph = (&transition_proba + &transition_proba.view().t()) * 0.5;
-        // now we go to the symetric laplacian D^-1/2 * G * D^-1/2 but get rid of the I - ... 
+        // now we go to the symetric laplacian D^-1/2 * G * D^-1/2 but get rid of the I - ...
         // cf Yan-Jordan Fast Approximate Spectral Clustering ACM-KDD 2009
         //  compute sum of row and renormalize. See Lafon-Keller-Coifman
         // Diffusions Maps appendix B
@@ -168,7 +169,7 @@ pub(crate) fn get_laplacian(initial_space : &NodeParams) -> GraphLaplacian {
             }
         }
         //
-        log::trace!("\n allocating full matrix laplacian");            
+        log::trace!("\n allocating full matrix laplacian");
         let laplacian = GraphLaplacian::new(MatRepr::from_array2(symgraph), diag);
         laplacian
     } else {
@@ -190,7 +191,7 @@ pub(crate) fn get_laplacian(initial_space : &NodeParams) -> GraphLaplacian {
         let mut values = Vec::<f32>::with_capacity(nbnodes * 2 * max_nbng);
 
         for ((i, j), val) in edge_list.iter() {
-            assert!(i!=j);
+            assert!(i != j);
             let sym_val;
             if let Some(t_val) = edge_list.get(&(*j, *i)) {
                 sym_val = (val + t_val) * 0.5;
@@ -216,8 +217,8 @@ pub(crate) fn get_laplacian(initial_space : &NodeParams) -> GraphLaplacian {
                 values[i] = values[i] / (diagonal[row] * diagonal[col]).sqrt();
             }
         }
-        // 
-        log::trace!("allocating csr laplacian");            
+        //
+        log::trace!("allocating csr laplacian");
         let laplacian = TriMatBase::<Vec<usize>, Vec<f32>>::from_triplets(
             (nbnodes, nbnodes),
             rows,
@@ -225,9 +226,8 @@ pub(crate) fn get_laplacian(initial_space : &NodeParams) -> GraphLaplacian {
             values,
         );
         let csr_mat: CsMat<f32> = laplacian.to_csr();
-        let laplacian = GraphLaplacian::new(MatRepr::from_csrmat(csr_mat),diagonal);
+        let laplacian = GraphLaplacian::new(MatRepr::from_csrmat(csr_mat), diagonal);
         laplacian
     } // end case CsMat
-        //
+      //
 } // end of get_laplacian
-
