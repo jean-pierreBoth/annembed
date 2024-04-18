@@ -22,7 +22,6 @@ use quantiles::ckms::CKMS;     // we could use also greenwald_khanna
 use rayon::prelude::*;
 
 use hnsw_rs::prelude::*;
-use hnsw_rs::hnsw::DataId;
 
 use crate::tools::{dimension::*,nodeparam::*};
 use rand::distributions::Distribution;
@@ -517,7 +516,7 @@ pub fn kgraph_from_hnsw_all<T, D, F>(hnsw : &Hnsw<T,D>, nbng : usize) -> std::re
                     if vec_tmp.len() == 0 {
                         let p_id = point.get_point_id();
                         log::warn!(" graph will not be connected, isolated point at layer {}  , pos in layer : {} ", p_id.0, p_id.1);
-                        node_set.remove(&index);
+                        node_set.swap_remove(&index);
                         continue;
                     }
                 } 
