@@ -552,26 +552,26 @@ where
         let nb_without_match = nodes_match.iter().fold(0, |acc, x| if *x == 0 {acc +1} else {acc});
         let mean_nbmatch: f64 = nodes_match.iter().sum::<usize>() as f64 / (nodes_match.len() - nb_without_match)  as f64;
         println!("\n\n a guess at quality ");
-        println!("\n nb neighbourhoods without a match : {},  mean number of neighbours conserved when match : {:.3e}", nb_without_match,  mean_nbmatch);
-        println!("\n embedded radii quantiles at 0.05 : {:.2e} , 0.25 : {:.2e}, 0.5 :  {:.2e}, 0.75 : {:.2e}, 0.85 : {:.2e}, 0.95 : {:.2e} \n", 
+        println!("  nb neighbourhoods without a match : {},  mean number of neighbours conserved when match : {:.3e}", nb_without_match,  mean_nbmatch);
+        println!("  embedded radii quantiles at 0.05 : {:.2e} , 0.25 : {:.2e}, 0.5 :  {:.2e}, 0.75 : {:.2e}, 0.85 : {:.2e}, 0.95 : {:.2e} \n", 
             embedded_radii.query(0.05).unwrap().1, embedded_radii.query(0.25).unwrap().1, embedded_radii.query(0.5).unwrap().1, 
             embedded_radii.query(0.75).unwrap().1, embedded_radii.query(0.85).unwrap().1, embedded_radii.query(0.95).unwrap().1);
         //
         println!("\n quantiles on max edges in embedded space");
-        println!("\n quantiles at 0.05 : {:.2e} , 0.25 : {:.2e}, 0.5 :  {:.2e}, 0.75 : {:.2e}, 0.85 : {:.2e}, 0.95 : {:.2e} \n", 
+        println!("  quantiles at 0.05 : {:.2e} , 0.25 : {:.2e}, 0.5 :  {:.2e}, 0.75 : {:.2e}, 0.85 : {:.2e}, 0.95 : {:.2e} \n", 
             max_edges_q.query(0.05).unwrap().1, max_edges_q.query(0.25).unwrap().1, max_edges_q.query(0.5).unwrap().1, 
             max_edges_q.query(0.75).unwrap().1, max_edges_q.query(0.85).unwrap().1, max_edges_q.query(0.95).unwrap().1);        
         // The smaller the better!
         // we give quantiles on ratio : distance of neighbours in origin space / distance of last neighbour in embedded space
         println!("\n statistics on conservation of neighborhood (of size nbng)");
-        println!("\n quantiles on ratio : distance in embedded space of neighbours of origin space / distance of last neighbour in embedded space");
-        println!("\n quantiles at 0.05 : {:.2e} , 0.25 : {:.2e}, 0.5 :  {:.2e}, 0.75 : {:.2e}, 0.85 : {:.2e}, 0.95 : {:.2e} \n", 
+        println!("  quantiles on ratio : distance in embedded space of neighbours of origin space / distance of last neighbour in embedded space");
+        println!("  quantiles at 0.05 : {:.2e} , 0.25 : {:.2e}, 0.5 :  {:.2e}, 0.75 : {:.2e}, 0.85 : {:.2e}, 0.95 : {:.2e} \n", 
             ratio_dist_q.query(0.05).unwrap().1, ratio_dist_q.query(0.25).unwrap().1, ratio_dist_q.query(0.5).unwrap().1, 
             ratio_dist_q.query(0.75).unwrap().1, ratio_dist_q.query(0.85).unwrap().1, ratio_dist_q.query(0.95).unwrap().1);
         
         let median_ratio = ratio_dist_q.query(0.5).unwrap().1;
         println!("\n quality index: ratio of distance to neighbours in origin space / distance to last neighbour in embedded space");
-        println!("\n neighborhood are conserved in radius multiplied by median  : {:.2e}, mean {:.2e} ", median_ratio, mean_ratio.0 / mean_ratio.1 as f64);
+        println!("  neighborhood are conserved in radius multiplied by median  : {:.2e}, mean {:.2e} ", median_ratio, mean_ratio.0 / mean_ratio.1 as f64);
         //
         let mut csv_dist = Writer::from_path("first_dist.csv").unwrap();
         let _res = write_csv_labeled_array2(&mut csv_dist, first_dist.as_slice(), &self.get_embedded_reindexed());

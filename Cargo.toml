@@ -72,8 +72,8 @@ indexmap = { version = "2.2" }
 
 # hnsw_rs =  {git = "https://gitlab.com/jpboth/hnswlib-rs.git"}
 # hnsw_rs = {git = "https://github.com/jean-pierreBoth/hnswlib-rs", features=["simdeez_f"]}
-hnsw_rs = { path = "../hnswlib-rs" }
-#hnsw_rs = {version = "0.2", features=["simdeez_f"]}
+# hnsw_rs = { path = "../hnswlib-rs" }
+hnsw_rs = { version = "0.2.1" }
 
 # rand utilis
 rand = { version = "0.8" }
@@ -86,7 +86,7 @@ lazy_static = { version = "1.4" }
 
 # for hubness stats
 hdrhistogram = { version = "7.5" }
-indxvec = { version = "1.8" }
+indxvec = { version = "1.9" }
 
 # for io
 csv = { version = "1.3" }
