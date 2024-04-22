@@ -54,7 +54,7 @@ You can also add the feature you want in default features.
 
 ### simd 
 
-By default the **simdeez_f** feature is activated. On non intel cpu it is possible to replace it by the **stdsimd** feature.  Or use the  command : 
+On Intel cpu the **simdeez_f** feature provides Simd. On non intel cpu it is possible to use the **stdsimd** feature.  Or use the  command : 
 *cargo build --release --features="openblas-system,stdsimd"*.   
 **Note this feature requires the nightly compiler** 
 ## Julia
@@ -77,7 +77,7 @@ Sources of examples are in corresponding directory.
 
     - initialized by an approximated svd.
 
-    It tooks 11s (system time) to run (cpu time 270s), of which 3s were spent in the ann construction.
+    It tooks 11s (system time) to run (cpu time 340s), of which 3s system time (100s cpu) were spent in the ann construction.
 
     ![mnist](Images/mnist_digits-B30S1b1k6f4-9s-i9-compressed.png.jpg)
 
