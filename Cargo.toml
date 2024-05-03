@@ -55,7 +55,7 @@ clap = { version = "4.4", features = ["derive"] }
 
 # for //
 parking_lot = "0.12"
-rayon = { version = "1.8" }
+rayon = { version = "1.10" }
 num_cpus = { version = "1.16" }
 
 cpu-time = { version = "1.0" }
@@ -71,10 +71,12 @@ blas-src = { version = "0.8", optional = true, features = ["accelerate"] }
 indexmap = { version = "2.2" }
 
 # hnsw_rs =  {git = "https://gitlab.com/jpboth/hnswlib-rs.git"}
-# hnsw_rs = {git = "https://github.com/jean-pierreBoth/hnswlib-rs", features=["simdeez_f"]}
+hnsw_rs = { git = "https://github.com/jean-pierreBoth/hnswlib-rs" }
 # hnsw_rs = { path = "../hnswlib-rs" }
-hnsw_rs = { version = "0.2.1" }
+#hnsw_rs = { version = "0.2.2" }
 
+anndists = { git = "https://github.com/jean-pierreBoth/anndists" }
+#anndists = { path = "../anndists" }
 # rand utilis
 rand = { version = "0.8" }
 rand_distr = { version = "0.4" }

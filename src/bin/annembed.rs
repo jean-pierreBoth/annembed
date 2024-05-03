@@ -32,7 +32,7 @@ use clap::{Arg, ArgAction, ArgMatches, Command};
 
 use hnsw_rs::prelude::*;
 
-use anndists::dist::*;
+use anndists::dist::distances::*;
 
 use annembed::fromhnsw::hubness;
 use annembed::fromhnsw::kgproj::KGraphProjection;

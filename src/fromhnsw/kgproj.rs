@@ -24,7 +24,7 @@ use indexmap::set::*;
 use quantiles::ckms::CKMS;
 use std::collections::HashMap; // we could use also greenwald_khanna
 
-use anndists::dist::*;
+use anndists::dist::distances::*;
 use hnsw_rs::prelude::*;
 
 use super::kgraph::*;

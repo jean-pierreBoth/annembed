@@ -21,7 +21,7 @@ use quantiles::ckms::CKMS;     // we could use also greenwald_khanna
 
 use rayon::prelude::*;
 
-use anndists::dist::*;
+use anndists::dist::distances::*;
 use hnsw_rs::prelude::*;
 
 use crate::tools::{dimension::*,nodeparam::*};
