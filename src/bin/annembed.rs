@@ -32,6 +32,8 @@ use clap::{Arg, ArgAction, ArgMatches, Command};
 
 use hnsw_rs::prelude::*;
 
+use anndists::dist::*;
+
 use annembed::fromhnsw::hubness;
 use annembed::fromhnsw::kgproj::KGraphProjection;
 use annembed::fromhnsw::kgraph::{kgraph_from_hnsw_all, KGraph};

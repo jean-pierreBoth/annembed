@@ -43,6 +43,7 @@ use indexmap::set::*;
 use std::time::{Duration,SystemTime};
 use cpu_time::ProcessTime;
 
+use anndists::dist::distances::*;
 use hnsw_rs::prelude::*;
 use crate::fromhnsw::{kgraph::KGraph, kgraph::kgraph_from_hnsw_all , kgproj::*};
 use crate::embedparams::*;
