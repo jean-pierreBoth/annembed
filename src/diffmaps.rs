@@ -65,7 +65,7 @@ impl DiffusionMaps {
     /// F is f32 or f64 depending on how diffusions Maps is to be computed.
     pub fn embed_hnsw<T, D, F>(&mut self, hnsw: &Hnsw<T, D>) -> Array2<F>
     where
-        D: anndists::dist::distances::Distance<T> + Send + Sync,
+        D: Distance<T> + Send + Sync,
         T: Clone + Send + Sync,
         F: Float + FromPrimitive + std::marker::Sync + Send + std::fmt::UpperExp + std::iter::Sum,
     {
