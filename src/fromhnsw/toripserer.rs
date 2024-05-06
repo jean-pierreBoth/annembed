@@ -18,7 +18,6 @@ use std::path::Path;
 
 use ndarray::Array2;
 
-use anndists::dist::distances::*;
 use hnsw_rs::prelude::*;
 //use hnsw_rs::hnsw::{DataId};
 

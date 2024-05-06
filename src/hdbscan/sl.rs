@@ -16,7 +16,6 @@ use num_traits::float::*; // tp get FRAC_1_PI from FloatConst
 use std::cmp::{Ordering, PartialEq, PartialOrd};
 use std::collections::BinaryHeap;
 
-use anndists::dist::distances::Distance;
 use hnsw_rs::prelude::*;
 
 use super::kruskal::*;

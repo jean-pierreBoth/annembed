@@ -11,7 +11,7 @@ use std::io::prelude::*;
 use std::io::BufReader;
 use std::path::PathBuf;
 
-use anndists::dist::*;
+//use anndists::dist::*;
 use hnsw_rs::prelude::*;
 
 use annembed::prelude::*;

@@ -9,8 +9,7 @@
 use num_traits::cast::FromPrimitive;
 use num_traits::Float;
 
-use anndists::dist::distances::*;
-use hnsw_rs::hnsw::*;
+use hnsw_rs::prelude::*;
 use ndarray::Array2;
 use ndarray_linalg::Scalar;
 

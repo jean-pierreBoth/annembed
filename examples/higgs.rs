@@ -17,7 +17,6 @@ use csv::Writer;
 
 use ndarray::{Array2, ArrayView};
 
-use anndists::dist::*;
 use hnsw_rs::prelude::*;
 
 use annembed::prelude::*;

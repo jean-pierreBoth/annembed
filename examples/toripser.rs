@@ -18,7 +18,7 @@ use std::path::PathBuf;
 use byteorder::{BigEndian, ReadBytesExt};
 use std::io::Cursor;
 
-use anndists::dist::*;
+//use anndists::dist::*;
 use hnsw_rs::prelude::*;
 
 // The directory where the files t10k-images-idx3-ubyte  t10k-labels-idx1-ubyte  train-images-idx3-ubyte

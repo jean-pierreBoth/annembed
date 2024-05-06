@@ -25,7 +25,7 @@ use ndarray_linalg::{Lapack, Scalar};
 
 use quantiles::ckms::CKMS;     // we could use also greenwald_khanna
 use csv::Writer;
-use crate::prelude::write_csv_labeled_array2;
+use crate::tools::io::write_csv_labeled_array2;
 
 // threading needs
 use rayon::prelude::*;
@@ -43,7 +43,6 @@ use indexmap::set::*;
 use std::time::{Duration,SystemTime};
 use cpu_time::ProcessTime;
 
-use anndists::dist::distances::*;
 use hnsw_rs::prelude::*;
 use crate::fromhnsw::{kgraph::KGraph, kgraph::kgraph_from_hnsw_all , kgproj::*};
 use crate::embedparams::*;

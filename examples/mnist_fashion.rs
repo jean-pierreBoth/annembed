@@ -17,7 +17,7 @@ use std::path::PathBuf;
 use byteorder::{BigEndian, ReadBytesExt};
 use std::io::Cursor;
 
-use anndists::dist::*;
+//use anndists::dist::*;
 use hnsw_rs::prelude::*;
 
 use annembed::prelude::*;
