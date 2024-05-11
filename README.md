@@ -54,9 +54,8 @@ You can also add the feature you want in default features.
 
 ### simd 
 
-On Intel cpu the **simdeez_f** feature provides Simd. On non intel cpu it is possible to use the **stdsimd** feature.  Or use the  command : 
-*cargo build --release --features="openblas-system,stdsimd"*.   
-**Note this feature requires the nightly compiler** 
+On Intel cpu the you can add the **simdeez_f** feature to default features, or use the command **cargo build --release --features="openblas-system,simdeez_f"**.
+On non intel cpu it is possible to use the **stdsimd** feature or  **"cargo build --release --features="openblas-system,stdsimd"**.   Note that **stdsimd** requires the nightly compiler.
 ## Julia
 
 Julia scripts provide graphic functions.  
