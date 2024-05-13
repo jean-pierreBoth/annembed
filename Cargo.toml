@@ -71,9 +71,9 @@ blas-src = { version = "0.8", optional = true, features = ["accelerate"] }
 indexmap = { version = "2.2" }
 
 # hnsw_rs =  {git = "https://gitlab.com/jpboth/hnswlib-rs.git"}
-hnsw_rs = { git = "https://github.com/jean-pierreBoth/hnswlib-rs" }
+# hnsw_rs = { git = "https://github.com/jean-pierreBoth/hnswlib-rs" }
 # hnsw_rs = { path = "../hnswlib-rs" }
-# hnsw_rs = { version = "0.3" }
+hnsw_rs = { version = "0.3" }
 
 
 # rand utilis
