@@ -9,7 +9,7 @@ use anyhow::anyhow;
 
 use std::fs::OpenOptions;
 use std::io::BufReader;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use rand::distributions::{Distribution, Uniform};
 
@@ -182,7 +182,7 @@ pub fn main() {
     let varstring: String = nb_var.to_string();
     let mut basename = String::from("Higgs-");
     basename.push_str(&varstring);
-    let mut reloader = HnswIo::new(directory, basename);
+    let mut reloader = HnswIo::new(&directory, &basename);
     let mut hnsw_opt: Option<Hnsw<f32, DistL2>> = None;
     let hnsw: Hnsw<f32, DistL2>;
     //
@@ -250,7 +250,8 @@ pub fn main() {
             let mut fname = String::from("Higgs");
             fname.push_str("-");
             fname.push_str(&varstring);
-            let _res = hnsw.file_dump(&fname);
+            let path = Path::new("./");
+            let _res = hnsw.file_dump(&path, &fname);
         }
     }
     //

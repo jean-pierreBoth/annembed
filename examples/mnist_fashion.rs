@@ -326,7 +326,13 @@ pub fn main() {
     let hubness = hubness::Hubness::new(&kgraph);
     let _histo = hubness.get_hubness_histogram();
     // get the DataId of the first points largest hubness in deacresing order
-    let _largest = hubness.get_largest_hubs_by_dataid(10);
+    let largest = hubness.get_largest_hubs_by_dataid(20);
+    // get labels of largest hubs
+    println!(" largest hubs, id, count and labels");
+    println!("   id      count    label");
+    for (id, count) in largest {
+        println!("  {:>5}    {:>5}    {:>5} ", id, count, labels[id]);
+    }
     // hubness asymetry.
     let s3_hubness = hubness.get_standard3m();
     log::info!(

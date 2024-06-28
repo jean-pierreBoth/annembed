@@ -610,7 +610,7 @@ fn test_full_hnsw() {
     println!("\n\n test_serial nb_elem {:?}", nb_elem);
     //
     let data = gen_rand_data_f32(nb_elem, dim);
-    let data_with_id = data.iter().zip(0..data.len()).collect();
+    let data_with_id = data.iter().zip(0..data.len()).collect::<Vec<(&Vec<f32>, usize)>>();
 
     let ef_c = 50;
     let max_nb_connection = 50;

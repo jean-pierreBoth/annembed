@@ -70,8 +70,9 @@ where
         &self.counts
     } // end of get_counts
 
-    /// get standardized 3 moment of occurences (See Radovanovic paper cited above)
-    /// [Hubs](https://www.jmlr.org/papers/volume11/radovanovic10a/radovanovic10a.pdf)
+    /// get standardized third moment of k-occurences (See Radovanovic paper cited above).  
+    /// Large asymetry is relared to hubness of data.  
+    /// See the paper : [Hubs](https://www.jmlr.org/papers/volume11/radovanovic10a/radovanovic10a.pdf)
     pub fn get_standard3m(&self) -> f64 {
         //
         if self.counts.len() <= 1 {
@@ -154,19 +155,7 @@ where
         let ranks = self.counts.rank(false);
         let index = ranks.invindex();
         //
-        if log::log_enabled!(log::Level::Debug) {
-            for i in 0..first {
-                let data_id = self.kgraph.get_data_id_from_idx(index[i]).unwrap();
-                log::debug!(
-                    "index : {} , rank : {}, count : {} , data_id : {:?}",
-                    i,
-                    index[i],
-                    self.counts[index[i]],
-                    data_id
-                );
-            }
-        }
-        log::info!("get_largest_hubs_by_dataid, 10 largest hubness ");
+        log::info!("get_largest_hubs_by_dataid");
         for i in 0..first {
             let data_id = self.kgraph.get_data_id_from_idx(index[i]).unwrap();
             if i <= 10 {

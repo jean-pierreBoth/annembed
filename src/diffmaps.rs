@@ -178,14 +178,12 @@ where
         let start = i * blocksize;
         let end = i * blocksize + blocksize - 1;
         let to_insert = (start..=end)
-            .into_iter()
             .map(|n| (data.row(n).to_slice().unwrap(), n))
             .collect();
         hnsw.parallel_insert_slice(&to_insert);
     }
     let start = nb_block * blocksize;
     let to_insert = (start..nb_row)
-        .into_iter()
         .map(|n| (data.row(n).to_slice().unwrap(), n))
         .collect();
     hnsw.parallel_insert_slice(&to_insert);

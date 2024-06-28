@@ -1,35 +1,39 @@
 //! To take charge of io csv bincode...
-//! 
-//! 
+//!
+//!
 //!
 
-
-use log::*;
 use anyhow::anyhow;
+use log::*;
 
 use std::fs::OpenOptions;
+use std::io::{BufRead, BufReader, Read};
 use std::path::Path;
-use std::io::{Read, BufReader, BufRead};
 
 use num_traits::Float;
 use std::str::FromStr;
-
 
 use ndarray::Array2;
 
 use csv::*;
 
-
 /// This function is mostly dedicated to write embedded data in very few dimensions
-pub fn write_csv_labeled_array2<F, T>(csv_writer : &mut Writer<std::fs::File>, labels : &[T], mat : &Array2<F>) -> std::io::Result<usize>
-            where F : Float , T : ToString {
+pub fn write_csv_labeled_array2<F, T>(
+    csv_writer: &mut Writer<std::fs::File>,
+    labels: &[T],
+    mat: &Array2<F>,
+) -> std::io::Result<usize>
+where
+    F: Float,
+    T: ToString,
+{
     //
     let (nbrow, nbcol) = mat.dim();
-    let mut line : Vec<String> = ((0..=nbcol)).into_iter().map(|_| String::from("")).collect();
+    let mut line: Vec<String> = (0..=nbcol).map(|_| String::from("")).collect();
     for i in 0..nbrow {
         line[0] = labels[i].to_string();
         for j in 0..nbcol {
-            line[1+j] = format!("{:.5e}", mat[[i,j]].to_f32().unwrap());
+            line[1 + j] = format!("{:.5e}", mat[[i, j]].to_f32().unwrap());
         }
         csv_writer.write_record(&line)?;
     }
@@ -38,16 +42,20 @@ pub fn write_csv_labeled_array2<F, T>(csv_writer : &mut Writer<std::fs::File>, l
     return Ok(1);
 } // end of dump_csv_array2
 
-
-/// This function dumps an array2 into a csf file 
-pub fn write_csv_array2<F>(csv_writer : &mut Writer<std::fs::File>, mat : &Array2<F>) -> std::io::Result<usize>
-            where F : Float {
+/// This function dumps an array2 into a csf file
+pub fn write_csv_array2<F>(
+    csv_writer: &mut Writer<std::fs::File>,
+    mat: &Array2<F>,
+) -> std::io::Result<usize>
+where
+    F: Float,
+{
     //
     let (nbrow, nbcol) = mat.dim();
-    let mut line : Vec<String> = ((0..nbcol)).into_iter().map(|_| String::from("")).collect();
+    let mut line: Vec<String> = (0..nbcol).map(|_| String::from("")).collect();
     for i in 0..nbrow {
         for j in 0..nbcol {
-            line[j] = format!("{:.5e}", mat[[i,j]].to_f32().unwrap());
+            line[j] = format!("{:.5e}", mat[[i, j]].to_f32().unwrap());
         }
         csv_writer.write_record(&line)?;
     }
@@ -56,17 +64,25 @@ pub fn write_csv_array2<F>(csv_writer : &mut Writer<std::fs::File>, mat : &Array
     return Ok(1);
 } // end of write_csv_array2
 
-
 // count number of first lines beginning with '#' or '%'
-pub(crate) fn get_header_size(filepath : &Path) -> anyhow::Result<usize> {
+pub(crate) fn get_header_size(filepath: &Path) -> anyhow::Result<usize> {
     //
     log::debug!("get_header_size");
     //
-    let fileres = OpenOptions::new().read(true).open(&filepath);
+    let fileres = OpenOptions::new().read(true).open(filepath);
     if fileres.is_err() {
-        log::error!("fn get_header_size : could not open file {:?}", filepath.as_os_str());
-        println!("fn get_header_size : could not open file {:?}", filepath.as_os_str());
-        return Err(anyhow!("fn get_header_size : could not open file {}", filepath.display()));            
+        log::error!(
+            "fn get_header_size : could not open file {:?}",
+            filepath.as_os_str()
+        );
+        println!(
+            "fn get_header_size : could not open file {:?}",
+            filepath.as_os_str()
+        );
+        return Err(anyhow!(
+            "fn get_header_size : could not open file {}",
+            filepath.display()
+        ));
     }
     let mut file = fileres?;
     let mut nb_header_lines = 0;
@@ -78,34 +94,46 @@ pub(crate) fn get_header_size(filepath : &Path) -> anyhow::Result<usize> {
             nb_header_lines += 1;
             loop {
                 file.read_exact(&mut c)?;
-                if c[0] == '\n' as u8 {
+                if c[0] == b'\n' as u8 {
                     break;
                 }
             }
-        }
-        else {
+        } else {
             more = false;
             log::debug!("file has {} nb headers lines", nb_header_lines);
         }
     }
     //
     Ok(nb_header_lines)
-}// end of get_header_size
-
+} // end of get_header_size
 
 /// get data to embed from a csv file
 /// Each line of the file must have a vector of float values with some standard csv delimiters.
 /// A header is possible with lines beginning with '#' or '%'
-pub fn get_toembed_from_csv<F> (filepath : &Path, delim : u8) -> anyhow::Result<Vec<Vec<F>>> 
-    where F : FromStr + Float {
+pub fn get_toembed_from_csv<F>(filepath: &Path, delim: u8) -> anyhow::Result<Vec<Vec<F>>>
+where
+    F: FromStr + Float,
+{
     //
     let nb_headers_line = get_header_size(&filepath)?;
-    log::info!("directed_from_csv , got header nb lines {}", nb_headers_line);
-    let fileres = OpenOptions::new().read(true).open(&filepath);
+    log::info!(
+        "directed_from_csv , got header nb lines {}",
+        nb_headers_line
+    );
+    let fileres = OpenOptions::new().read(true).open(filepath);
     if fileres.is_err() {
-        log::error!("ProcessingState reload_json : reload could not open file {:?}", filepath.as_os_str());
-        println!("directed_from_csv could not open file {:?}", filepath.as_os_str());
-        return Err(anyhow!("directed_from_csv could not open file {}", filepath.display()));            
+        log::error!(
+            "ProcessingState reload_json : reload could not open file {:?}",
+            filepath.as_os_str()
+        );
+        println!(
+            "directed_from_csv could not open file {:?}",
+            filepath.as_os_str()
+        );
+        return Err(anyhow!(
+            "directed_from_csv could not open file {}",
+            filepath.display()
+        ));
     }
     let file = fileres?;
     let mut bufreader = BufReader::new(file);
@@ -115,12 +143,16 @@ pub fn get_toembed_from_csv<F> (filepath : &Path, delim : u8) -> anyhow::Result<
         bufreader.read_line(&mut headerline)?;
     }
     //
-    let mut nb_record = 0;      // number of record loaded
-    let mut num_record : usize = 0;
+    let mut nb_record = 0; // number of record loaded
+    let mut num_record: usize = 0;
     let mut nb_fields = 0;
     let mut toembed = Vec::<Vec<F>>::new();
     //
-    let mut rdr = ReaderBuilder::new().delimiter(delim).flexible(false).has_headers(false).from_reader(bufreader);
+    let mut rdr = ReaderBuilder::new()
+        .delimiter(delim)
+        .flexible(false)
+        .has_headers(false)
+        .from_reader(bufreader);
     for result in rdr.records() {
         num_record += 1;
         let record = result?;
@@ -131,14 +163,26 @@ pub fn get_toembed_from_csv<F> (filepath : &Path, delim : u8) -> anyhow::Result<
             nb_fields = record.len();
             log::info!("nb fields = {}", nb_fields);
             if nb_fields < 2 {
-                log::error!("found only one field in record, check the delimitor , got {:?} as delimitor ", delim as char);
-                return Err(anyhow!("found only one field in record, check the delimitor , got {:?} as delimitor ", delim as char));
+                log::error!(
+                    "found only one field in record, check the delimitor , got {:?} as delimitor ",
+                    delim as char
+                );
+                return Err(anyhow!(
+                    "found only one field in record, check the delimitor , got {:?} as delimitor ",
+                    delim as char
+                ));
             }
-        }
-        else {
+        } else {
             if record.len() != nb_fields {
-                println!("non constant number of fields at record {} first record has {}",num_record,  nb_fields);
-                return Err(anyhow!("non constant number of fields at record {} first record has {}",num_record,  nb_fields));   
+                println!(
+                    "non constant number of fields at record {} first record has {}",
+                    num_record, nb_fields
+                );
+                return Err(anyhow!(
+                    "non constant number of fields at record {} first record has {}",
+                    num_record,
+                    nb_fields
+                ));
             }
             // We have a new vector with nb_fields to parse
             let mut v = Vec::<F>::with_capacity(nb_fields);
@@ -147,10 +191,19 @@ pub fn get_toembed_from_csv<F> (filepath : &Path, delim : u8) -> anyhow::Result<
                 // decode into Ix type
                 if let Ok(val) = field.parse::<F>() {
                     v.push(val);
-                }
-                else {
-                    log::error!("error decoding field {} of record  {}, field : {:?}",j, num_record, field);
-                    return Err(anyhow!("error decoding field {} of record  {}, field : {:?}",j, num_record, field)); 
+                } else {
+                    log::error!(
+                        "error decoding field {} of record  {}, field : {:?}",
+                        j,
+                        num_record,
+                        field
+                    );
+                    return Err(anyhow!(
+                        "error decoding field {} of record  {}, field : {:?}",
+                        j,
+                        num_record,
+                        field
+                    ));
                 }
             }
             toembed.push(v);
@@ -160,39 +213,32 @@ pub fn get_toembed_from_csv<F> (filepath : &Path, delim : u8) -> anyhow::Result<
     Ok(toembed)
 } // end of get_toembed_from_csv
 
-
-
 //========================================================================================
 
 #[cfg(test)]
 mod tests {
 
-//    cargo test io  -- --nocapture
-//    cargo test io::tests::testname -- --nocapture
-//    RUST_LOG=annembed::io=TRACE cargo test testname -- --nocapture
+    //    cargo test io  -- --nocapture
+    //    cargo test io::tests::testname -- --nocapture
+    //    RUST_LOG=annembed::io=TRACE cargo test testname -- --nocapture
 
+    use super::*;
 
+    fn log_init_test() {
+        let _ = env_logger::builder().is_test(true).try_init();
+    } // end of log_init_test
 
-use super::*;
+    static TESTDIR: &str = "/home/jpboth/Rust/annembed/Tmp";
 
-fn log_init_test() {
-    let _ = env_logger::builder().is_test(true).try_init();
-}  // end of log_init_test
-
-
-static TESTDIR : &str = "/home/jpboth/Rust/annembed/Tmp";
-
-#[test]
-fn load_csv() {
-    log_init_test();
-    //
-    let path = Path::new(TESTDIR).join("toembed.csv");
-    let fileres = OpenOptions::new().read(true).open(&path);
-    if fileres.is_ok() {
-        let toembed = get_toembed_from_csv::<f32>(&path, b',');
-        assert!(toembed.is_ok());        
-    }
-} // end of load_csv
-
-
+    #[test]
+    fn load_csv() {
+        log_init_test();
+        //
+        let path = Path::new(TESTDIR).join("toembed.csv");
+        let fileres = OpenOptions::new().read(true).open(&path);
+        if fileres.is_ok() {
+            let toembed = get_toembed_from_csv::<f32>(&path, b',');
+            assert!(toembed.is_ok());
+        }
+    } // end of load_csv
 } // end of mod tests

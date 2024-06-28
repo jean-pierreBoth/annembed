@@ -551,6 +551,12 @@ where
         );
     }
     //
+    log::debug!(
+        "exiting svdapprox::subspace_iteration_csr rank: {:?}, nbiter : {:?}",
+        rank,
+        nbiter
+    );
+    //
     y_m_l
 } // end of subspace_iteration_matrepr
 
@@ -861,7 +867,9 @@ where
         let q_opt = ra.get_approximator();
         if q_opt.is_some() {
             q = q_opt.unwrap();
+            log::debug!("direct_svd : get_approximator succeeded");
         } else {
+            log::debug!("direct_svd : get_approximator failed");
             return Err(String::from("range approximation failed"));
         }
         //
@@ -883,7 +891,7 @@ where
             return Err(String::from("not contiguous or not in standard order"));
         }
         // use divide conquer (calls lapack gesdd), faster but could use svd (lapack gesvd)
-        log::trace!("direct_svd calling svddc driver");
+        log::debug!("direct_svd calling svddc driver");
         let res_svd_b = F::svddc(layout, JobSvd::Some, slice_for_svd_opt.unwrap());
         if res_svd_b.is_err() {
             println!("direct_svd, svddc failed");

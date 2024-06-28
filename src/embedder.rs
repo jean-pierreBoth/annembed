@@ -136,11 +136,11 @@ where
     pub fn embed(&mut self) -> Result<usize, usize> {
         if self.kgraph.is_some() {
             log::info!("doing one step embedding");
-            return self.one_step_embed();
+            self.one_step_embed()
         }
         else {
             log::info!("doing 2 step embedding");
-            return self.h_embed();
+            self.h_embed()
         }
     } // end of embed
 
@@ -218,11 +218,11 @@ where
         match embedding_res {
             Ok(embedding) => {
                 self.embedding = Some(embedding);
-                return Ok(1);
+                Ok(1)
             }
             _ => {
                 log::error!("Embedder::embed : embedding optimization failed");
-                return Err(1);
+                Err(1)
             }        
         }
     } // end of h_embed
@@ -259,11 +259,11 @@ where
         match embedding_res {
             Ok(embedding) => {
                 self.embedding = Some(embedding);
-                return Ok(1);
+                Ok(1)
             }
             _ => {
                 log::error!("Embedder::embed : embedding optimization failed");
-                return Err(1);
+                Err(1)
             }        
         }
     } // end embed
@@ -301,7 +301,7 @@ where
                 reindexed[[*origin_id,j]] = row[j];
             }
         }
-        return reindexed;
+        reindexed
     }    
 
     /// **return the embedded vector corresponding to original data vector corresponding to data_id**
@@ -347,7 +347,7 @@ where
                 reindexed[[*origin_id,j]] = row[j];
             }
         }
-        return reindexed;
+        reindexed
     }  // end of get_initial_embedding_reindexed
 
 
@@ -416,9 +416,9 @@ where
         for i in 0..neighbours.len() {
             sorted_neighbours_info.push((i, Vec::<OutEdge<F>>::new()));
         }
-        for i in 0.. transformed_neighbours.len() {
-            let slot = transformed_neighbours[i].0;
-            sorted_neighbours_info[slot] = transformed_neighbours[i].clone();
+        for item  in &transformed_neighbours {
+            let slot = item.0;
+            sorted_neighbours_info[slot] = item.clone();
         }
         //
         return Some(sorted_neighbours_info); 
@@ -439,10 +439,10 @@ where
         let mut hnsw = Hnsw::<F, DistL2F>::new(max_nb_connection, nb_nodes, nb_layer, ef_c, DistL2F{});
         hnsw.set_keeping_pruned(true);
         // need to store arrayviews to get a sufficient lifetime to call as_slice later
-        let vectors : Vec<ArrayView1<F>> = (0..nb_nodes).into_iter().map(|i| (embedding.row(i))).collect();
+        let vectors : Vec<ArrayView1<F>> = (0..nb_nodes).map(|i| (embedding.row(i))).collect();
         let mut data_with_id = Vec::<(&[F], usize)>::with_capacity(nb_nodes);
-        for i in 0..nb_nodes {
-            data_with_id.push((vectors[i].as_slice().unwrap(), i));
+        for (i,v) in vectors.iter().enumerate().take(nb_nodes) {
+            data_with_id.push((v.as_slice().unwrap(), i));
         }
         hnsw.parallel_insert_slice(&data_with_id);
         // compute kgraph from hnsw and sum edge length 
@@ -955,15 +955,14 @@ impl <'a, F> EntropyOptim<'a,F>
                 // compute the common part of coeff as in function grad_common_coeff
                 let d_ik : f64 = y_i.iter().zip(y_k.iter()).map(|(vi,vj)| (*vi-*vj)*(*vi-*vj)).sum::<F>().to_f64().unwrap();
                 let d_ik_scaled = d_ik/(scale*scale);
-                let coeff : f64;
-                if b != 1. {
+                let coeff = if b != 1. {
                     let cauchy_weight = 1./ (1. + d_ik_scaled.powf(b));
-                    coeff = 2. * b * cauchy_weight * d_ik_scaled.powf(b - 1.)/ (scale*scale);
+                    2. * b * cauchy_weight * d_ik_scaled.powf(b - 1.)/ (scale*scale)
                 }
                 else {
                     let cauchy_weight = 1./ (1. + d_ik_scaled);
-                    coeff = 2. * b * cauchy_weight/ (scale*scale);
-                }
+                    2. * b * cauchy_weight/ (scale*scale)
+                };
                 // we know node_j is not in neighbour, we smooth repulsion for point with dist less than scale/4
                 // the part of repulsion comming from coeff is less than 1/(scale * scale)
                 // 
@@ -1019,19 +1018,19 @@ pub(crate) fn to_proba_edges<F>(kgraph : & KGraph<F>, scale_rho : f32, beta : f3
     let neighbour_hood = kgraph.get_neighbours();
     // a closure to compute scale and perplexity
     let scale_perplexity = | i : usize | ->  (usize, Option<(f32, NodeParam)>) {
-        if neighbour_hood[i].len() > 0 {
+        if !neighbour_hood.is_empty() {
             let node_param = get_scale_from_proba_normalisation(kgraph, scale_rho, beta, &neighbour_hood[i]);
             let perplexity = node_param.get_perplexity();
-            return (i, Some((perplexity, node_param)));
+            (i, Some((perplexity, node_param)))
         }
         else {
-            return (i, None);
+            (i, None)
         }
     };
     let mut opt_node_params :  Vec::<(usize,Option<(f32, NodeParam)>)> =  Vec::<(usize,Option<(f32, NodeParam)>)>::new();
-    let mut node_params : Vec<NodeParam> = (0..neighbour_hood.len()).into_iter().map(|_| NodeParam::default()).collect();
+    let mut node_params : Vec<NodeParam> = (0..neighbour_hood.len()).map(|_| NodeParam::default()).collect();
     //
-    (0..neighbour_hood.len()).into_par_iter().map(|i| scale_perplexity(i)).collect_into_vec(&mut opt_node_params);
+    (0..neighbour_hood.len()).into_par_iter().map(scale_perplexity).collect_into_vec(&mut opt_node_params);
     // now we process serial information related to opt_node_params
     let mut max_nbng = 0;
     for opt_param in &opt_node_params {
@@ -1066,7 +1065,7 @@ pub(crate) fn to_proba_edges<F>(kgraph : & KGraph<F>, scale_rho : f32, beta : f3
     println!("\n perplexity quantile at 0.05 : {:.2e} , 0.5 :  {:.2e}, 0.95 : {:.2e}, 0.99 : {:.2e}", 
     perplexity_q.query(0.05).unwrap().1, perplexity_q.query(0.5).unwrap().1, 
     perplexity_q.query(0.95).unwrap().1, perplexity_q.query(0.99).unwrap().1);
-    println!("");    
+    println!();    
     //
     NodeParams::new(node_params, max_nbng)
 }  // end of construction of node params
@@ -1087,7 +1086,7 @@ pub(crate) fn to_proba_edges<F>(kgraph : & KGraph<F>, scale_rho : f32, beta : f3
 // This function returns the local scale (i.e mean distance of a point to its nearest neighbour)
 // and vector of proba weight to nearest neighbours.
 //
-fn get_scale_from_proba_normalisation<F> (kgraph : & KGraph<F>, scale_rho : f32, beta : f32, neighbours: &Vec<OutEdge<F>>) -> NodeParam 
+fn get_scale_from_proba_normalisation<F> (kgraph : & KGraph<F>, scale_rho : f32, beta : f32, neighbours: &[OutEdge<F>]) -> NodeParam 
     where F : Float + num_traits::cast::FromPrimitive + Sync + Send + std::fmt::UpperExp + std::iter::Sum {
     //
 //        log::trace!("in get_scale_from_proba_normalisation");
@@ -1145,8 +1144,8 @@ fn get_scale_from_proba_normalisation<F> (kgraph : & KGraph<F>, scale_rho : f32,
             assert!(proba_range >= PROBA_MIN, "proba range {:.2e} too low edge proba, increase scale_rho or reduce beta", proba_range);
             //
             let sum = probas_edge.iter().map(|e| e.weight).sum::<f32>();
-            for i in 0..nbgh {
-                probas_edge[i].weight = probas_edge[i].weight / sum;
+            for p in probas_edge.iter_mut().take(nbgh) {
+                p.weight /= sum;
             }
             return NodeParam::new(scale, probas_edge);
         }
@@ -1187,7 +1186,7 @@ fn clip<F>(f : F, max : f64) -> F
     else {
         f_r
     };
-    return F::from(truncated).unwrap();
+    F::from(truncated).unwrap()
 }   // end clip
 
 
@@ -1237,7 +1236,7 @@ where F :  Float + std::iter::Sum + num_traits::cast::FromPrimitive {
 
 
 // in embedded space (in unit ball or unit box) the scale is chosen as the scale at corresponding point / divided by mean initial scales.
-fn estimate_embedded_scales_from_initial_scales(initial_scales :&Vec<f32>) -> Vec<f32> {
+fn estimate_embedded_scales_from_initial_scales(initial_scales :&[f32]) -> Vec<f32> {
     log::trace!("estimate_embedded_scale_from_initial_scales");
     let mean_scale : f32 = initial_scales.iter().sum::<f32>() / (initial_scales.len() as f32);
     let scale_sup = 4.0;  // CAVEAT seems we can go up to 4.
@@ -1271,14 +1270,14 @@ fn set_data_box<F>(data : &mut Array2<F>, box_size : f64)
     }
     for j in 0..dim  {
         for i in 0..nbdata {
-            data[[i,j]] = data[[i,j]] - means[j];
+            data[[i,j]] -= means[j];
             max_max = max_max.max(data[[i,j]].abs());          
         }
     }
     //
     max_max /= F::from(0.5 * box_size).unwrap();
     for f in data.iter_mut()  {
-        *f = (*f)/max_max;
+        *f /= max_max;
         assert!((*f).abs() <= F::one());
     }    
 }  // end of set_data_box
@@ -1321,7 +1320,7 @@ mod tests {
         let nb_elem = 500;
         let embed_dim = 20;
         let data = gen_rand_data_f32(nb_elem, embed_dim);
-        let data_with_id = data.iter().zip(0..data.len()).collect();
+        let data_with_id = data.iter().zip(0..data.len()).collect::<Vec<(&Vec<f32>,usize)>>();
         // hnsw construction
         let ef_c = 50;
         let max_nb_connection = 50;

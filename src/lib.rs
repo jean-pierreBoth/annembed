@@ -1,37 +1,26 @@
-
 // for logging (debug mostly, switched at compile time in cargo.toml)
-
-
-
 
 #[macro_use]
 extern crate lazy_static;
 
-
-
-pub mod tools;
-pub mod fromhnsw;
-pub mod hdbscan;
+pub mod diffmaps;
 pub mod embedder;
 pub mod embedparams;
+pub mod fromhnsw;
 pub mod graphlaplace;
-pub mod diffmaps;
+pub mod hdbscan;
 pub mod prelude;
-
-
+pub mod tools;
 
 lazy_static! {
-    static ref LOG: u64 = {
-        let res = init_log();
-        res
-    };
+    static ref LOG: u64 = init_log();
 }
 
 // install a logger facility
 fn init_log() -> u64 {
     let _res = env_logger::try_init();
-    println!("\n ************** initializing logger *****************\n");    
-    return 1;
+    println!("\n ************** initializing logger *****************\n");
+    1
 }
 
 #[cfg(test)]
@@ -41,4 +30,4 @@ mod tests {
     fn init_log() {
         let _res = env_logger::try_init();
     }
-}  // end of tests
+} // end of tests
