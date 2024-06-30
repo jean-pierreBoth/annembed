@@ -158,44 +158,32 @@ where
     /// a common interface to get matrix dimension. returns [nbrow, nbcolumn]
     pub fn shape(&self) -> [usize; 2] {
         match &self.data {
-            MatMode::FULL(mat) => {
-                return [mat.shape()[0], mat.shape()[1]];
-            }
-            MatMode::CSR(csmat) => {
-                return [csmat.shape().0, csmat.shape().1];
-            }
-        };
+            MatMode::FULL(mat) => [mat.shape()[0], mat.shape()[1]],
+            MatMode::CSR(csmat) => [csmat.shape().0, csmat.shape().1],
+        }
     } // end of shape
 
     /// returns true if we have a row compressed representation
     pub fn is_csr(&self) -> bool {
         match &self.data {
-            MatMode::FULL(_) => return false,
-            MatMode::CSR(_) => return true,
+            MatMode::FULL(_) => false,
+            MatMode::CSR(_) => true,
         }
     } // end of is_csr
 
     /// returns a mutable reference to full matrice if data is given as full matrix, an Error otherwise
     pub fn get_full_mut(&mut self) -> Result<&mut Array2<F>, usize> {
         match &mut self.data {
-            MatMode::FULL(mat) => {
-                return Ok(mat);
-            }
-            _ => {
-                return Err(1);
-            }
-        };
+            MatMode::FULL(mat) => Ok(mat),
+            _ => Err(1),
+        }
     } // end of get_full_mut
 
     pub fn get_csr(&self) -> Result<&CsMat<F>, usize> {
         match &self.data {
-            MatMode::CSR(mat) => {
-                return Ok(mat);
-            }
-            _ => {
-                return Err(1);
-            }
-        };
+            MatMode::CSR(mat) => Ok(mat),
+            _ => Err(1),
+        }
     } // end of get_csr
 
     /// get a reference to matrix representation
@@ -211,17 +199,15 @@ where
     /// Matrix Vector multiplication. We use raw interface to get Blas.
     pub fn mat_dot_vector(&self, vec: &ArrayView1<F>) -> Array1<F> {
         match &self.data {
-            MatMode::FULL(mat) => {
-                return mat.dot(vec);
-            }
+            MatMode::FULL(mat) => mat.dot(vec),
             MatMode::CSR(csmat) => {
                 // allocate result
                 let mut vres = Array1::<F>::zeros(csmat.rows());
                 let vec_slice = vec.as_slice().unwrap();
                 prod::mul_acc_mat_vec_csr(csmat.view(), vec_slice, vres.as_slice_mut().unwrap());
-                return vres;
+                vres
             }
-        };
+        }
     } // end of matDotVector
 
     /// just multiplication by beta in a unified way
@@ -316,13 +302,12 @@ pub struct RangePrecision {
 impl RangePrecision {
     /// epsil : precision required, step : rank increment, max_rank : max rank asked
     pub fn new(epsil: f64, step_arg: usize, max_rank: usize) -> Self {
-        let step;
-        if step_arg <= 1 {
+        let step = if step_arg <= 1 {
             log::info!("resetting step to 2, 1 is too small");
-            step = 2;
+            2
         } else {
-            step = step_arg;
-        }
+            step_arg
+        };
         RangePrecision {
             epsil,
             step,
@@ -400,10 +385,10 @@ where
             ),
             RangeApproxMode::RANK(rank) => {
                 match &self.mat.data {
-                    MatMode::FULL(array) => subspace_iteration_full(&array, rank.rank, rank.nbiter),
+                    MatMode::FULL(array) => subspace_iteration_full(array, rank.rank, rank.nbiter),
 
                     MatMode::CSR(csr_mat) => {
-                        subspace_iteration_csr(&csr_mat, rank.rank, rank.nbiter)
+                        subspace_iteration_csr(csr_mat, rank.rank, rank.nbiter)
                     }
                 } // end of match on representation
             }
@@ -471,7 +456,7 @@ where
             &mut y_n_l,
         );
         // data * y_n_l  -> (m,l)    (m,n)*(n,l) = (m,l)    y_m_l = mat.dot(&mut y_n_l)
-        ndarray::linalg::general_mat_mul(F::one(), &mat, &y_n_l, F::zero(), &mut y_m_l);
+        ndarray::linalg::general_mat_mul(F::one(), mat, &y_n_l, F::zero(), &mut y_m_l);
         // qr of y * data
         do_qr(
             MatrixLayout::C {
@@ -654,7 +639,6 @@ where
 
     // This vectors stores L2-norm of each Y  vector of which there are r
     let mut norms_y: Array1<F> = (0..r)
-        .into_iter()
         .map(|i| norm_frobenius_full(&y_vec[i].read().view()))
         .collect();
     assert_eq!(norms_y.len(), r);
@@ -675,7 +659,7 @@ where
     //
     while norm_sup_y > &stop_val && nb_iter <= max_iter && q_mat.len() < max_rank {
         // numerical stabilization
-        if q_mat.len() > 0 {
+        if !q_mat.is_empty() {
             orthogonalize_with_q(&q_mat[0..q_mat.len()], &mut y_vec[j].write().view_mut());
         }
         // get norm of current y vector
@@ -861,7 +845,10 @@ where
     /// direct svd from Algo 5.1 of Halko-Tropp
     /// Returns an error if either the preliminary range_approximation or the partial svd failed, else returns a SvdResult
     pub fn direct_svd(&mut self, parameters: RangeApproxMode) -> Result<SvdResult<F>, String> {
-        log::debug!("in SvdApprox::direct_svd");
+        log::debug!(
+            "entering in SvdApprox::direct_svd, memory  : {:?}",
+            memory_stats::memory_stats().unwrap()
+        );
         let ra = RangeApprox::new(self.data, parameters);
         let q;
         let q_opt = ra.get_approximator();
@@ -947,7 +934,7 @@ pub fn norm_frobenius_full<D: Dimension, F: Scalar>(v: &ArrayView<F, D>) -> F {
 
 /// compute Frobenius norm of a CsMat
 pub fn norm_frobenius_csmat<F: Scalar>(m: &CsMatView<F>) -> F {
-    let s: F = m.data().into_iter().map(|x| (*x) * (*x)).sum::<F>();
+    let s: F = m.data().iter().map(|x| (*x) * (*x)).sum::<F>();
     s.sqrt()
 } // end of norm_frobenius_csmat
 
@@ -1024,7 +1011,7 @@ where
         v1.assign(&v2);
     }
     // return square roor as we iterated on A*tA
-    return lambda.to_f64().unwrap().sqrt();
+    lambda.to_f64().unwrap().sqrt()
 } // end of estimate_first_singular_value_csmat
 
 /// computes in fact l2 norm of the matrix by multiplying iteratively unit vector by iteration mat*transpose(mat)
@@ -1036,12 +1023,11 @@ where
     //
     log::debug!("in estimate_first_singular_value_fullmat");
     let dims = mat.dim();
-    let a2;
-    if dims.0 <= dims.1 {
-        a2 = mat.dot(&mat.t());
+    let a2 = if dims.0 <= dims.1 {
+        mat.dot(&mat.t())
     } else {
-        a2 = mat.t().dot(mat);
-    }
+        mat.t().dot(mat)
+    };
     let dims = a2.dim();
     assert_eq!(dims.0, dims.1);
     let init = F::from_f64(1. / (dims.0 as f64).sqrt()).unwrap();
@@ -1083,7 +1069,7 @@ where
         v1 = v2;
     }
     // return square roor as we iterated on A*tA
-    return lambda.to_f64().unwrap().sqrt();
+    lambda.to_f64().unwrap().sqrt()
 } // end of estimate_first_singular_value_fullmat
 
 /// estimate the first singular_value of mat given as a MatRepr
@@ -1103,7 +1089,7 @@ where
             norm_l2
         }
         MatMode::CSR(csr_mat) => {
-            let norm_l2 = estimate_first_singular_value_csmat(&csr_mat);
+            let norm_l2 = estimate_first_singular_value_csmat(csr_mat);
             norm_l2
         }
     };
@@ -1124,8 +1110,8 @@ fn orthogonalize_with_q<F: Scalar + ndarray::ScalarOperand>(
     assert_eq!(q[nb_q - 1].len(), size_d);
     //
     let mut proj_qy = Array1::<F>::zeros(size_d);
-    for i in 0..nb_q {
-        proj_qy += &(&q[i] * q[i].dot(y));
+    for it in q {
+        proj_qy += &(it * it.dot(y));
     }
     *y -= &proj_qy;
 } // end of orthogonalize_with_Q

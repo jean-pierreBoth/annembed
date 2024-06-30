@@ -99,10 +99,10 @@ impl NodeParam {
 
 impl Default for NodeParam {
     fn default() -> Self {
-        return NodeParam {
+        NodeParam {
             scale: 0f32,
             edges: Vec::<OutEdge<f32>>::new(),
-        };
+        }
     }
 }
 //=================================================================================================================

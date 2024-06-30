@@ -39,7 +39,7 @@ where
     }
     csv_writer.flush()?;
     //
-    return Ok(1);
+    Ok(1)
 } // end of dump_csv_array2
 
 /// This function dumps an array2 into a csf file
@@ -61,7 +61,7 @@ where
     }
     csv_writer.flush()?;
     //
-    return Ok(1);
+    Ok(1)
 } // end of write_csv_array2
 
 // count number of first lines beginning with '#' or '%'
@@ -94,7 +94,7 @@ pub(crate) fn get_header_size(filepath: &Path) -> anyhow::Result<usize> {
             nb_header_lines += 1;
             loop {
                 file.read_exact(&mut c)?;
-                if c[0] == b'\n' as u8 {
+                if c[0] == b'\n' {
                     break;
                 }
             }
@@ -115,7 +115,7 @@ where
     F: FromStr + Float,
 {
     //
-    let nb_headers_line = get_header_size(&filepath)?;
+    let nb_headers_line = get_header_size(filepath)?;
     log::info!(
         "directed_from_csv , got header nb lines {}",
         nb_headers_line

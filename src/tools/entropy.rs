@@ -56,7 +56,7 @@ impl<F> DiscreteProba<F>
 where
     F: Float + AddAssign + SubAssign + MulAssign + DivAssign + std::iter::Sum,
 {
-    pub fn new(p: &Vec<F>) -> Self {
+    pub fn new(p: &[F]) -> Self {
         let mut sum = F::zero();
         let zero = F::zero();
         for x in p.iter() {
@@ -82,7 +82,7 @@ where
             .iter()
             .map(|&v| if v > zero { -v * v.ln() } else { zero })
             .sum();
-        return entropy;
+        entropy
     }
 
     /// cmpute for q!= 1.
@@ -109,7 +109,7 @@ where
                 entropy_v.push(RenyiEntropy::new(*q, entropy));
             }
         }
-        return entropy_v;
+        entropy_v
     } // end of entropy_renyi
 
     // compute relative entropy at q=1
@@ -157,9 +157,9 @@ where
     ///
     pub fn relative_renyi_entropy(&self, other: &DiscreteProba<F>, q: F) -> F {
         if near_to_1(q) {
-            return self.relative_renyi_entropy_1(other);
+            self.relative_renyi_entropy_1(other)
         } else {
-            return self.relative_renyi_entropy_q(other, q);
+            self.relative_renyi_entropy_q(other, q)
         }
     } // end of relative_entropy
 } // end impl ProbaDistribution
@@ -167,11 +167,7 @@ where
 #[inline]
 fn near_to_1<F: Float>(f: F) -> bool {
     let one = num_traits::identities::one::<F>();
-    if (f - one).abs() < Float::epsilon() {
-        true
-    } else {
-        false
-    }
+    (f - one).abs() < Float::epsilon()
 }
 
 //==================================================================================

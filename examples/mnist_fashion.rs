@@ -247,7 +247,7 @@ pub fn main() {
     let mut embedder;
     let kgraph;
     let graphprojection;
-    let hierarchical = true;
+    let hierarchical = false;
     if !hierarchical {
         let knbn = 6;
         kgraph = kgraph_from_hnsw_all(&hnsw, knbn).unwrap();

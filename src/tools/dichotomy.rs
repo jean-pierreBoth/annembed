@@ -1,10 +1,13 @@
 //! dichotomy search for monotnous function
 
-
-
-
 /// search a root for f(x) = target between lower_r and upper_r. The flag increasing specifies the variation of f. true means increasing
-pub(crate) fn dichotomy_solver<F>(increasing: bool, f: F, lower_r: f32, upper_r: f32, target: f32) -> Result<f32,f32>
+pub(crate) fn dichotomy_solver<F>(
+    increasing: bool,
+    f: F,
+    lower_r: f32,
+    upper_r: f32,
+    target: f32,
+) -> Result<f32, f32>
 where
     F: Fn(f32) -> f32,
 {
@@ -58,16 +61,13 @@ where
             return Err((target - f(middle)).abs());
         }
     } // end of while
-    return Ok(middle);
+    Ok(middle)
 }
-
 
 //======================================================================
 
-
 #[cfg(test)]
 mod tests {
-
 
     use super::*;
 
@@ -80,7 +80,6 @@ mod tests {
         assert!((beta - 2.0f32.sqrt()).abs() < 1.0E-4);
     } // test_dichotomy_inc
 
-    
     #[test]
     fn test_dichotomy_dec() {
         let f = |x: f32| 1.0f32 / (x * x);
@@ -89,5 +88,4 @@ mod tests {
         println!("beta : {}", beta);
         assert!((beta - 2.0f32.sqrt()).abs() < 1.0E-4);
     } // test_dichotomy_dec
-
 }

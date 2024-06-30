@@ -80,7 +80,7 @@ impl <F> Distance<F> for DistL2F
 pub struct Embedder<'a,F> {
     /// graph constrcuted with fromhnsw module
     kgraph: Option<&'a KGraph<F>>,
-    ///
+    /// projection
     hkgraph: Option<&'a KGraphProjection<F>>,
     /// parameters
     parameters : EmbedderParams,
@@ -421,7 +421,7 @@ where
             sorted_neighbours_info[slot] = item.clone();
         }
         //
-        return Some(sorted_neighbours_info); 
+        Some(sorted_neighbours_info)
     } // end of get_transformed_kgraph
 
 
@@ -580,7 +580,7 @@ where
         let cpu_time: Duration = cpu_start.elapsed();
         log::info!(" quality estimation,  sys time(s) {:?} cpu time {:?}", sys_now.elapsed().unwrap().as_secs(), cpu_time.as_secs());
         //
-        return Some(quality);
+        Some(quality)
     } // end of get_quality_estimate_from_edge_length
 
 
@@ -598,6 +598,7 @@ where
             .iter()
             .map(|n| n.weight.to_f32().unwrap())
             .collect::<Vec<f32>>();
+        //
         let f = |beta: f32| {
             dist.iter()
                 .map(|d| (-(d - rho_x) * beta).exp())
@@ -746,7 +747,7 @@ impl <'a, F> EntropyOptim<'a,F>
         println!("\n\n embedded scales quantiles at 0.05 : {:.2e} , 0.5 :  {:.2e}, 0.95 : {:.2e}, 0.99 : {:.2e}", 
         scales_q.query(0.05).unwrap().1, scales_q.query(0.5).unwrap().1, 
         scales_q.query(0.95).unwrap().1, scales_q.query(0.99).unwrap().1);
-        println!("");  
+        println!();  
         //
         EntropyOptim { node_params,  edges, embedded, embedded_scales, 
                             pos_edge_distribution : pos_edge_sampler,
@@ -777,7 +778,7 @@ impl <'a, F> EntropyOptim<'a,F>
                 embedding_res[[i,j]] = row[j];
             }
         }
-        return embedding_res;
+        embedding_res
     }
 
 
@@ -799,7 +800,7 @@ impl <'a, F> EntropyOptim<'a,F>
                 embedding_res[[*origin_id,j]] = row[j];
             }
         }
-        return embedding_res;
+        embedding_res
     }
 
 
@@ -865,7 +866,8 @@ impl <'a, F> EntropyOptim<'a,F>
                 term
             })
             .sum::<f64>();
-        return ce_entropy;
+        //
+        ce_entropy
     }  // end of ce_compute_threaded
 
 
@@ -912,15 +914,14 @@ impl <'a, F> EntropyOptim<'a,F>
         let d_ij : f64 = y_i.iter().zip(y_j.iter()).map(|(vi,vj)| (*vi-*vj)*(*vi-*vj)).sum::<F>().to_f64().unwrap();
         let d_ij_scaled = d_ij/(scale*scale);
         // this coeff is common for P and 1.-P part
-        let coeff : f64;
-        if b != 1. { 
+        let coeff : f64 = if b != 1. { 
             let cauchy_weight = 1./ (1. + d_ij_scaled.powf(b));
-            coeff =  2. * b * cauchy_weight * d_ij_scaled.powf(b - 1.)/ (scale*scale);
+            2. * b * cauchy_weight * d_ij_scaled.powf(b - 1.)/ (scale*scale)
         }
         else {
             let cauchy_weight = 1./ (1. + d_ij_scaled);
-            coeff =  2. * b * cauchy_weight / (scale*scale);
-        }
+            2. * b * cauchy_weight / (scale*scale)
+        };
         if d_ij_scaled > 0. {
             // repulsion annhinilate  attraction if P<= 1. / (alfa + 1). choose 0.1/ PROBA_MIN 
             let alfa = (1./ PROBA_MIN) as f64;
@@ -1095,10 +1096,12 @@ fn get_scale_from_proba_normalisation<F> (kgraph : & KGraph<F>, scale_rho : f32,
     // determnine mean distance to nearest neighbour at local scale, reason why we need kgraph as argument.
     let rho_x = neighbours[0].weight.to_f32().unwrap();
     let mut rho_y_s = Vec::<f32>::with_capacity(neighbours.len() + 1);
-    for i in 0..nbgh {
-        let y_i = neighbours[i].node; // y_i is a NodeIx = usize
+    //
+    for neighbour in neighbours {
+        let y_i = neighbour.node; // y_i is a NodeIx = usize
         rho_y_s.push(kgraph.get_neighbours()[y_i][0].weight.to_f32().unwrap());
     } // end of for i
+    //
     rho_y_s.push(rho_x);
     let mean_rho = rho_y_s.iter().sum::<f32>() / (rho_y_s.len() as f32);
     // we set scale so that transition proba do not vary more than PROBA_MIN between first and last neighbour
@@ -1159,7 +1162,7 @@ fn get_scale_from_proba_normalisation<F> (kgraph : & KGraph<F>, scale_rho : f32,
             .iter()
             .map(|n| OutEdge::<f32>::new(n.node, 1.0 / nbgh as f32))
             .collect::<Vec<OutEdge<f32>>>();
-        return NodeParam::new(scale, probas_edge);
+        NodeParam::new(scale, probas_edge)
     }
     else {
         log::error!("fatal error in get_scale_from_proba_normalisation, should not happen!");
@@ -1217,7 +1220,7 @@ where
     }
     assert!(weight_f < F::one());
     assert!(weight_f.is_normal());      
-    return weight_f;
+    weight_f
 } // end of cauchy_edge_weight
 
 
@@ -1245,8 +1248,8 @@ fn estimate_embedded_scales_from_initial_scales(initial_scales :&[f32]) -> Vec<f
     // We want embedded scae impact between 0.5 and 2 (amplitude 4) , we take into account the square in cauchy weight
     let embedded_scale : Vec<f32> = initial_scales.iter().map(|&x| width * (x/mean_scale).min(scale_sup).max(scale_inf)).collect();
     //
-    for i in 0..embedded_scale.len() {
-        log::trace!("embedded scale for node {} : {:.2e}", i , embedded_scale[i]);
+    for (i,scale)  in embedded_scale.iter().enumerate() {
+        log::trace!("embedded scale for node {} : {:.2e}", i , scale);
     }
     //
     embedded_scale

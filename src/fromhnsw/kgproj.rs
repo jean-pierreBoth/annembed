@@ -106,8 +106,8 @@ where
         // We want to construct an indexation of nodes valid for the whole graph and for the upper layers.
         // So we begin indexation from upper layers
         for l in (layer..=max_level_observed).rev() {
-            let mut layer_iter = hnsw.get_point_indexation().get_layer_iterator(l);
-            while let Some(point) = layer_iter.next() {
+            let layer_iter = hnsw.get_point_indexation().get_layer_iterator(l);
+            for point in layer_iter {
                 let (_, _) = index_set.insert_full(point.get_origin_id());
             }
         }
@@ -122,9 +122,9 @@ where
         }
         // now we have the whole indexation, we construct upper(less populated) graph
         for l in (layer..=max_level_observed).rev() {
-            let mut layer_iter = hnsw.get_point_indexation().get_layer_iterator(l);
+            let layer_iter = hnsw.get_point_indexation().get_layer_iterator(l);
             //
-            while let Some(point) = layer_iter.next() {
+            for point in layer_iter {
                 // now point is an Arc<Point<F>>
                 // point_id , we must reindex point_id for ProjectedDistances structure
                 let origin_id = point.get_origin_id();
@@ -156,7 +156,7 @@ where
                     nb_point_below_nbng += 1;
                     mean_deficient_neighbour_size += vec_tmp.len();
                     log::trace!("neighbours must have {} neighbours, got only {}. layer {}  , pos in layer : {}", nbng, vec_tmp.len(),  p_id.0, p_id.1);
-                    if vec_tmp.len() == 0 {
+                    if vec_tmp.is_empty() {
                         let p_id = point.get_point_id();
                         log::warn!(" graph will not be connected, isolated point at layer {}  , pos in layer : {} ", p_id.0, p_id.1);
                         continue;
@@ -241,8 +241,8 @@ where
         // define projection by identity on upper layers
         for l in layer..=max_level_observed {
             log::trace!("scanning projections of layer {}", l);
-            let mut layer_iter = hnsw.get_point_indexation().get_layer_iterator(l);
-            while let Some(point) = layer_iter.next() {
+            let layer_iter = hnsw.get_point_indexation().get_layer_iterator(l);
+            for point in layer_iter {
                 let index = upper_index_set
                     .get_index_of(&point.get_origin_id())
                     .unwrap();
@@ -279,22 +279,22 @@ where
         }
         nb_point_below_nbng = 0;
         for l in 0..=max_level_observed {
-            let mut layer_iter = hnsw.get_point_indexation().get_layer_iterator(l);
+            let layer_iter = hnsw.get_point_indexation().get_layer_iterator(l);
             //
-            while let Some(point) = layer_iter.next() {
+            for point in layer_iter {
                 let origin_id = point.get_origin_id();
                 let index = index_set.get_index_of(&origin_id).unwrap();
                 let neighbours_hnsw = point.get_neighborhood_id();
                 // get neighbours of point in the same layer  possibly use a BinaryHeap?
                 let mut vec_tmp = Vec::<OutEdge<F>>::with_capacity(max_nb_conn);
-                for m in 0..layer {
-                    for j in 0..neighbours_hnsw[m].len() {
-                        let n_origin_id = neighbours_hnsw[m][j].get_origin_id();
+                for item in neighbours_hnsw.iter().take(layer) {
+                    for j in 0..item.len() {
+                        let n_origin_id = item[j].get_origin_id();
                         // points are already indexed , or panic!
                         let neighbour_idx = index_set.get_index_of(&n_origin_id).unwrap();
                         vec_tmp.push(OutEdge::<F> {
                             node: neighbour_idx,
-                            weight: F::from_f32(neighbours_hnsw[m][j].distance).unwrap(),
+                            weight: F::from_f32(item[j].distance).unwrap(),
                         });
                     } // end of for j
                 } // end of for m
@@ -304,7 +304,7 @@ where
                     mean_deficient_neighbour_size += vec_tmp.len();
                     let p_id = point.get_point_id();
                     log::trace!("neighbours must have {} neighbours, got only {}. layer {}  , pos in layer : {}", nbng, vec_tmp.len(),  p_id.0, p_id.1);
-                    if vec_tmp.len() == 0 {
+                    if vec_tmp.is_empty() {
                         log::warn!(" graph will not be connected, isolated point at layer {}  , pos in layer : {} ", p_id.0, p_id.1);
                         continue;
                     }
@@ -348,13 +348,13 @@ where
     /// returns the edge defining distance to nearest element in projected (small) graph.  
     /// The argument is a NodeIdx
     pub fn get_projection_by_nodeidx(&self, nodeidx: &NodeIdx) -> OutEdge<F> {
-        *(self.proj_data.get(&nodeidx).unwrap())
+        *(self.proj_data.get(nodeidx).unwrap())
     } // end of get_distance_to_projection
 
     /// returns the distance to nearest element in projected (small) graph
     /// The argument is a DataId
     pub fn get_distance_to_projection_by_dataid(&self, data_id: &DataId) -> F {
-        let edge = self.proj_data.get(&data_id).unwrap();
+        let edge = self.proj_data.get(data_id).unwrap();
         self.proj_data.get(&edge.node).unwrap().weight
     } // end of get_distance_to_projection
 
@@ -387,18 +387,18 @@ where
             .create(true)
             .truncate(true)
             .open(path);
-        let file;
-        if fileres.is_ok() {
-            file = fileres.unwrap();
+        //
+        let file = if fileres.is_ok() {
+            fileres.unwrap()
         } else {
             return Err(anyhow!("could not open file : {}", path.display()));
-        }
+        };
         //
         let mut bufwriter = BufWriter::new(file);
         let res = self.small_graph.to_ripser_sparse_dist(&mut bufwriter);
         // TODO must launch ripser either with crate run_script or by making ripser a library using cxx. or Ripserer.jl
         //
-        return res;
+        res
     } // end of compute_approximated_barcodes
 } // end of impl block
 
@@ -416,25 +416,25 @@ where
     //
     let neighbours_hnsw = point.get_neighborhood_id();
     // search a neighbour with a projection
-    for l in 0..=layer {
-        let nbng_l = neighbours_hnsw[l].len();
+    for neighbour in neighbours_hnsw.iter().take(layer + 1) {
+        let nbng_l = neighbour.len();
         for j in 0..nbng_l {
-            let n_origin_id = neighbours_hnsw[l][j].get_origin_id();
+            let n_origin_id = neighbour[j].get_origin_id();
             // has this point a projection ?
             let neighbour_idx = index_set.get_index_of(&n_origin_id).unwrap();
             if let Some(proj) = proj_data.get(&neighbour_idx) {
-                return Some(proj.clone());
+                return Some(*proj);
             }
         }
     }
-    return None;
+    None
 } // end of get_approximate_projection
 
 // hack to approximate projections for problem points. We take the projection of neighbour
 fn fix_points_with_no_projection<T, F>(
     proj_data: &mut HashMap<NodeIdx, OutEdge<F>>,
     index_set: &IndexSet<DataId>,
-    points: &Vec<Arc<Point<T>>>,
+    points: &[Arc<Point<T>>],
     layer: usize,
 ) -> usize
 where

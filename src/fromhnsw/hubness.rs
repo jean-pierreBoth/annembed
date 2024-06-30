@@ -55,12 +55,12 @@ where
             .for_each(|n| scan_node(n, &counts_atom));
         //
         let mut counts = Vec::<u32>::with_capacity(nb_nodes);
-        for i in 0..nb_nodes {
-            counts.push(counts_atom[i].load(Ordering::Relaxed));
+        for atom in &counts_atom {
+            counts.push(atom.load(Ordering::Relaxed));
         }
         //
         Hubness {
-            kgraph: &kgraph,
+            kgraph: kgraph,
             counts: counts,
         }
     } // end of new
@@ -86,14 +86,13 @@ where
         let mut incr;
         for x in &self.counts {
             incr = (f64::from(*x) - mu) * (f64::from(*x) - mu);
-            sum2 = sum2 + incr;
-            sum3 = sum3 + incr * (f64::from(*x) - mu);
+            sum2 += incr;
+            sum3 += incr * (f64::from(*x) - mu);
         }
         sum3 /= self.counts.len() as f64;
         let sigma = (sum2 / (self.counts.len() - 1) as f64).sqrt();
-        let s3m = sum3 / sigma.powi(3);
         //
-        return s3m;
+        sum3 / sigma.powi(3)
     } // end of get_standard3m
 
     /// get an histogram of hubness counts and prints histogram summary
@@ -156,18 +155,18 @@ where
         let index = ranks.invindex();
         //
         log::info!("get_largest_hubs_by_dataid");
-        for i in 0..first {
-            let data_id = self.kgraph.get_data_id_from_idx(index[i]).unwrap();
+        for (i, index) in index.iter().enumerate().take(first) {
+            let data_id = self.kgraph.get_data_id_from_idx(*index).unwrap();
             if i <= 10 {
                 log::info!(
                     "index : {} , rank : {}, count : {} , data_id : {:?}",
                     i,
-                    index[i],
-                    self.counts[index[i]],
+                    index,
+                    self.counts[*index],
                     data_id
                 );
             }
-            hubs_dataid.push((*data_id, self.counts[index[i]] as usize));
+            hubs_dataid.push((*data_id, self.counts[*index] as usize));
         }
         //
         hubs_dataid
