@@ -49,6 +49,7 @@ impl GraphLaplacian {
     fn do_full_svd(&mut self) -> Result<SvdResult<f32>, String> {
         //
         log::info!("GraphLaplacian doing full svd");
+        log::debug!("memory  : {:?}", memory_stats::memory_stats().unwrap());
         let b = self.sym_laplacian.get_full_mut().unwrap();
         log::trace!(
             "GraphLaplacian ... size nbrow {} nbcol {} ",
@@ -106,7 +107,7 @@ impl GraphLaplacian {
             println!("svd approximation failed");
             std::panic!();
         }
-        return svd_res;
+        svd_res
     } // end if do_approx_svd
 
     pub fn do_svd(&mut self, asked_dim: usize) -> Result<SvdResult<f32>, String> {

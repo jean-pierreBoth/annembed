@@ -115,8 +115,8 @@ where
         let mut upper_index_set = index_set.clone();
         // we now continue to have the whole indexation
         for l in (0..layer).rev() {
-            let mut layer_iter = hnsw.get_point_indexation().get_layer_iterator(l);
-            while let Some(point) = layer_iter.next() {
+            let layer_iter = hnsw.get_point_indexation().get_layer_iterator(l);
+            for point in layer_iter {
                 let (_, _) = index_set.insert_full(point.get_origin_id());
             }
         }
@@ -131,20 +131,20 @@ where
                 let p_id = point.get_point_id();
                 // remap _point_id
                 let (index, newindex) = upper_index_set.insert_full(origin_id);
-                assert_eq!(newindex, false);
+                assert!(!newindex);
                 let neighbours_hnsw = point.get_neighborhood_id();
                 // get neighbours of point in the same layer
                 let mut vec_tmp = Vec::<OutEdge<F>>::with_capacity(max_nb_conn);
                 for m in layer..=max_level_observed {
-                    for j in 0..neighbours_hnsw[m].len() {
-                        let n_origin_id = neighbours_hnsw[m][j].get_origin_id();
-                        let n_p_id = neighbours_hnsw[m][j].p_id;
+                    for neighbour in &neighbours_hnsw[m] {
+                        let n_origin_id = neighbour.get_origin_id();
+                        let n_p_id = neighbour.p_id;
                         if n_p_id.0 as usize >= layer {
                             // get index of !!! (and not get) IndexMap interface is error prone
                             let neighbour_idx = upper_index_set.get_index_of(&n_origin_id).unwrap();
                             vec_tmp.push(OutEdge::<F> {
                                 node: neighbour_idx,
-                                weight: F::from_f32(neighbours_hnsw[m][j].distance).unwrap(),
+                                weight: F::from_f32(neighbour.distance).unwrap(),
                             });
                         }
                     } // end of for j
@@ -182,8 +182,8 @@ where
         let mut points_with_no_projection = Vec::<Arc<Point<T>>>::new();
         for l in 0..layer {
             log::trace!("scanning projections of layer {}", l);
-            let mut layer_iter = hnsw.get_point_indexation().get_layer_iterator(l);
-            while let Some(point) = layer_iter.next() {
+            let layer_iter = hnsw.get_point_indexation().get_layer_iterator(l);
+            for point in layer_iter {
                 // we do as in KGraph.init_from_hnsw_layer
                 let neighbours_hnsw = point.get_neighborhood_id();
                 let best_distance = F::infinity();
@@ -287,14 +287,14 @@ where
                 let neighbours_hnsw = point.get_neighborhood_id();
                 // get neighbours of point in the same layer  possibly use a BinaryHeap?
                 let mut vec_tmp = Vec::<OutEdge<F>>::with_capacity(max_nb_conn);
-                for item in neighbours_hnsw.iter().take(layer) {
-                    for j in 0..item.len() {
-                        let n_origin_id = item[j].get_origin_id();
+                for neighbours in neighbours_hnsw.iter().take(layer) {
+                    for n in neighbours {
+                        let n_origin_id = n.get_origin_id();
                         // points are already indexed , or panic!
                         let neighbour_idx = index_set.get_index_of(&n_origin_id).unwrap();
                         vec_tmp.push(OutEdge::<F> {
                             node: neighbour_idx,
-                            weight: F::from_f32(item[j].distance).unwrap(),
+                            weight: F::from_f32(n.distance).unwrap(),
                         });
                     } // end of for j
                 } // end of for m
@@ -335,7 +335,7 @@ where
         KGraphProjection {
             layer,
             small_graph: upper_graph,
-            proj_data: proj_data,
+            proj_data,
             large_graph: whole_graph,
         }
     } // end of new
@@ -417,9 +417,8 @@ where
     let neighbours_hnsw = point.get_neighborhood_id();
     // search a neighbour with a projection
     for neighbour in neighbours_hnsw.iter().take(layer + 1) {
-        let nbng_l = neighbour.len();
-        for j in 0..nbng_l {
-            let n_origin_id = neighbour[j].get_origin_id();
+        for n in neighbour {
+            let n_origin_id = n.get_origin_id();
             // has this point a projection ?
             let neighbour_idx = index_set.get_index_of(&n_origin_id).unwrap();
             if let Some(proj) = proj_data.get(&neighbour_idx) {

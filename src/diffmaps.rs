@@ -39,7 +39,7 @@ impl DiffusionParams {
     }
     ///
     pub fn get_embedding_dimension(&self) -> usize {
-        return self.asked_dim;
+        self.asked_dim
     }
 } // end of DiffusionParams
 
@@ -147,7 +147,7 @@ where
         }
     }
     log::trace!("ended get_dmap_initial_embedding");
-    return embedded;
+    embedded
 } // end of get_dmap_initial_embedding
 
 //======================================================================================================================

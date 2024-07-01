@@ -407,7 +407,7 @@ where
                 }
                 // sort transformed_neighborhood
                 transformed_neighborhood.sort_unstable_by(|a,b|  a.weight.partial_cmp(&b.weight).unwrap());
-                return (n, transformed_neighborhood);
+                (n, transformed_neighborhood)
             }
             ).collect();
         // We need to ensure that parallel iter did not permute data. 
@@ -538,12 +538,12 @@ where
             max_edges_q.insert(max_edges_embedded[i].1);
             // how many transformed edges are in maximal neighborhood of size nbng?
             let neighbours = &transformed_kgraph[i].1;
-            for e in 0..neighbours.len() {
-                if neighbours[e].weight.to_f64().unwrap() <= max_edges_embedded[i].1 {
+            for e in neighbours {
+                if e.weight.to_f64().unwrap() <= max_edges_embedded[i].1 {
                     nodes_match[i] += 1;          
                 }
-                ratio_dist_q.insert(neighbours[e].weight.to_f64().unwrap() / max_edges_embedded[i].1);
-                mean_ratio.0 += neighbours[e].weight.to_f64().unwrap() / max_edges_embedded[i].1;
+                ratio_dist_q.insert(e.weight.to_f64().unwrap() / max_edges_embedded[i].1);
+                mean_ratio.0 += e.weight.to_f64().unwrap() / max_edges_embedded[i].1;
             }
             mean_ratio.1 += neighbours.len();
             first_dist.push(neighbours[0].weight.to_f64().unwrap());
@@ -576,7 +576,7 @@ where
         let mut csv_dist = Writer::from_path("first_dist.csv").unwrap();
         let _res = write_csv_labeled_array2(&mut csv_dist, first_dist.as_slice(), &self.get_embedded_reindexed());
         csv_dist.flush().unwrap();
-        ///
+        //
         let cpu_time: Duration = cpu_start.elapsed();
         log::info!(" quality estimation,  sys time(s) {:?} cpu time {:?}", sys_now.elapsed().unwrap().as_secs(), cpu_time.as_secs());
         //
@@ -590,7 +590,7 @@ where
     // We return beta/local_scale
     // as function is monotonic with respect to scale, we use dichotomy.
     #[allow(unused)]
-    fn get_scale_from_umap(&self, norm: f64, neighbours: &Vec<OutEdge<F>>) -> (f32, Vec<f32>) {
+    fn get_scale_from_umap(&self, norm: f64, neighbours: &[OutEdge<F>]) -> (f32, Vec<f32>) {
         // p_i = exp[- beta * (d(x,y_i)/ local_scale) ]
         let nbgh = neighbours.len();
         let rho_x = neighbours[0].weight.to_f32().unwrap();
@@ -608,8 +608,8 @@ where
         // TODO we could also normalize as usual?
         let beta = dichotomy_solver(false, f, 0f32, f32::MAX, norm as f32).unwrap();
         // reuse rho_y_s to return proba of edge
-        for i in 0..nbgh {
-            dist[i] = (-(dist[i] - rho_x) * beta).exp();
+        for d in dist.iter_mut() {
+            *d = (-(*d - rho_x) * beta).exp();
         }
         // in this state neither sum of proba adds up to 1 neither is any entropy (Shannon or Renyi) normailed.
         (1. / beta, dist)
@@ -751,7 +751,7 @@ impl <'a, F> EntropyOptim<'a,F>
         //
         EntropyOptim { node_params,  edges, embedded, embedded_scales, 
                             pos_edge_distribution : pos_edge_sampler,
-                            params : params}
+                            params}
         // construct field embedded
     }  // end of new 
 

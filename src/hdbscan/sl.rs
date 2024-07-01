@@ -100,7 +100,7 @@ impl<F: Float + PartialOrd> PartialOrd for Edge<F> {
 
 impl<F: Float + PartialOrd> Ord for Edge<F> {
     fn cmp(&self, other: &Self) -> Ordering {
-        compare_edge(&self, &other)
+        compare_edge(self, other)
     }
 }
 
@@ -115,7 +115,7 @@ pub struct SLclustering<NodeIdx: PrimInt, F: Float> {
     nbcluster: usize,
 } // end of  SLclustering
 
-impl<'a, NodeIdx: PrimInt, F> SLclustering<NodeIdx, F>
+impl<NodeIdx: PrimInt, F> SLclustering<NodeIdx, F>
 where
     F: PartialOrd
         + FromPrimitive
@@ -154,9 +154,9 @@ where
         let nbnodes = neighboourhood_info.len();
         let max_nbng = self.kgraph.get_max_nbng();
         let mut edge_list = Vec::<(u32, u32, F)>::with_capacity(max_nbng * nbnodes);
-        for i in 0..nbnodes {
-            for edge in &neighboourhood_info[i] {
-                edge_list.push((i as u32, edge.node as u32, edge.weight));
+        for (n, edge_vec) in neighboourhood_info.iter().enumerate() {
+            for edge in edge_vec.iter() {
+                edge_list.push((n as u32, edge.node as u32, edge.weight));
             }
         }
         let mst_edge_iter = kruskal(&edge_list);

@@ -37,7 +37,7 @@ where
     D: Distance<T> + Send + Sync,
 {
     pub fn new(hnsw: &'a Hnsw<'b, T, D>) -> Self {
-        ToRipserer { hnsw: hnsw }
+        ToRipserer { hnsw }
     }
 
     /// extract *knbn* neighbours around *center* and dump lower triangulal distance matrix
@@ -46,7 +46,7 @@ where
     /// and H0,H1 and H2 in 55s. With 2000 points we get H0 and H1 in 22s
     pub fn extract_neighbourhood(
         &self,
-        center: &Vec<T>,
+        center: &[T],
         knbn: usize,
         ef_c: usize,
         outbson: &String,
@@ -54,7 +54,7 @@ where
         // search neighbours
         let point_indexation = self.hnsw.get_point_indexation();
         log::debug!("extract_neighbourhood asking for {} points", knbn);
-        let neighbour_0 = self.hnsw.search(&center, knbn, ef_c);
+        let neighbour_0 = self.hnsw.search(center, knbn, ef_c);
         let nb_points = neighbour_0.len();
         log::debug!("got nb neighbours : {}", nb_points);
         let mut dist_mat = Array2::zeros((nb_points, nb_points));
@@ -88,20 +88,23 @@ where
         );
         let serializer = bson::Serializer::new();
         let res = serde::ser::Serialize::serialize::<bson::Serializer>(&v, serializer);
-        if !res.is_ok() {
+        if res.is_err() {
             log::error!("serialization of distance matrix failed");
             return Err(anyhow!("serialization of distance matrix failed"));
         }
         let bson_v = res.unwrap();
         let path = Path::new(outbson);
-        let fileres = OpenOptions::new().write(true).create(true).open(path);
-        let file;
-        if fileres.is_ok() {
-            file = fileres.unwrap();
+        let fileres = OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .open(path);
+        let file = if let Ok(file) = fileres {
+            file
         } else {
             log::error!("could not open file : {}", path.display());
             return Err(anyhow!("could not open file : {}", path.display()));
-        }
+        };
         let mut doc = bson::Document::new();
         doc.insert("limat", bson_v);
         let bufwriter = BufWriter::new(file);
@@ -111,7 +114,7 @@ where
             return Err(anyhow!("dump of bson failed: {}", res.err().unwrap()));
         }
         //
-        return Ok(());
+        Ok(())
     } // end of extract_neighbourhood
 
     /// A KGraphProjection is constructed from layers above (and including) argument *layer* from the hnsw structure.
@@ -134,7 +137,7 @@ where
         fname: &String,
     ) -> Result<(), anyhow::Error> {
         // construct a graph projection from layer
-        let graph_projection = KGraphProjection::<f32>::new(&self.hnsw, knbn, layer);
+        let graph_projection = KGraphProjection::<f32>::new(self.hnsw, knbn, layer);
         let quant = graph_projection.get_projection_distance_quant();
         if quant.count() > 0 {
             println!("\n\n projection distance from lower layers to upper layers");
@@ -156,6 +159,6 @@ where
             ));
         }
         //
-        return Ok(());
+        Ok(())
     } // end of extract_projection_to_ripserer
 } // end of impl ToRipserer

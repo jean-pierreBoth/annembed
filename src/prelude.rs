@@ -1,4 +1,4 @@
-//! 
+//
 
 pub use crate::embedder::*;
 pub use crate::embedparams::*;

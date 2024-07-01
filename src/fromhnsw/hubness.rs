@@ -59,10 +59,7 @@ where
             counts.push(atom.load(Ordering::Relaxed));
         }
         //
-        Hubness {
-            kgraph: kgraph,
-            counts: counts,
-        }
+        Hubness { kgraph, counts }
     } // end of new
 
     /// returns counts by index

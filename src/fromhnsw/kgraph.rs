@@ -63,7 +63,7 @@ impl <F:Float> KGraphStat<F> {
     pub fn get_density_index(&self) -> Vec<F> {
         let density = self.ranges.iter().map(|x| x.1.recip()).collect();
         //
-        return density;
+        density
     } // get_density_index
 
     /// return maximum in_degree. Useful to choose between CsMat or dense Array2 representation of graph
@@ -170,7 +170,7 @@ impl <F> KGraph<F>
                 for edge in  &neighbours[n] {
                     node_edge_length = node_edge_length.max(edge.weight.to_f64().unwrap());
                 }
-                return (n, node_edge_length);
+                (n, node_edge_length)
             }
             ).collect();
         // in max_edge_length we have for each node its largest edge, but due to // iter nodes are to be reset in order!
@@ -187,7 +187,7 @@ impl <F> KGraph<F>
         }
         //
         let idx = idx.unwrap();
-        return Ok(self.get_out_edges_by_idx(idx));
+        Ok(self.get_out_edges_by_idx(idx))
     } // end of get_out_edges_by_data_id
 
 
@@ -228,12 +228,12 @@ impl <F> KGraph<F>
         for _ in 0..sampling_size {
             let node = between.sample(&mut rng);
             let edges = &self.neighbours[node];
-            let dim = intrinsic_dimension_from_edges(edges);
-            if dim.is_ok() {
-                dims.push(dim.unwrap());
+            let dim_res = intrinsic_dimension_from_edges(edges);
+            if let Ok(dim) = dim_res {
+                dims.push(dim);
             }
         }
-        if dims.len() == 0 {
+        if dims.is_empty() {
             log::error!("could not sample dimension");
             return Err(anyhow!("could not sample points"));
         }
@@ -241,7 +241,7 @@ impl <F> KGraph<F>
         let mut sigma = dims.iter().fold(0., |acc, d| acc + (d-mean_dim)*(d-mean_dim));
         sigma = (sigma/dims.len() as f64).sqrt();
         log::debug!(" mean dimension : {:.3e}, sigma : {:.3e}, nb_points used: {}", mean_dim, sigma, dims.len());
-        return Ok((mean_dim, sigma));
+        Ok((mean_dim, sigma))
     } // end of estimate_intrinsic_dim
 
 
@@ -252,12 +252,12 @@ impl <F> KGraph<F>
     /// When we get embedded data as an `Array2<F>`, row i of data corresponds to
     /// the original data with label get_data_id_from_idx(i)
     pub fn get_data_id_from_idx(&self, index:usize) -> Option<&DataId> {
-        return self.node_set.get_index(index)
+        self.node_set.get_index(index)
     }
 
     /// get the index corresponding to a given DataId
     pub fn get_idx_from_dataid(&self, data_id: &DataId) -> Option<usize> {
-        return self.node_set.get_index_of(data_id)
+        self.node_set.get_index_of(data_id)
     }
 
     /// useful after embedding to get back to original indexes.
@@ -291,7 +291,7 @@ impl <F> KGraph<F>
 
     /// Fills in KGraphStat from KGraph
     pub fn get_kraph_stats(&self) -> KGraphStat<F> {
-        let mut in_degrees : Vec<u32> = (0..self.nbnodes).into_iter().map(|_| 0).collect();
+        let mut in_degrees : Vec<u32> = (0..self.nbnodes).map(|_| 0).collect();
         let mut ranges = Vec::<RangeNghb<F>>::with_capacity(self.nbnodes);
         //
         let mut max_max_r = F::zero();
@@ -300,7 +300,7 @@ impl <F> KGraph<F>
         let mut quant = CKMS::<f32>::new(0.001);
         //
         for i in 0..self.neighbours.len() {
-            if self.neighbours[i].len() > 0 {
+            if !self.neighbours[i].is_empty() {
                 let min_r = self.neighbours[i][0].weight;
                 let max_r = self.neighbours[i][self.neighbours[i].len()-1].weight;
                 quant.insert(F::to_f32(&min_r).unwrap());
@@ -317,11 +317,11 @@ impl <F> KGraph<F>
         // dump some info
         let mut max_in_degree = 0;
         let mut mean_in_degree : f32 = 0.;
-        for i in 0..in_degrees.len() {
-            max_in_degree = max_in_degree.max(in_degrees[i]);
-            mean_in_degree += in_degrees[i] as f32;
+        for in_d in &in_degrees {
+            max_in_degree = max_in_degree.max(*in_d);
+            mean_in_degree += *in_d as f32;
         }
-        if in_degrees.len() > 0 {
+        if !in_degrees.is_empty() {
             mean_in_degree /= in_degrees.len() as f32;
         }
         //
@@ -379,8 +379,8 @@ pub fn kgraph_from_hnsw_all<T, D, F>(hnsw : &Hnsw<T,D>, nbng : usize) -> std::re
     }        
     //
     let point_indexation = hnsw.get_point_indexation();
-    let mut point_iter = point_indexation.into_iter();
-    while let Some(point) = point_iter.next() {
+    let point_iter = point_indexation.into_iter();
+    for point in point_iter {
         // now point is an Arc<Point<F>>
         // point_id must be in 0..nb_point. CAVEAT This is not enforced as in petgraph. We should check that
         let point_id = point.get_origin_id();
@@ -394,11 +394,11 @@ pub fn kgraph_from_hnsw_all<T, D, F>(hnsw : &Hnsw<T,D>, nbng : usize) -> std::re
         let nb_layer = neighbours_hnsw.len();
         let mut vec_tmp = Vec::<OutEdge<F>>::with_capacity(max_nb_conn*nb_layer);
         for i in 0..nb_layer {
-            for j in 0..neighbours_hnsw[i].len() {
+            for neighbour in &neighbours_hnsw[i] {
                 // remap id. nodeset enforce reindexation from 0 too nbnodes whatever the number of node will be
-                let (neighbour_idx, _) = node_set.insert_full(neighbours_hnsw[i][j].get_origin_id());
+                let (neighbour_idx, _) = node_set.insert_full(neighbour.get_origin_id());
                 assert!(index != neighbour_idx);
-                vec_tmp.push(OutEdge::<F>{ node : neighbour_idx, weight : F::from_f32(neighbours_hnsw[i][j].distance).unwrap()});
+                vec_tmp.push(OutEdge::<F>{ node : neighbour_idx, weight : F::from_f32(neighbour.distance).unwrap()});
             }
         }
         vec_tmp.sort_unstable_by(| a, b | a.partial_cmp(b).unwrap_or(Ordering::Less));
@@ -408,7 +408,7 @@ pub fn kgraph_from_hnsw_all<T, D, F>(hnsw : &Hnsw<T,D>, nbng : usize) -> std::re
             nb_point_below_nbng += 1;
             mean_deficient_neighbour_size += vec_tmp.len();
             log::trace!("neighbours must have {} neighbours, point {} got only {}", max_nbng, point_id, vec_tmp.len());
-            if vec_tmp.len() == 0 {
+            if vec_tmp.is_empty() {
                 let p_id = point.get_point_id();
                 log::warn!(" graph will not be connected, isolated point at layer {}  , pos in layer : {} ", p_id.0, p_id.1);
             }
@@ -476,9 +476,9 @@ pub fn kgraph_from_hnsw_all<T, D, F>(hnsw : &Hnsw<T,D>, nbng : usize) -> std::re
         let mut nb_point_collected = 0;
         //
         for l in (layer..=max_level_observed).rev() {
-            let mut layer_iter = hnsw.get_point_indexation().get_layer_iterator(l);
+            let layer_iter = hnsw.get_point_indexation().get_layer_iterator(l);
             //
-            while let Some(point) = layer_iter.next() {
+            for point in layer_iter {
                 // now point is an Arc<Point<F>>
                 // point_id must be in 0..nb_point. CAVEAT This is not enforced as in petgraph. We should check that
                 let origin_id = point.get_origin_id();
@@ -496,13 +496,13 @@ pub fn kgraph_from_hnsw_all<T, D, F>(hnsw : &Hnsw<T,D>, nbng : usize) -> std::re
                 let mut vec_tmp = Vec::<OutEdge<F>>::with_capacity(max_nb_conn);
                 // scan all neighbours in upper layer to keep 
                 for m in layer..=max_level_observed {
-                    for j in 0..neighbours_hnsw[m].len() {
-                        let n_origin_id = neighbours_hnsw[m][j].get_origin_id();
-                        let n_p_id = neighbours_hnsw[m][j].p_id;
+                    for neighbour in &neighbours_hnsw[m] {
+                        let n_origin_id = neighbour.get_origin_id();
+                        let n_p_id = neighbour.p_id;
                         if n_p_id.0 as usize >= l {
                             // remap id. nodeset enforce reindexation from 0 to nbpoint
                             let (neighbour_idx, _) = node_set.insert_full(n_origin_id);
-                            vec_tmp.push(OutEdge::<F>{ node : neighbour_idx, weight : F::from_f32(neighbours_hnsw[m][j].distance).unwrap()});
+                            vec_tmp.push(OutEdge::<F>{ node : neighbour_idx, weight : F::from_f32(neighbour.distance).unwrap()});
                         }
                     } // end of for j
                 } // end of for on m
@@ -513,7 +513,7 @@ pub fn kgraph_from_hnsw_all<T, D, F>(hnsw : &Hnsw<T,D>, nbng : usize) -> std::re
                     nb_point_below_nbng += 1;
                     mean_deficient_neighbour_size += vec_tmp.len();
                     log::trace!("neighbours must have {} neighbours, got only {}. layer {}  , pos in layer : {}", nbng, vec_tmp.len(),  p_id.0, p_id.1);
-                    if vec_tmp.len() == 0 {
+                    if vec_tmp.is_empty() {
                         let p_id = point.get_point_id();
                         log::warn!(" graph will not be connected, isolated point at layer {}  , pos in layer : {} ", p_id.0, p_id.1);
                         node_set.swap_remove(&index);

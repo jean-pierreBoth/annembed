@@ -2,12 +2,10 @@
 //! [Kruskal's algorithm](https://en.wikipedia.org/wiki/Kruskal's_algorithm).
 
 //! This file was adapted from crate pathfinding
-//! 
-//! 
-
+//!
+//!
 
 #![allow(dead_code)]
-
 
 use indexmap::IndexSet;
 use std::hash::Hash;
@@ -15,33 +13,31 @@ use std::mem;
 
 use num_traits::int::PrimInt;
 
-
-
 // Our UnionFind is amix between those in petgraph and in pathfinding crates
 /// union find structure <http://en.wikipedia.org/wiki/Disjoint-set_data_structure>
-/// Ix must be an unsigned integer 
+/// Ix must be an unsigned integer
 pub struct UnionFind<Ix> {
     parent: Vec<Ix>,
     rank: Vec<u32>,
-}  // end of UnionFind<Ix>
+} // end of UnionFind<Ix>
 
-
-impl <Ix> UnionFind<Ix>
-    where Ix : PrimInt  {
-
-    fn new(parent : Vec<Ix>) -> Self {
+impl<Ix> UnionFind<Ix>
+where
+    Ix: PrimInt,
+{
+    fn new(parent: Vec<Ix>) -> Self {
         let rank = vec![1; parent.len()];
         //
-        UnionFind{parent, rank}
+        UnionFind { parent, rank }
     } // end of new
 
-
-    fn find(&mut self, mut node : Ix) -> Ix {
+    fn find(&mut self, mut node: Ix) -> Ix {
         while self.parent[Ix::to_usize(&node).unwrap()] != node {
-            self.parent[Ix::to_usize(&node).unwrap()] = self.parent[Ix::to_usize(&self.parent[Ix::to_usize(&node).unwrap()]).unwrap()];
+            self.parent[Ix::to_usize(&node).unwrap()] =
+                self.parent[Ix::to_usize(&self.parent[Ix::to_usize(&node).unwrap()]).unwrap()];
             node = self.parent[Ix::to_usize(&node).unwrap()];
         }
-        node        
+        node
     }
 
     fn union(&mut self, mut a: usize, mut b: usize) {
@@ -52,13 +48,12 @@ impl <Ix> UnionFind<Ix>
         if self.rank[a] == self.rank[b] {
             self.rank[a] += 1;
         }
-    }  // end of union
+    } // end of union
 
-    
     fn get_parent(&self) -> &Vec<Ix> {
         &self.parent
     }
-}   // end of impl UnionFind
+} // end of impl UnionFind
 
 //=======================================================================================
 
@@ -137,7 +132,7 @@ where
     let mut nodes = IndexSet::new();
     let edges = edges
         .iter()
-        .map(|&(ref a, ref b, ref w)| {
+        .map(|(a, b, w)| {
             let ia = nodes.insert_full(a.clone()).0;
             let ib = nodes.insert_full(b.clone()).0;
             (ia, ib, w.clone())
@@ -152,24 +147,19 @@ where
     })
 }
 
-
 //===============================================================================================================
-
 
 #[cfg(test)]
 mod tests {
 
-use super::*;
-    
-    
-    
-    
-fn log_init_test() {
-    let _ = env_logger::builder().is_test(true).try_init();
-}  
-    
-// taken from path-finding
-#[test]
+    use super::*;
+
+    fn log_init_test() {
+        let _ = env_logger::builder().is_test(true).try_init();
+    }
+
+    // taken from path-finding
+    #[test]
     fn test_union_find() {
         let parents = vec![0, 0, 1, 2, 3, 4, 5, 6];
         let mut unionf = UnionFind::<usize>::new(parents);
@@ -188,6 +178,5 @@ fn log_init_test() {
 
         assert_eq!(unionf.find(6), 0);
         assert_eq!(unionf.get_parent(), &vec![0, 0, 1, 0, 3, 3, 0, 0]);
-    }  // end test_union_find
-
+    } // end test_union_find
 } // end of mod tests
