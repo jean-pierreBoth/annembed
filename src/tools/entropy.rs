@@ -216,11 +216,8 @@ mod tests {
 
     fn test_proba_ann() {
         let unif_01 = Uniform::<f64>::new(0., 1.);
-        let mut rng = Xoshiro256PlusPlus::seed_from_u64(234567 as u64);
-        let p: Vec<f64> = (0..50)
-            .into_iter()
-            .map(|_| unif_01.sample(&mut rng))
-            .collect();
+        let mut rng = Xoshiro256PlusPlus::seed_from_u64(234567_u64);
+        let p: Vec<f64> = (0..50).map(|_| unif_01.sample(&mut rng)).collect();
         let mut proba = DiscreteProba::new(&p);
         let _entropy = proba.renyi_entropy(&[1., 2.]);
     } // end of test_proba_ann

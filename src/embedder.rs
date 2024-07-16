@@ -402,7 +402,7 @@ where
                 for edge in  &neighbours[n] {
                     let ext_embedded = self.get_embedded_by_nodeid(edge.node);
                     // now we can compute distance for corresponding edge in embedded space. We must use L2
-                    node_edge_length = distl2(node_embedded.as_slice().unwrap(), &ext_embedded.as_slice().unwrap()).min(node_edge_length);
+                    node_edge_length = distl2(node_embedded.as_slice().unwrap(), ext_embedded.as_slice().unwrap()).min(node_edge_length);
                     transformed_neighborhood.push(OutEdge::<F>::new(edge.node, node_edge_length));
                 }
                 // sort transformed_neighborhood
@@ -1288,6 +1288,7 @@ fn set_data_box<F>(data : &mut Array2<F>, box_size : f64)
 
 
 #[cfg(test)]
+#[allow(clippy::range_zip_with_len)]
 mod tests {
 
 //    cargo test embedder  -- --nocapture
@@ -1310,7 +1311,7 @@ mod tests {
         let unif =  Uniform::<f32>::new(0.,1.);
         for i in 0..nb_elem {
             let val = 2. * i as f32 * rng.sample(unif);
-            let v :Vec<f32> = (0..dim).into_iter().map(|_|  val * rng.sample(unif)).collect();
+            let v :Vec<f32> = (0..dim).map(|_|  val * rng.sample(unif)).collect();
             data.push(v);
         }
         data

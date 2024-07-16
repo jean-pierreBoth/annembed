@@ -143,7 +143,6 @@ where
         bufreader.read_line(&mut headerline)?;
     }
     //
-    let mut nb_record = 0; // number of record loaded
     let mut num_record: usize = 0;
     let mut nb_fields = 0;
     let mut toembed = Vec::<Vec<F>>::new();
@@ -153,7 +152,7 @@ where
         .flexible(false)
         .has_headers(false)
         .from_reader(bufreader);
-    for result in rdr.records() {
+    for (nb_record, result) in rdr.records().enumerate() {
         num_record += 1;
         let record = result?;
         if log::log_enabled!(Level::Info) && nb_record <= 2 {
@@ -208,7 +207,6 @@ where
             }
             toembed.push(v);
         }
-        nb_record += 1;
     }
     Ok(toembed)
 } // end of get_toembed_from_csv

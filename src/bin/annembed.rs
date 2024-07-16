@@ -116,14 +116,14 @@ fn parse_embed_cmd(matches: &ArgMatches) -> Result<EmbedderParams, anyhow::Error
     embedparams.nb_sampling_by_edge = *matches.get_one::<usize>("nbsample").unwrap();
     embedparams.hierarchy_layer = *matches.get_one::<usize>("hierarchy").unwrap();
     //
-    return Ok(embedparams);
+    Ok(embedparams)
 } // end of parse_embed_cmd
 
 //
 
 // construct kgraph case not hierarchical
 fn get_kgraph<Dist>(
-    data_with_id: &Vec<(&Vec<f64>, usize)>,
+    data_with_id: &[(&Vec<f64>, usize)],
     hnswparams: &HnswParams,
     nb_layer: usize,
     hubdim_asked: bool,
@@ -140,7 +140,7 @@ where
         hnswparams.ef_c,
         Dist::default(),
     );
-    hnsw.parallel_insert(&data_with_id);
+    hnsw.parallel_insert(data_with_id);
     hnsw.dump_layer_info();
     let kgraph = kgraph_from_hnsw_all(&hnsw, hnswparams.knbn).unwrap();
     if hubdim_asked {
@@ -186,7 +186,7 @@ where
 
 // construct kgraph case not hierarchical
 fn get_kgraph_projection<Dist>(
-    data_with_id: &Vec<(&Vec<f64>, usize)>,
+    data_with_id: &[(&Vec<f64>, usize)],
     hnswparams: &HnswParams,
     nb_layer: usize,
     layer_proj: usize,
@@ -203,42 +203,27 @@ where
         hnswparams.ef_c,
         Dist::default(),
     );
-    hnsw.parallel_insert(&data_with_id);
+    hnsw.parallel_insert(data_with_id);
     hnsw.dump_layer_info();
-    let graphprojection = KGraphProjection::<f64>::new(&hnsw, hnswparams.knbn, layer_proj);
-    graphprojection
+    KGraphProjection::<f64>::new(&hnsw, hnswparams.knbn, layer_proj)
 } // end of get_kgraph_projection
 
 //
 
 // dispatching according to distance ... use a macro
 fn get_kgraph_with_distname(
-    data_with_id: &Vec<(&Vec<f64>, usize)>,
+    data_with_id: &[(&Vec<f64>, usize)],
     hnswparams: &HnswParams,
     nb_layer: usize,
     hubdim: bool,
 ) -> KGraph<f64> {
     let kgraph = match hnswparams.distance.as_str() {
-        "DistL2" => {
-            let kgraph = get_kgraph::<DistL2>(&data_with_id, &hnswparams, nb_layer, hubdim);
-            kgraph
-        }
-        "DistL1" => {
-            let kgraph = get_kgraph::<DistL1>(&data_with_id, &hnswparams, nb_layer, hubdim);
-            kgraph
-        }
-        "DistJeffreys" => {
-            let kgraph = get_kgraph::<DistJeffreys>(&data_with_id, &hnswparams, nb_layer, hubdim);
-            kgraph
-        }
-        "DistCosine" => {
-            let kgraph = get_kgraph::<DistCosine>(&data_with_id, &hnswparams, nb_layer, hubdim);
-            kgraph
-        }
+        "DistL2" => get_kgraph::<DistL2>(data_with_id, hnswparams, nb_layer, hubdim),
+        "DistL1" => get_kgraph::<DistL1>(data_with_id, hnswparams, nb_layer, hubdim),
+        "DistJeffreys" => get_kgraph::<DistJeffreys>(data_with_id, hnswparams, nb_layer, hubdim),
+        "DistCosine" => get_kgraph::<DistCosine>(data_with_id, hnswparams, nb_layer, hubdim),
         "DistJensenShannon" => {
-            let kgraph =
-                get_kgraph::<DistJensenShannon>(&data_with_id, &hnswparams, nb_layer, hubdim);
-            kgraph
+            get_kgraph::<DistJensenShannon>(data_with_id, hnswparams, nb_layer, hubdim)
         }
         _ => {
             log::error!("unknown distance : {}", hnswparams.distance);
@@ -249,40 +234,21 @@ fn get_kgraph_with_distname(
 } // end of get_kgraph_with_distname
 
 fn get_kgraphproj_with_distname(
-    data_with_id: &Vec<(&Vec<f64>, usize)>,
+    data_with_id: &[(&Vec<f64>, usize)],
     hnswparams: &HnswParams,
     nb_layer: usize,
     layer_proj: usize,
 ) -> KGraphProjection<f64> {
     //
     let kgraph_projection = match hnswparams.distance.as_str() {
-        "DistL2" => {
-            let kgraph =
-                get_kgraph_projection::<DistL2>(&data_with_id, &hnswparams, nb_layer, layer_proj);
-            kgraph
-        }
-        "DistL1" => {
-            let kgraph =
-                get_kgraph_projection::<DistL1>(&data_with_id, &hnswparams, nb_layer, layer_proj);
-            kgraph
-        }
+        "DistL2" => get_kgraph_projection::<DistL2>(data_with_id, hnswparams, nb_layer, layer_proj),
+        "DistL1" => get_kgraph_projection::<DistL1>(data_with_id, hnswparams, nb_layer, layer_proj),
         "DistJeffreys" => {
-            let kgraph = get_kgraph_projection::<DistJeffreys>(
-                &data_with_id,
-                &hnswparams,
-                nb_layer,
-                layer_proj,
-            );
-            kgraph
+            get_kgraph_projection::<DistJeffreys>(data_with_id, hnswparams, nb_layer, layer_proj)
         }
+
         "DistCosine" => {
-            let kgraph = get_kgraph_projection::<DistCosine>(
-                &data_with_id,
-                &hnswparams,
-                nb_layer,
-                layer_proj,
-            );
-            kgraph
+            get_kgraph_projection::<DistCosine>(data_with_id, hnswparams, nb_layer, layer_proj)
         }
         _ => {
             log::error!("unknown distance : {}", hnswparams.distance);
@@ -292,9 +258,10 @@ fn get_kgraphproj_with_distname(
     kgraph_projection
 } // end of get_kgraphproj_with_distname
 
+#[allow(clippy::range_zip_with_len)]
 pub fn main() {
     println!("initializing default logger from environment ...");
-    let _ = env_logger::Builder::from_default_env().init();
+    env_logger::Builder::from_default_env().init();
     log::info!("logger initialized from default environment");
     //
     let hnswparams: HnswParams;
@@ -450,8 +417,8 @@ pub fn main() {
     // set output filename and check if option is present in command
     let mut csv_output = String::from("embedded.csv");
     let csv_out = matches.get_one::<String>("outfile");
-    if csv_out.is_some() {
-        csv_output = csv_out.unwrap().clone();
+    if let Some(out) = csv_out {
+        csv_output.clone_from(out);
     }
     log::info!("output file : {:?}", &csv_output);
 

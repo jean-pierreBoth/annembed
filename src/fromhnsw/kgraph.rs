@@ -83,7 +83,7 @@ impl <F:Float> KGraphStat<F> {
 
     /// return radius at quantile
     pub fn get_radius_at_quantile(&self, frac:f64) -> f32 {
-        if frac >=0. && frac<=1. {
+        if (0. ..=1.).contains(&frac) {
             self.min_radius_q.query(frac).unwrap().1
         }
         else {
@@ -125,6 +125,13 @@ pub struct KGraph<F> {
 
 
 
+impl<F> Default for KGraph<F>
+where F : FromPrimitive + Float + std::fmt::UpperExp + Sync + Send + std::iter::Sum
+{
+     fn default() -> Self {
+        Self::new()
+    }
+}
 
 
 impl <F> KGraph<F> 
@@ -277,8 +284,8 @@ impl <F> KGraph<F>
         //
         for i in 0..self.nbnodes {
             for n in &self.neighbours[i] {
-                write!(writer, "{} {} {:.5E}\n", i, n.node, n.weight)?;
-                write!(writer, "{} {} {:.5E}\n", n.node, i, n.weight)?;
+                writeln!(writer, "{} {} {:.5E}", i, n.node, n.weight)?;
+                writeln!(writer, "{} {} {:.5E}", n.node, i, n.weight)?;
             }
         }
         //
@@ -393,8 +400,8 @@ pub fn kgraph_from_hnsw_all<T, D, F>(hnsw : &Hnsw<T,D>, nbng : usize) -> std::re
         // possibly use a BinaryHeap?
         let nb_layer = neighbours_hnsw.len();
         let mut vec_tmp = Vec::<OutEdge<F>>::with_capacity(max_nb_conn*nb_layer);
-        for i in 0..nb_layer {
-            for neighbour in &neighbours_hnsw[i] {
+        for neighbours_layer in neighbours_hnsw  {
+            for neighbour in &neighbours_layer {
                 // remap id. nodeset enforce reindexation from 0 too nbnodes whatever the number of node will be
                 let (neighbour_idx, _) = node_set.insert_full(neighbour.get_origin_id());
                 assert!(index != neighbour_idx);
@@ -495,8 +502,8 @@ pub fn kgraph_from_hnsw_all<T, D, F>(hnsw : &Hnsw<T,D>, nbng : usize) -> std::re
                 // possibly use a BinaryHeap?
                 let mut vec_tmp = Vec::<OutEdge<F>>::with_capacity(max_nb_conn);
                 // scan all neighbours in upper layer to keep 
-                for m in layer..=max_level_observed {
-                    for neighbour in &neighbours_hnsw[m] {
+                for neighbours_layer in neighbours_hnsw.iter().take(max_level_observed+1).skip(layer) {
+                    for neighbour in neighbours_layer {
                         let n_origin_id = neighbour.get_origin_id();
                         let n_p_id = neighbour.p_id;
                         if n_p_id.0 as usize >= l {
@@ -556,6 +563,7 @@ pub fn kgraph_from_hnsw_all<T, D, F>(hnsw : &Hnsw<T,D>, nbng : usize) -> std::re
 
 
 #[cfg(test)]
+#[allow(clippy::range_zip_with_len)]
 mod tests {
 
 //    cargo test fromhnsw  -- --nocapture
@@ -588,7 +596,7 @@ fn gen_rand_data_f32(nb_elem: usize , dim:usize) -> Vec<Vec<f32>> {
     let unif =  Uniform::<f32>::new(0.,1.);
     for i in 0..nb_elem {
         let val = 10. * i as f32 * rng.sample(unif);
-        let v :Vec<f32> = (0..dim).into_iter().map(|_|  val * rng.sample(unif)).collect();
+        let v :Vec<f32> = (0..dim).map(|_|  val * rng.sample(unif)).collect();
         data.push(v);
     }
     data
@@ -610,7 +618,7 @@ fn test_full_hnsw() {
     println!("\n\n test_serial nb_elem {:?}", nb_elem);
     //
     let data = gen_rand_data_f32(nb_elem, dim);
-    let data_with_id = data.iter().zip(0..data.len()).collect::<Vec<(&Vec<f32>, usize)>>();
+    let data_with_id : Vec<(&Vec<f32>, usize)> = data.iter().zip(0..data.len()).collect::<Vec<(&Vec<f32>, usize)>>();
 
     let ef_c = 50;
     let max_nb_connection = 50;
@@ -681,7 +689,7 @@ fn test_layer_hnsw() {
     log::info!("testing ripser output in file : {}", fname);
     let path = Path::new(fname);
     log::debug!("in to_ripser_sparse_dist : fname : {}", path.display());
-    let fileres = OpenOptions::new().write(true).create(true).open(path);
+    let fileres = OpenOptions::new().write(true).create(true).truncate(true).open(path);
     let file;
     if fileres.is_ok() {
         file = fileres.unwrap();

@@ -52,6 +52,8 @@ where
     //  - Then we project : for points of others layers store the shorter edge from point to graph just constructed
     //  - at last we construct graph for the lower (more populated layers)
     //
+
+    #[allow(clippy::needless_range_loop)]
     /// construct graph from layers above layer, projects data of another layers on point in layers above layer arg
     /// nbng is the maximum number of neighours to keep. It should be comparable to
     /// the parameter *max_nb_conn* used in the Hnsw structure.
@@ -86,7 +88,7 @@ where
                 nb_point_to_collect
             );
         }
-        if nb_point_to_collect <= 0 {
+        if nb_point_to_collect == 0 {
             log::error!("!!!!!!!!!!!! KGraphProjection cannot collect points !!!!!!!!!!!!!, check layer argument");
             println!("!!!!!!!!!!!! KGraphProjection cannot collect points !!!!!!!!!!!!!, check layer argument");
             std::process::exit(1);
@@ -382,23 +384,18 @@ where
     pub fn dump_sparse_mat_for_ripser(&self, fname: &str) -> Result<(), anyhow::Error> {
         let path = Path::new(fname);
         log::debug!("in to_ripser_sparse_dist : fname : {}", path.display());
-        let fileres = OpenOptions::new()
+        if let Ok(file) = OpenOptions::new()
             .write(true)
             .create(true)
             .truncate(true)
-            .open(path);
-        //
-        let file = if fileres.is_ok() {
-            fileres.unwrap()
+            .open(path)
+        {
+            let mut bufwriter = BufWriter::new(file);
+            self.small_graph.to_ripser_sparse_dist(&mut bufwriter)
+            // TODO must launch ripser either with crate run_script or by making ripser a library using cxx. or Ripserer.jl
         } else {
-            return Err(anyhow!("could not open file : {}", path.display()));
-        };
-        //
-        let mut bufwriter = BufWriter::new(file);
-        let res = self.small_graph.to_ripser_sparse_dist(&mut bufwriter);
-        // TODO must launch ripser either with crate run_script or by making ripser a library using cxx. or Ripserer.jl
-        //
-        res
+            Err(anyhow!("could not open file : {}", path.display()))
+        }
     } // end of compute_approximated_barcodes
 } // end of impl block
 
@@ -463,6 +460,7 @@ where
 } // end of fix_points_with_no_projection
 
 #[cfg(test)]
+#[allow(clippy::range_zip_with_len)]
 mod tests {
 
     //    cargo test fromhnsw  -- --nocapture
@@ -488,10 +486,7 @@ mod tests {
         let unif = Uniform::<f32>::new(0., 1.);
         for i in 0..nb_elem {
             let val = 10. * i as f32 * rng.sample(unif);
-            let v: Vec<f32> = (0..dim)
-                .into_iter()
-                .map(|_| val * rng.sample(unif))
-                .collect();
+            let v: Vec<f32> = (0..dim).map(|_| val * rng.sample(unif)).collect();
             data.push(v);
         }
         data

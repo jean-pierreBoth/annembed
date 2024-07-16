@@ -27,7 +27,7 @@ use std::time::{Duration, SystemTime};
 use annembed::fromhnsw::kgproj::KGraphProjection;
 use annembed::fromhnsw::kgraph::kgraph_from_hnsw_all;
 
-const HIGGS_DIR: &'static str = "/home/jpboth/Data/";
+const HIGGS_DIR: &str = "/home/jpboth/Data/";
 
 /// return a vector of labels, and a list of vectors to embed
 /// First field of record is label, then the 21 following field are the data.
@@ -129,7 +129,7 @@ fn reformat(data: &mut Array2<f32>, rescale: bool) -> Vec<Vec<f32>> {
         datavec.push(data.row(i).to_vec());
     }
     //
-    return datavec;
+    datavec
 } // end of reformat
 
 // possible variations
@@ -248,10 +248,10 @@ pub fn main() {
             // if we did not subsample we save hnsw to avoid reconstruction runs in 0.4 hour...on my laptop
             // We dump in Higgs-$nb_var.hnsw.data and Higgs-$nb_var.hnsw.graph
             let mut fname = String::from("Higgs");
-            fname.push_str("-");
+            fname.push('-');
             fname.push_str(&varstring);
             let path = Path::new("./");
-            let _res = hnsw.file_dump(&path, &fname);
+            let _res = hnsw.file_dump(path, &fname);
         }
     }
     //

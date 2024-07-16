@@ -696,17 +696,15 @@ where
             .iter()
             .max_by(|x, y| x.partial_cmp(y).unwrap())
             .unwrap();
-        if log::log_enabled!(log::Level::Debug) {
-            if nb_iter % (max_rank / 10).max(1) == 0 {
-                let mean_norm_y = norms_y.sum() / F::from_usize(r).unwrap();
-                log::debug!(
-                    "  nb_iter {} j {} norm_sup {:.3e} norm_mean {:.3e} ",
-                    nb_iter,
-                    j,
-                    norm_sup_y,
-                    mean_norm_y
-                );
-            }
+        if log::log_enabled!(log::Level::Debug) && nb_iter % (max_rank / 10).max(1) == 0 {
+            let mean_norm_y = norms_y.sum() / F::from_usize(r).unwrap();
+            log::debug!(
+                "  nb_iter {} j {} norm_sup {:.3e} norm_mean {:.3e} ",
+                nb_iter,
+                j,
+                norm_sup_y,
+                mean_norm_y
+            );
         }
         // we update j and nb_iter
         j = (j + 1) % r;
@@ -1072,6 +1070,7 @@ where
     lambda.to_f64().unwrap().sqrt()
 } // end of estimate_first_singular_value_fullmat
 
+#[allow(clippy::let_and_return)]
 /// estimate the first singular_value of mat given as a MatRepr
 pub fn estimate_first_singular_value_repr<F>(mat: &MatRepr<F>) -> f64
 where
@@ -1464,11 +1463,10 @@ mod tests {
             assert!(computed_s.len() >= asked_rank);
             for i in 0..computed_s.len() {
                 log::debug! {"sp  i  exact : {}, computed {}", sigma[i], computed_s[i]};
-                let test;
-                if sigma[i] > 0. {
-                    test = ((1. - computed_s[i] / sigma[i]).abs() as f32) < epsil;
+                let test = if sigma[i] > 0. {
+                    ((1. - computed_s[i] / sigma[i]).abs() as f32) < epsil
                 } else {
-                    test = ((sigma[i] - computed_s[i]).abs() as f32) < epsil;
+                    ((sigma[i] - computed_s[i]).abs() as f32) < epsil
                 };
                 assert!(test);
             }
@@ -1493,11 +1491,10 @@ mod tests {
             assert!(computed_s.len() >= asked_rank);
             for i in 0..computed_s.len() {
                 log::debug! {"sp  i  exact : {}, computed {}", sigma[i], computed_s[i]};
-                let test;
-                if sigma[i] > 0. {
-                    test = ((1. - computed_s[i] / sigma[i]).abs() as f32) < epsil;
+                let test = if sigma[i] > 0. {
+                    ((1. - computed_s[i] / sigma[i]).abs() as f32) < epsil
                 } else {
-                    test = ((sigma[i] - computed_s[i]).abs() as f32) < epsil;
+                    ((sigma[i] - computed_s[i]).abs() as f32) < epsil
                 };
                 assert!(test);
             }
@@ -1572,15 +1569,14 @@ mod tests {
     } // end of get_wiki_csr_mat_f64
 
     fn get_wiki_array2_f64() -> Array2<f64> {
-        let mat = ndarray::arr2(
+        ndarray::arr2(
             &[
                 [1., 0., 0., 0., 2.], // row 0
                 [0., 0., 3., 0., 0.], // row 1
                 [0., 0., 0., 0., 0.], // row 2
                 [0., 2., 0., 0., 0.],
             ], // row 3
-        );
-        mat
+        )
     } // end of get_wiki_array2_f64
 
     #[test]
@@ -1608,11 +1604,10 @@ mod tests {
             assert!(computed_s.len() >= 3);
             for i in 0..computed_s.len() {
                 log::trace! {"sp  i  exact : {}, computed {}", sigma[i], computed_s[i]};
-                let test;
-                if sigma[i] > 0. {
-                    test = ((1. - computed_s[i] / sigma[i]).abs() as f32) < 1.0E-5;
+                let test = if sigma[i] > 0. {
+                    ((1. - computed_s[i] / sigma[i]).abs() as f32) < 1.0E-5
                 } else {
-                    test = ((sigma[i] - computed_s[i]).abs() as f32) < 1.0E-5;
+                    ((sigma[i] - computed_s[i]).abs() as f32) < 1.0E-5
                 };
                 assert!(test);
             }
@@ -1643,11 +1638,10 @@ mod tests {
             assert!(computed_s.len() >= 3);
             for i in 0..computed_s.len() {
                 log::trace! {"sp  i  exact : {}, computed {}", sigma[i], computed_s[i]};
-                let test;
-                if sigma[i] > 0. {
-                    test = ((1. - computed_s[i] / sigma[i]).abs() as f32) < 1.0E-5;
+                let test = if sigma[i] > 0. {
+                    ((1. - computed_s[i] / sigma[i]).abs() as f32) < 1.0E-5
                 } else {
-                    test = ((sigma[i] - computed_s[i]).abs() as f32) < 1.0E-5;
+                    ((sigma[i] - computed_s[i]).abs() as f32) < 1.0E-5
                 };
                 assert!(test);
             }
@@ -1688,11 +1682,10 @@ mod tests {
             for i in 0..computed_s.len() {
                 log::trace! {"sp  i  exact : {}, computed {}", sigma[i], computed_s[i]};
                 //
-                let test;
-                if sigma[i] > 0. {
-                    test = ((1. - computed_s[i] / sigma[i]).abs() as f32) < f32::EPSILON;
+                let test = if sigma[i] > 0. {
+                    ((1. - computed_s[i] / sigma[i]).abs() as f32) < f32::EPSILON
                 } else {
-                    test = ((sigma[i] - computed_s[i]).abs() as f32) < f32::EPSILON;
+                    ((sigma[i] - computed_s[i]).abs() as f32) < f32::EPSILON
                 };
                 //
                 assert!(test);

@@ -24,7 +24,7 @@ use hnsw_rs::prelude::*;
 // The directory where the files t10k-images-idx3-ubyte  t10k-labels-idx1-ubyte  train-images-idx3-ubyte
 // and train-labels-idx1-ubyte reside
 // one directory for mnist_digits and a directory for fashion_mnist
-const MNIST_DATA_DIR: &'static str = "/home/jpboth/Data/Fashion-MNIST/";
+const MNIST_DATA_DIR: &str = "/home/jpboth/Data/Fashion-MNIST/";
 
 /// A struct to load/store for Fashion Mnist in the same format as [MNIST data](http://yann.lecun.com/exdb/mnist/)  
 /// stores labels (i.e : FASHION between 0 and 9) coming from file train-labels-idx1-ubyte      
@@ -39,12 +39,12 @@ pub struct MnistData {
 impl MnistData {
     pub fn new(image_filename: String, label_filename: String) -> std::io::Result<MnistData> {
         let image_path = PathBuf::from(image_filename.clone());
-        let image_file = OpenOptions::new().read(true).open(&image_path)?;
+        let image_file = OpenOptions::new().read(true).open(image_path)?;
         let mut image_io = BufReader::new(image_file);
         let images = read_image_file(&mut image_io);
         // labels
         let label_path = PathBuf::from(label_filename.clone());
-        let labels_file = OpenOptions::new().read(true).open(&label_path)?;
+        let labels_file = OpenOptions::new().read(true).open(label_path)?;
         let mut labels_io = BufReader::new(labels_file);
         let labels = read_label_file(&mut labels_io);
         Ok(MnistData {
@@ -91,12 +91,10 @@ pub fn read_image_file(io_in: &mut dyn Read) -> Array3<u8> {
     assert_eq!(nbcolumn, 28);
     // for each item, read a row of nbcolumns u8
     let mut images = Array3::<u8>::zeros((nbrow as usize, nbcolumn as usize, nbitem as usize));
-    let mut datarow = Vec::<u8>::new();
-    datarow.resize(nbcolumn as usize, 0);
+    let mut datarow = vec![0u8; nbcolumn as usize];
     for k in 0..nbitem as usize {
         for i in 0..nbrow as usize {
-            let it_slice;
-            it_slice = datarow.as_mut_slice();
+            let it_slice = datarow.as_mut_slice();
             io_in.read_exact(it_slice).unwrap();
             let mut smut_ik = images.slice_mut(s![i, .., k]);
             assert_eq!(nbcolumn as usize, it_slice.len());
@@ -125,11 +123,9 @@ pub fn read_label_file(io_in: &mut dyn Read) -> Array1<u8> {
     io_in.read_exact(&mut it_slice).unwrap();
     let nbitem = Cursor::new(it_slice).read_u32::<BigEndian>().unwrap();
     assert!(nbitem == 60000 || nbitem == 10000);
-    let mut labels_vec = Vec::<u8>::new();
-    labels_vec.resize(nbitem as usize, 0);
+    let mut labels_vec = vec![0u8; nbitem as usize];
     io_in.read_exact(&mut labels_vec).unwrap();
-    let labels = Array1::from(labels_vec);
-    labels
+    Array1::from(labels_vec)
 } // end of fn read_label
 
 //  end of reading Mnist
@@ -139,6 +135,7 @@ use std::time::{Duration, SystemTime};
 
 use annembed::fromhnsw::toripserer::ToRipserer;
 
+#[allow(clippy::range_zip_with_len)]
 pub fn main() {
     //
     let _ = env_logger::builder().is_test(true).try_init();
@@ -147,7 +144,7 @@ pub fn main() {
     log::info!(" treating data from dir : {}", MNIST_DATA_DIR);
     image_fname.push_str("train-images-idx3-ubyte");
     let image_path = PathBuf::from(image_fname.clone());
-    let image_file_res = OpenOptions::new().read(true).open(&image_path);
+    let image_file_res = OpenOptions::new().read(true).open(image_path);
     if image_file_res.is_err() {
         println!("could not open image file : {:?}", image_fname);
         return;
@@ -155,7 +152,7 @@ pub fn main() {
     let mut label_fname = String::from(MNIST_DATA_DIR);
     label_fname.push_str("train-labels-idx1-ubyte");
     let label_path = PathBuf::from(label_fname.clone());
-    let label_file_res = OpenOptions::new().read(true).open(&label_path);
+    let label_file_res = OpenOptions::new().read(true).open(label_path);
     if label_file_res.is_err() {
         println!("could not open label file : {:?}", label_fname);
         return;
@@ -218,7 +215,7 @@ pub fn main() {
     log::debug!("extracting matrix of distances around first point");
     let center = data_with_id[0].0;
     let outbson = String::from("fashionlocal.bson");
-    let res = toripserer.extract_neighbourhood(&center, 1000, ef_c, &outbson);
+    let res = toripserer.extract_neighbourhood(center, 1000, ef_c, &outbson);
     if res.is_err() {
         panic!("ToRipserer.extract_neighbourhood{}", res.err().unwrap());
     }

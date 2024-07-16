@@ -9,6 +9,7 @@ use num_traits::Float;
 ///     Maximum likelyhood estimation of intrinsic dimension.
 ///     Levina E. and Bickel P.J NIPS 2004.  [Levina-Bickel](https://www.stat.berkeley.edu/~bickel/mldim.pdf)
 ///
+#[allow(clippy::let_and_return)]
 pub(crate) fn intrinsic_dimension_from_edges<F>(edges: &[OutEdge<F>]) -> Result<f64, anyhow::Error>
 where
     F: Float,

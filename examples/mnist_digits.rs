@@ -29,12 +29,12 @@ pub struct MnistData {
 impl MnistData {
     pub fn new(image_filename: String, label_filename: String) -> std::io::Result<MnistData> {
         let image_path = PathBuf::from(image_filename.clone());
-        let image_file = OpenOptions::new().read(true).open(&image_path)?;
+        let image_file = OpenOptions::new().read(true).open(image_path)?;
         let mut image_io = BufReader::new(image_file);
         let images = read_image_file(&mut image_io);
         // labels
         let label_path = PathBuf::from(label_filename.clone());
-        let labels_file = OpenOptions::new().read(true).open(&label_path)?;
+        let labels_file = OpenOptions::new().read(true).open(label_path)?;
         let mut labels_io = BufReader::new(labels_file);
         let labels = read_label_file(&mut labels_io);
         Ok(MnistData {
@@ -59,7 +59,6 @@ impl MnistData {
 
 pub fn read_image_file(io_in: &mut dyn Read) -> Array3<u8> {
     // read 4 bytes magic
-    let magic: u32;
     // to read 32 bits in network order!
     let toread: u32 = 0;
     let it_slice = unsafe {
@@ -69,10 +68,9 @@ pub fn read_image_file(io_in: &mut dyn Read) -> Array3<u8> {
         )
     };
     io_in.read_exact(it_slice).unwrap();
-    magic = u32::from_be(toread);
+    let magic = u32::from_be(toread);
     assert_eq!(magic, 2051);
     // read nbitems
-    let nbitem: u32;
     let it_slice = unsafe {
         ::std::slice::from_raw_parts_mut(
             (&toread as *const u32) as *mut u8,
@@ -80,10 +78,9 @@ pub fn read_image_file(io_in: &mut dyn Read) -> Array3<u8> {
         )
     };
     io_in.read_exact(it_slice).unwrap();
-    nbitem = u32::from_be(toread);
+    let nbitem = u32::from_be(toread);
     assert!(nbitem == 60000 || nbitem == 10000);
     //  read nbrow
-    let nbrow: u32;
     let it_slice = unsafe {
         ::std::slice::from_raw_parts_mut(
             (&toread as *const u32) as *mut u8,
@@ -91,10 +88,9 @@ pub fn read_image_file(io_in: &mut dyn Read) -> Array3<u8> {
         )
     };
     io_in.read_exact(it_slice).unwrap();
-    nbrow = u32::from_be(toread);
+    let nbrow = u32::from_be(toread);
     assert_eq!(nbrow, 28);
     // read nbcolumns
-    let nbcolumn: u32;
     let it_slice = unsafe {
         ::std::slice::from_raw_parts_mut(
             (&toread as *const u32) as *mut u8,
@@ -102,16 +98,14 @@ pub fn read_image_file(io_in: &mut dyn Read) -> Array3<u8> {
         )
     };
     io_in.read_exact(it_slice).unwrap();
-    nbcolumn = u32::from_be(toread);
+    let nbcolumn = u32::from_be(toread);
     assert_eq!(nbcolumn, 28);
     // for each item, read a row of nbcolumns u8
     let mut images = Array3::<u8>::zeros((nbrow as usize, nbcolumn as usize, nbitem as usize));
-    let mut datarow = Vec::<u8>::new();
-    datarow.resize(nbcolumn as usize, 0);
+    let mut datarow = vec![0u8; nbcolumn as usize];
     for k in 0..nbitem as usize {
         for i in 0..nbrow as usize {
-            let it_slice;
-            it_slice = datarow.as_mut_slice();
+            let it_slice = datarow.as_mut_slice();
             io_in.read_exact(it_slice).unwrap();
             let mut smut_ik = images.slice_mut(s![i, .., k]);
             assert_eq!(nbcolumn as usize, it_slice.len());
@@ -130,7 +124,6 @@ pub fn read_image_file(io_in: &mut dyn Read) -> Array3<u8> {
 } // end of readImageFile
 
 pub fn read_label_file(io_in: &mut dyn Read) -> Array1<u8> {
-    let magic: u32;
     // to read 32 bits in network order!
     let toread: u32 = 0;
     let it_slice = unsafe {
@@ -140,10 +133,9 @@ pub fn read_label_file(io_in: &mut dyn Read) -> Array1<u8> {
         )
     };
     io_in.read_exact(it_slice).unwrap();
-    magic = u32::from_be(toread);
+    let magic = u32::from_be(toread);
     assert_eq!(magic, 2049);
     // read nbitems
-    let nbitem: u32;
     let it_slice = unsafe {
         ::std::slice::from_raw_parts_mut(
             (&toread as *const u32) as *mut u8,
@@ -151,13 +143,11 @@ pub fn read_label_file(io_in: &mut dyn Read) -> Array1<u8> {
         )
     };
     io_in.read_exact(it_slice).unwrap();
-    nbitem = u32::from_be(toread);
+    let nbitem = u32::from_be(toread);
     assert!(nbitem == 60000 || nbitem == 10000);
-    let mut labels_vec = Vec::<u8>::new();
-    labels_vec.resize(nbitem as usize, 0);
+    let mut labels_vec = vec![0u8; nbitem as usize];
     io_in.read_exact(&mut labels_vec).unwrap();
-    let labels = Array1::from(labels_vec);
-    labels
+    Array1::from(labels_vec)
 } // end of fn read_label
 
 //============================================================================================
@@ -171,8 +161,9 @@ use annembed::fromhnsw::hubness;
 use annembed::fromhnsw::kgproj::KGraphProjection;
 use annembed::fromhnsw::kgraph::{kgraph_from_hnsw_all, KGraph};
 
-const MNIST_DIGITS_DIR: &'static str = "/home/jpboth/Data/ANN/MNIST/";
+const MNIST_DIGITS_DIR: &str = "/home/jpboth/Data/ANN/MNIST/";
 
+#[allow(clippy::range_zip_with_len)]
 pub fn main() {
     //
     let _ = env_logger::builder().is_test(true).try_init();
@@ -180,7 +171,7 @@ pub fn main() {
     let mut image_fname = String::from(MNIST_DIGITS_DIR);
     image_fname.push_str("train-images-idx3-ubyte");
     let image_path = PathBuf::from(image_fname.clone());
-    let image_file_res = OpenOptions::new().read(true).open(&image_path);
+    let image_file_res = OpenOptions::new().read(true).open(image_path);
     if image_file_res.is_err() {
         println!("could not open image file : {:?}", image_fname);
         return;
@@ -215,14 +206,14 @@ pub fn main() {
     let mut image_fname = String::from(MNIST_DIGITS_DIR);
     image_fname.push_str("t10k-images-idx3-ubyte");
     let image_path = PathBuf::from(image_fname.clone());
-    let image_file_res = OpenOptions::new().read(true).open(&image_path);
+    let image_file_res = OpenOptions::new().read(true).open(image_path);
     if image_file_res.is_err() {
         println!("could not open image file : {:?}", image_fname);
         return;
     }
     let mut label_fname = String::from(MNIST_DIGITS_DIR);
     label_fname.push_str("t10k-labels-idx1-ubyte");
-    let label_file_res = OpenOptions::new().read(true).open(&label_path);
+    let label_file_res = OpenOptions::new().read(true).open(label_path);
     if label_file_res.is_err() {
         println!("could not open label file : {:?}", label_fname);
         return;
@@ -335,8 +326,7 @@ pub fn main() {
     // Get some statistics on induced graph. This is not related to the embedding process
     //
     let knbn = 25;
-    let kgraph: KGraph<f32>;
-    kgraph = kgraph_from_hnsw_all(&hnsw, knbn).unwrap();
+    let kgraph: KGraph<f32> = kgraph_from_hnsw_all(&hnsw, knbn).unwrap();
     log::info!("minimum number of neighbours {}", kgraph.get_max_nbng());
     log::info!("dimension estimation...");
     let cpu_start = ProcessTime::now();

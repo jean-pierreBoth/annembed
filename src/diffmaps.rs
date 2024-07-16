@@ -37,7 +37,8 @@ impl DiffusionParams {
     pub fn get_t(&self) -> Option<f32> {
         self.t
     }
-    ///
+    //
+
     pub fn get_embedding_dimension(&self) -> usize {
         self.asked_dim
     }
@@ -73,10 +74,7 @@ impl DiffusionMaps {
         let kgraph = kgraph_from_hnsw_all::<T, D, F>(hnsw, knbn as usize).unwrap();
         // get NodeParams. CAVEAT to_proba_edges apply initial shift!!
         let nodeparams = to_proba_edges::<F>(&kgraph, 1., 2.);
-        let embedded =
-            get_dmap_embedding::<F>(&nodeparams, self.params.asked_dim, self.params.get_t());
-        //
-        embedded
+        get_dmap_embedding::<F>(&nodeparams, self.params.asked_dim, self.params.get_t())
     }
 } // end of impl DiffusionsMaps
 

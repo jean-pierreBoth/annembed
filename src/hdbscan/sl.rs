@@ -94,7 +94,7 @@ impl<F: Float + PartialOrd> Eq for Edge<F> {}
 
 impl<F: Float + PartialOrd> PartialOrd for Edge<F> {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        self.weight.partial_cmp(&other.weight)
+        Some(self.cmp(other))
     }
 }
 
