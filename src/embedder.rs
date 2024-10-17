@@ -20,8 +20,8 @@
 use num_traits::{Float, NumAssign};
 
 use ndarray::{Array1, Array2, ArrayView1};
-use ndarray_linalg::{Lapack, Scalar};
-
+// use ndarray_linalg::{Lapack, Scalar};
+use lax::Lapack;
 
 use quantiles::ckms::CKMS;     // we could use also greenwald_khanna
 use csv::Writer;
@@ -55,7 +55,8 @@ const PROBA_MIN: f32 = 1.0E-5;
 
 // to be used in emdedded space so small dimension. no need for simd and 
 #[inline]
-fn distl2<F:Float+ Lapack + Scalar + ndarray::ScalarOperand + Send + Sync>(a: &[F], b: &[F]) -> F {
+fn distl2<F:Float+ ndarray::ScalarOperand + Send + Sync>(a: &[F], b: &[F]) -> F 
+    where F : std::iter::Sum {
     assert_eq!(a.len(), b.len());
     let norm : F = a.iter().zip(b.iter()).map(|t| (*t.0 - *t.1 ) * (*t.0 - *t.1)).sum();
     num_traits::Float::sqrt(norm)
@@ -64,7 +65,7 @@ fn distl2<F:Float+ Lapack + Scalar + ndarray::ScalarOperand + Send + Sync>(a: &[
 struct DistL2F;
 
 impl <F> Distance<F> for DistL2F 
-    where F:Float+ Lapack + Scalar + ndarray::ScalarOperand + Send + Sync {
+    where F:Float + ndarray::ScalarOperand + std::iter::Sum + Send + Sync {
     fn eval(&self, va:&[F], vb: &[F]) -> f32 {
         distl2::<F>(va, vb).to_f32().unwrap()
     } // end of compute
@@ -96,7 +97,7 @@ pub struct Embedder<'a,F> {
 
 impl<'a,F> Embedder<'a,F>
 where
-    F: Float + Lapack + Scalar + ndarray::ScalarOperand + Send + Sync,
+    F: Float + Lapack + ndarray::ScalarOperand + Send + Sync,
 {
     /// constructor from a graph and asked embedding dimension
     pub fn new(kgraph : &'a KGraph<F>, parameters : EmbedderParams) -> Self {
@@ -1118,7 +1119,7 @@ fn get_scale_from_proba_normalisation<F> (kgraph : & KGraph<F>, scale_rho : f32,
         all_equal = true;
     }
     //
-    let remap_weight = | w : F , shift : f32, scale : f32 , beta : f32| (-((w.to_f32().unwrap() - shift).max(0.)/ scale).pow(beta)).exp();
+    let remap_weight = | w : F , shift : f32, scale : f32 , beta : f32| (-((w.to_f32().unwrap() - shift).max(0.)/ scale).powf(beta)).exp();
     //
     if !all_equal {
         let last_dist = last_n.unwrap().weight.to_f32().unwrap();

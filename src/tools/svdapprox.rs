@@ -38,9 +38,10 @@ use ndarray::{
 };
 
 // pub to avoid to re-import everywhere explicitly
-pub use ndarray_linalg::{layout::MatrixLayout, svddc::JobSvd, Lapack, Scalar, QR};
+// pub use ndarray_linalg::{layout::MatrixLayout, svddc::JobSvd, Lapack, Scalar, QR};
 
 // use lax::QR_;
+use lax::{layout::MatrixLayout, JobSvd, Lapack};
 
 use std::marker::PhantomData;
 
@@ -124,7 +125,6 @@ pub struct MatRepr<F> {
 impl<F> MatRepr<F>
 where
     F: Float
-        + Scalar
         + Lapack
         + ndarray::ScalarOperand
         + sprs::MulAcc
@@ -252,7 +252,7 @@ where
 /// Returns t(qmat)*csrmat int a full matrix. Matrices must have appropriate dimensions for multiplication to avoid panic!
 pub fn transpose_dense_mult_csr<F>(qmat: &Array2<F>, csrmat: &CsMat<F>) -> Array2<F>
 where
-    F: Float + Scalar + Lapack + ndarray::ScalarOperand + sprs::MulAcc,
+    F: Float + Lapack + ndarray::ScalarOperand + sprs::MulAcc,
 {
     // transpose csrmat (it becomes a cscmat! )
     let cscmat = csrmat.transpose_view();
@@ -344,7 +344,7 @@ pub enum RangeApproxMode {
 // Recall that ndArray is C-order row order.
 /// compute an approximate truncated svd.  
 /// The data matrix is supposed given as a (m,n) matrix. m is the number of data and n their dimension.
-pub struct RangeApprox<'a, F: Scalar> {
+pub struct RangeApprox<'a, F> {
     /// matrix we want to approximate range of. We s
     mat: &'a MatRepr<F>,
     /// mode of approximation asked for.
@@ -357,7 +357,6 @@ where
     F: Send
         + Sync
         + Float
-        + Scalar
         + Lapack
         + ndarray::ScalarOperand
         + sprs::MulAcc
@@ -422,7 +421,7 @@ where
 // Nota : if nbiter == 0 We get Tropp Algo 4.1 or Algo 2.1 of Wei-Zhang-Chen
 pub fn subspace_iteration_full<F>(mat: &Array2<F>, rank: usize, nbiter: usize) -> Array2<F>
 where
-    F: Send + Sync + Float + Scalar + Lapack + ndarray::ScalarOperand,
+    F: Send + Sync + Float + Lapack + ndarray::ScalarOperand,
 {
     //
     let mut rng = RandomGaussianGenerator::<F>::new();
@@ -480,7 +479,7 @@ where
 ///
 pub fn subspace_iteration_csr<F>(csrmat: &CsMat<F>, rank: usize, nbiter: usize) -> Array2<F>
 where
-    F: Send + Sync + Float + Scalar + Lapack + ndarray::ScalarOperand + sprs::MulAcc,
+    F: Send + Sync + Float + Lapack + ndarray::ScalarOperand + sprs::MulAcc,
 {
     //
     log::debug!(
@@ -587,7 +586,6 @@ pub fn adaptative_range_finder_matrep<F>(
 ) -> Array2<F>
 where
     F: Float
-        + Scalar
         + Lapack
         + ndarray::ScalarOperand
         + sprs::MulAcc
@@ -664,7 +662,7 @@ where
         }
         // get norm of current y vector
         let n_j = norm_frobenius_full(&y_vec[j].read().view());
-        if n_j < ndarray_linalg::Scalar::sqrt(F::epsilon()) {
+        if n_j < num_traits::Float::sqrt(F::epsilon()) {
             log::info!("adaptative_range_finder_matrep returning  at nb_iter {} with n_j {:.3e} and rank {:?} ", nb_iter, n_j, q_mat.len());
             break;
         }
@@ -733,7 +731,7 @@ where
 /// just to check a range approximation, we estimate largest singular values
 pub fn check_range_approx<F>(a_mat: &ArrayView2<F>, q_mat: &ArrayView2<F>) -> f64
 where
-    F: Float + num_traits::ToPrimitive + ndarray_linalg::Scalar + ndarray::ScalarOperand,
+    F: Float + std::iter::Sum + num_traits::ToPrimitive + ndarray::ScalarOperand,
 {
     //
     log::debug!("in svdapprox check_range_approx full matrix");
@@ -749,12 +747,7 @@ where
 /// a_mat is the original matrix, q_mat is the matrix return by the approximator (SvdApprox::get_approximator)
 pub fn check_range_approx_repr<F>(a_mat: &MatRepr<F>, q_mat: &Array2<F>) -> f64
 where
-    F: Float
-        + ndarray_linalg::Scalar
-        + ndarray_linalg::Lapack
-        + ndarray::ScalarOperand
-        + num_traits::MulAdd
-        + sprs::MulAcc,
+    F: Float + lax::Lapack + ndarray::ScalarOperand + num_traits::MulAdd + sprs::MulAcc,
 {
     let norm_residue = match &a_mat.data {
         MatMode::FULL(mat) => {
@@ -818,7 +811,7 @@ impl<F> SvdResult<F> {
 /// The first step is to find a range approximation of the matrix.
 /// This step can be done by asking for a required precision or a minimum rank for dense matrices represented by Array2
 /// or Csr matrices
-pub struct SvdApprox<'a, F: Scalar> {
+pub struct SvdApprox<'a, F> {
     /// matrix we want to approximate range of.
     data: &'a MatRepr<F>,
 } // end of struct SvdApprox
@@ -829,7 +822,6 @@ where
         + Sync
         + Float
         + Lapack
-        + Scalar
         + ndarray::ScalarOperand
         + sprs::MulAcc
         + for<'r> std::ops::MulAssign<&'r F>
@@ -925,13 +917,13 @@ where
 
 /// compute Frobenius norm of an array. It is also l2 norm for a vector. (but not for a Matrix)
 #[inline]
-pub fn norm_frobenius_full<D: Dimension, F: Scalar>(v: &ArrayView<F, D>) -> F {
+pub fn norm_frobenius_full<D: Dimension, F: Float + std::iter::Sum>(v: &ArrayView<F, D>) -> F {
     let s: F = v.into_iter().map(|x| (*x) * (*x)).sum::<F>();
     s.sqrt()
 } // end of norm_frobenius
 
 /// compute Frobenius norm of a CsMat
-pub fn norm_frobenius_csmat<F: Scalar>(m: &CsMatView<F>) -> F {
+pub fn norm_frobenius_csmat<F: Float + std::iter::Sum>(m: &CsMatView<F>) -> F {
     let s: F = m.data().iter().map(|x| (*x) * (*x)).sum::<F>();
     s.sqrt()
 } // end of norm_frobenius_csmat
@@ -939,12 +931,7 @@ pub fn norm_frobenius_csmat<F: Scalar>(m: &CsMatView<F>) -> F {
 /// estimate the first singular_value of mat given as a MatRepr
 pub fn norm_frobenius_repr<F>(mat: &MatRepr<F>) -> F
 where
-    F: Float
-        + FromPrimitive
-        + ndarray_linalg::Scalar
-        + ndarray::ScalarOperand
-        + ndarray_linalg::Lapack
-        + sprs::MulAcc,
+    F: Float + std::iter::Sum + FromPrimitive + ndarray::ScalarOperand + sprs::MulAcc,
 {
     //
     let norm_l2 = match &mat.data {
@@ -969,7 +956,7 @@ where
 /// use conversion to dense matrix, so to be used only for checks/tests
 pub fn estimate_first_singular_value_csmat<F>(mat: &CsMat<F>) -> f64
 where
-    F: Float + Scalar + Lapack + ndarray::ScalarOperand + sprs::MulAcc,
+    F: Float + Lapack + ndarray::ScalarOperand + sprs::MulAcc,
 {
     //
     log::debug!("in estimate_first_singular_value_csmat");
@@ -1016,7 +1003,7 @@ where
 /// So it returns the first singular value of mat
 pub fn estimate_first_singular_value_fullmat<F>(mat: &ArrayView2<F>) -> f64
 where
-    F: Float + FromPrimitive + ndarray_linalg::Scalar + ndarray::ScalarOperand,
+    F: Float + std::fmt::LowerExp + FromPrimitive + ndarray::ScalarOperand,
 {
     //
     log::debug!("in estimate_first_singular_value_fullmat");
@@ -1036,7 +1023,7 @@ where
     let epsil = F::from_f64(1.0E-8).unwrap();
     loop {
         v2 = a2.dot(&v1);
-        lambda = Scalar::sqrt(v2.dot(&v2));
+        lambda = Float::sqrt(v2.dot(&v2));
         if lambda <= F::epsilon() {
             log::info!(
                 " estimated (fullmat) first singular value at iter {:?} {:.5e}",
@@ -1074,12 +1061,7 @@ where
 /// estimate the first singular_value of mat given as a MatRepr
 pub fn estimate_first_singular_value_repr<F>(mat: &MatRepr<F>) -> f64
 where
-    F: Float
-        + FromPrimitive
-        + ndarray_linalg::Scalar
-        + ndarray::ScalarOperand
-        + ndarray_linalg::Lapack
-        + sprs::MulAcc,
+    F: Float + FromPrimitive + ndarray::ScalarOperand + lax::Lapack + sprs::MulAcc,
 {
     //
     let norm_l2 = match &mat.data {
@@ -1096,7 +1078,7 @@ where
 } // end of estimate_first_singular_value_repr
 
 /// return  y - projection of y on space spanned by q's vectors.
-fn orthogonalize_with_q<F: Scalar + ndarray::ScalarOperand>(
+fn orthogonalize_with_q<F: Float + ndarray::ScalarOperand + lax::Lapack>(
     q: &[Array1<F>],
     y: &mut ArrayViewMut1<F>,
 ) {
@@ -1121,7 +1103,7 @@ fn orthogonalize_with_q<F: Scalar + ndarray::ScalarOperand>(
 //
 fn do_qr<F>(layout: MatrixLayout, mat: &mut Array2<F>)
 where
-    F: Float + Lapack + Scalar + ndarray::ScalarOperand,
+    F: Float + Lapack + ndarray::ScalarOperand,
 {
     let (_, _) = match layout {
         MatrixLayout::C { row, lda } => (row as usize, lda as usize),

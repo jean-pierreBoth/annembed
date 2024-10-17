@@ -1,5 +1,7 @@
 # A data embedding tool and related data analysis or clustering
 
+![](Annembed_logo-small.jpg)
+
 The crate provides mainly in the form of a library (*See documentation of the binary embed for a small executable embedding data in csv files*):
 
 1. Some variations on data embedding tools from t-Sne (2008) to Umap(2018).
@@ -217,6 +219,10 @@ Two algorithms for range approximation used in approximated SVD are:
 - Stochastic Cluster Embedding.
   Zhirong Yang, Yuwei Chen, Denis Sedov, Samuel Kaski, Jukka Corander.   
   Statistics and Computing 2023. [SCE](https://link.springer.com/article/10.1007/s11222-022-10186-z)
+
+## Contributions
+
+The logo was designed by Jianshu Zao.
 
 ## License
 

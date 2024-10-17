@@ -11,7 +11,7 @@ use num_traits::Float;
 
 use hnsw_rs::prelude::*;
 use ndarray::Array2;
-use ndarray_linalg::Scalar;
+// use ndarray_linalg::Scalar;
 
 use crate::embedder::*;
 use crate::fromhnsw::*;
@@ -141,7 +141,8 @@ where
         for j in 0..asked_dim {
             // divide j value by diagonal and convert to F. take l_{i}^{t} as in dmap
             embedded[[i, j]] =
-                F::from_f32(normalized_lambdas[j + 1].pow(time) * row_i[j + 1] / weight_i).unwrap();
+                F::from_f32(normalized_lambdas[j + 1].powf(time) * row_i[j + 1] / weight_i)
+                    .unwrap();
         }
     }
     log::trace!("ended get_dmap_initial_embedding");

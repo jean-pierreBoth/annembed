@@ -2,10 +2,11 @@
 
 use std::collections::HashMap;
 
-use ndarray::{Array1, Array2, Axis};
+use ndarray::{Array, Array1, Array2, Axis};
 use sprs::{CsMat, TriMatBase};
 
-use ndarray_linalg::SVDDC;
+use lax::{layout::MatrixLayout, JobSvd, Lapack};
+// use ndarray_linalg::SVDDC;
 
 use crate::tools::{nodeparam::*, svdapprox::*};
 
@@ -56,33 +57,8 @@ impl GraphLaplacian {
             b.shape()[0],
             b.shape()[1]
         );
-
-        let slice_for_svd_opt = b.as_slice_mut();
-        if slice_for_svd_opt.is_none() {
-            println!("direct_svd Matrix cannot be transformed into a slice : not contiguous or not in standard order");
-            return Err(String::from("not contiguous or not in standard order"));
-        }
-        // use divide conquer (calls lapack gesdd), faster but could use svd (lapack gesvd)
-        log::trace!("direct_svd calling svddc driver");
-        let res_svd_b = b.svddc(JobSvd::Some);
-        if res_svd_b.is_err() {
-            log::info!("GraphLaplacian do_full_svd svddc failed");
-            return Err(String::from("GraphLaplacian svddc failed"));
-        };
-        // we have to decode res and fill in SvdApprox fields.
-        // lax does encapsulte dgesvd (double) and sgesvd (single)  which returns U and Vt as vectors.
-        // We must reconstruct Array2 from slices.
-        // now we must match results
-        // u is (m,r) , vt must be (r, n) with m = self.data.shape()[0]  and n = self.data.shape()[1]
-        let res_svd_b = res_svd_b.unwrap();
-        // must truncate to asked dim
-        let s: Array1<f32> = res_svd_b.1;
         //
-        Ok(SvdResult {
-            s: Some(s),
-            u: res_svd_b.0,
-            vt: None,
-        })
+        svd_f32(b)
     } // end of do_full_svd
 
     /// do a partial approxlated svd
@@ -230,3 +206,106 @@ pub(crate) fn get_laplacian(initial_space: &NodeParams) -> GraphLaplacian {
     } // end case CsMat
       //
 } // end of get_laplacian
+
+//
+// return s and u, used in symetric case
+//
+pub(crate) fn svd_f32(b: &mut Array2<f32>) -> Result<SvdResult<f32>, String> {
+    let layout = MatrixLayout::C {
+        row: b.shape()[0] as i32,
+        lda: b.shape()[1] as i32,
+    };
+    let slice_for_svd_opt = b.as_slice_mut();
+    if slice_for_svd_opt.is_none() {
+        println!("direct_svd Matrix cannot be transformed into a slice : not contiguous or not in standard order");
+        return Err(String::from("not contiguous or not in standard order"));
+    }
+    // use divide conquer (calls lapack gesdd), faster but could use svd (lapack gesvd)
+    log::trace!("direct_svd calling svddc driver");
+    let res_svd_b = f32::svddc(layout, JobSvd::Some, slice_for_svd_opt.unwrap());
+    if res_svd_b.is_err() {
+        println!("direct_svd, svddc failed");
+    };
+    // we have to decode res and fill in SvdApprox fields.
+    // lax does encapsulte dgesvd (double) and sgesvd (single)  which returns U and Vt as vectors.
+    // We must reconstruct Array2 from slices.
+    // now we must match results
+    // u is (m,r) , vt must be (r, n) with m = self.data.shape()[0]  and n = self.data.shape()[1]
+    let res_svd_b = res_svd_b.unwrap();
+    let r = res_svd_b.s.len();
+    let m = b.shape()[0];
+    // must convert from Real to Float ...
+    let s: Array1<f32> = res_svd_b
+        .s
+        .iter()
+        .map(|x| f32::from(*x))
+        .collect::<Array1<f32>>();
+    //
+    // we have to decode res and fill in SvdApprox fields.
+    // lax does encapsulte dgesvd (double) and sgesvd (single)  which returns U and Vt as vectors.
+    // We must reconstruct Array2 from slices.
+    // now we must match results
+    // u is (m,r) , vt must be (r, n) with m = self.data.shape()[0]  and n = self.data.shape()[1]
+    // must truncate to asked dim
+    let s_u: Option<Array2<f32>>;
+    if let Some(u_vec) = res_svd_b.u {
+        let u_1 = Array::from_shape_vec((m, r), u_vec).unwrap();
+        s_u = Some(u_1);
+    } else {
+        s_u = None;
+    }
+    //
+    Ok(SvdResult {
+        s: Some(s),
+        u: s_u,
+        vt: None,
+    })
+}
+
+//==========================================================================
+
+#[cfg(test)]
+mod tests {
+
+    //    cargo test graphlaplace  -- --nocapture
+    //    RUST_LOG=annembed::tools::svdapprox=TRACE cargo test svdapprox  -- --nocapture
+
+    use super::*;
+
+    fn log_init_test() {
+        let _ = env_logger::builder().is_test(true).try_init();
+    }
+
+    // to check svd_f32
+    #[test]
+    fn test_svd_wiki_rank_svd_f32() {
+        //
+        log_init_test();
+        //
+        log::info!("\n\n test_svd_wiki");
+        // matrix taken from wikipedia (4,5)
+
+        let row_0: [f32; 5] = [1., 0., 0., 0., 2.];
+        let row_1: [f32; 5] = [0., 0., 3., 0., 0.];
+        let row_2: [f32; 5] = [0., 0., 0., 0., 0.];
+        let row_3: [f32; 5] = [0., 2., 0., 0., 0.];
+
+        let mut mat = ndarray::arr2(
+            &[row_0, row_1, row_2, row_3], // row 3
+        );
+        //
+        let epsil: f32 = 1.0E-5;
+        let res = svd_f32(&mut mat).unwrap();
+        let computed_s = res.get_sigma().as_ref().unwrap();
+        let sigma = ndarray::arr1(&[3., (5f32).sqrt(), 2., 0.]);
+        for i in 0..computed_s.len() {
+            log::debug! {"sp  i  exact : {}, computed {}", sigma[i], computed_s[i]};
+            let test = if sigma[i] > 0. {
+                ((1. - computed_s[i] / sigma[i]).abs() as f32) < epsil
+            } else {
+                ((sigma[i] - computed_s[i]).abs() as f32) < epsil
+            };
+            assert!(test);
+        }
+    }
+} // end of mod test
