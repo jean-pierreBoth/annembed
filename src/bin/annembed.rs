@@ -8,11 +8,14 @@
 //! hnsw is an optional subcommand to change default parameters of the Hnsw structure. See [hnsw_rs](https://crates.io/crates/hnsw_rs).  
 //! embed is an optional subcommand to change default parameters related to the embedding: gradient, edge sampling etc. See [EmbedderParams]
 //!
-//! - Parameters for embed subcommand. The options give access to some fields of the [EmbedderParams] structure.  
-//!  --stepg    : a float value , initial gradient step, default is 2.  
-//!  --scale    : a float value, scale modification factor, default is 1.  
-//!  --nbsample : number of edge sampling , default is 10   
-//!  --layer    : in case of hierarchical embedding num of the lower layer we consider to run preliminary step.  
+//! - Parameters for embed part. The options give access to some fields of the [EmbedderParams] structure.  
+//!  --stepg    : optional, a float value , initial gradient step, default is 2.  
+//!  --scale    : optional, a float value, scale modification factor, default is 1.  
+//!  --nbsample : optional, a number of edge sampling , default is 10   
+//!  --layer    : optional, in case of hierarchical embedding num of the lower layer we consider to run preliminary step.
+//!  --dim      : optional, dimension of the embedding , default to 2.  
+//!  --quality  : optional, asks for quality estimation
+//!  --sampling : optional, for large data defines the fraction of sampled data as 1./sampling
 //!
 //! - Parameters for the hnsw subcommand. For more details see [hnsw_rs](https://crates.io/crates/hnsw_rs).   
 //! --nbconn  : defines the number of connections by node in a layer.   Can range from 4 to 64 or more if necessary and enough memory
