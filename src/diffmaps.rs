@@ -123,6 +123,14 @@ where
     // We get U at index in range first_non_zero-max_dim..first_non_zero
     let u = svd_res.get_u().as_ref().unwrap();
     log::debug!("u shape : nrows: {} ,  ncols : {} ", u.nrows(), u.ncols());
+    if u.ncols() < asked_dim {
+        log::warn!(
+            "asked dimension  : {} svd obtained less than asked for : {}",
+            asked_dim,
+            u.ncols()
+        );
+    }
+    let real_dim = asked_dim.min(u.ncols()) - 1;
     // we can get svd from approx range so that nrows and ncols can be number of nodes!
     let mut embedded = Array2::<F>::zeros((u.nrows(), asked_dim));
     // according to theory (See Luxburg or Lafon-Keller diffusion maps) we must go back to eigen vectors of rw laplacian.
@@ -138,14 +146,14 @@ where
     for i in 0..u.nrows() {
         let row_i = u.row(i);
         let weight_i = (laplacian.degrees[i] / sum_diag).sqrt();
-        for j in 0..asked_dim {
+        for j in 0..real_dim {
             // divide j value by diagonal and convert to F. take l_{i}^{t} as in dmap
             embedded[[i, j]] =
                 F::from_f32(normalized_lambdas[j + 1].powf(time) * row_i[j + 1] / weight_i)
                     .unwrap();
         }
     }
-    log::trace!("ended get_dmap_initial_embedding");
+    log::debug!("ended get_dmap_initial_embedding");
     embedded
 } // end of get_dmap_initial_embedding
 

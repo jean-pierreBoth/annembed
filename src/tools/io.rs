@@ -10,6 +10,8 @@ use std::fs::OpenOptions;
 use std::io::{BufRead, BufReader, Read};
 use std::path::Path;
 
+use rand::distributions::{Distribution, Uniform};
+
 use num_traits::Float;
 use std::str::FromStr;
 
@@ -110,7 +112,11 @@ pub(crate) fn get_header_size(filepath: &Path) -> anyhow::Result<usize> {
 /// get data to embed from a csv file
 /// Each line of the file must have a vector of float values with some standard csv delimiters.
 /// A header is possible with lines beginning with '#' or '%'
-pub fn get_toembed_from_csv<F>(filepath: &Path, delim: u8) -> anyhow::Result<Vec<Vec<F>>>
+pub fn get_toembed_from_csv<F>(
+    filepath: &Path,
+    delim: u8,
+    sampling_fraction: f64,
+) -> anyhow::Result<Vec<Vec<F>>>
 where
     F: FromStr + Float,
 {
@@ -142,6 +148,9 @@ where
     for _ in 0..nb_headers_line {
         bufreader.read_line(&mut headerline)?;
     }
+    //
+    let unif_01 = Uniform::<f64>::new(0., 1.);
+    let mut rng = rand::thread_rng();
     //
     let mut num_record: usize = 0;
     let mut nb_fields = 0;
@@ -184,6 +193,11 @@ where
                 ));
             }
             // We have a new vector with nb_fields to parse
+            // sample if we load this record
+            let xsi = unif_01.sample(&mut rng);
+            if xsi >= sampling_fraction {
+                continue;
+            }
             let mut v = Vec::<F>::with_capacity(nb_fields);
             for j in 0..nb_fields {
                 let field = record.get(j).unwrap();
@@ -235,7 +249,7 @@ mod tests {
         let path = Path::new(TESTDIR).join("toembed.csv");
         let fileres = OpenOptions::new().read(true).open(&path);
         if fileres.is_ok() {
-            let toembed = get_toembed_from_csv::<f32>(&path, b',');
+            let toembed = get_toembed_from_csv::<f32>(&path, b',', 1.);
             assert!(toembed.is_ok());
         }
     } // end of load_csv
