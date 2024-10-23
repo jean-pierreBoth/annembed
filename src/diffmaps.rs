@@ -130,9 +130,9 @@ where
             u.ncols()
         );
     }
-    let real_dim = asked_dim.min(u.ncols()) - 1;
+    let real_dim = asked_dim.min(u.ncols());
     // we can get svd from approx range so that nrows and ncols can be number of nodes!
-    let mut embedded = Array2::<F>::zeros((u.nrows(), asked_dim));
+    let mut embedded = Array2::<F>::zeros((u.nrows(), real_dim));
     // according to theory (See Luxburg or Lafon-Keller diffusion maps) we must go back to eigen vectors of rw laplacian.
     // Appendix A of Coifman-Lafon Diffusion Maps. Applied Comput Harmonical Analysis 2006.
     // moreover we must get back to type F
