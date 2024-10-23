@@ -1,9 +1,9 @@
 # A data embedding tool and related data analysis or clustering
 
 
-<p style="text-align: center">
+<div align="center">
   <img width="50%" src ="Annembed_logo-small.jpg">
-</p>
+</div>
 
 The crate provides mainly in the form of a library (*See documentation of the binary embed for a small executable embedding data in csv files*):
 
