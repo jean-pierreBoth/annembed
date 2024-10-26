@@ -25,7 +25,7 @@ The crate provides mainly in the form of a library (*See documentation of the bi
    
 
    We quantify the stability of neighbourhoods through the embedding as this helps selecting among varying results between runs for a given data set.
-   As the default dimension of 2 is used for visualization purposes, increasing the dimension shows a better conservation of neighborhoods.
+   The default dimension of 2 is used for visualization purposes, but for other purposes, increasing the dimension shows a better conservation of neighborhoods.
    **It is known that the dimension of the target space is critical in the embedding process**.
    (See Whitney embedding theorem).
 
