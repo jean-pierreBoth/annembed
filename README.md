@@ -21,9 +21,17 @@ The crate provides mainly in the form of a library (*See documentation of the bi
 
 - We also use a cross entropy optimization of this initial layout but take into account the initial local density estimate of each point when computing the cauchy weight of an embedded edge. The corresponding "perplexity" distribution is estimated on the fly. (**See documentation in module EmbedderParams**).
 
-- We provide a tentative assesment of the continuity of the embedding to help selecting among varying results between runs for a given data set. This is detailed in the documentation of function *Embedder::get_quality_estimate_from_edge_length* and is illustrated in examples directory.
+2. A tentative estimation of embedding faithfulness.  
+   
 
- 1. Some by-products :
+   We quantify the stability of neighbourhoods through the embedding as this helps selecting among varying results between runs for a given data set.
+   As the default dimension of 2 is used for visualization purposes, increasing the dimension shows a better conservation of neighborhoods.
+   **It is known that the dimension of the target space is critical in the embedding process**.
+   (See Whitney embedding theorem).
+
+    This can be verified in examples (especially the Higgs data) and detailed in the documentation of function *Embedder::get_quality_estimate_from_edge_length* and is illustrated in examples directory.
+
+3. Some by-products :
 
     - an implementation of range approximation and approximated SVD for dense and/or row compressed matrices as described in the svdapprox module and the paper of Halko-Tropp (Cf. [Tsvd](https://arxiv.org/abs/0909.4061)).
 

@@ -370,6 +370,11 @@ where
         &self.large_graph
     }
 
+    /// get the number of nodes used for embedding neighbourhood
+    pub fn get_nbng(&self) -> usize {
+        self.get_small_graph().get_max_nbng()
+    }
+
     /// returns quantile stats on distances to projection point
     pub fn get_projection_distance_quant(&self) -> CKMS<f32> {
         let mut quant = CKMS::<f32>::new(0.001);

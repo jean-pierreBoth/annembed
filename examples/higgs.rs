@@ -1,10 +1,43 @@
 //! test of embedding for HIGGS boson data that consists in 11 millions of points in dimension 21 or 28 if we use
-//! also the variables hand crafted by physicists.  
+//! also the variables hand crafted by physicists.    
 //! The data is described and can be retrieved at <https://archive.ics.uci.edu/ml/datasets/HIGGS>.
 //! An example of this data set processing is given in the paper by Amid and Warmuth
 //! Cf <https://arxiv.org/abs/1910.00204>
 //!
-
+//! We run quality estimation with a subsampling factor of 0.15 so we keep about 1_600_000 pointq
+//!
+//! - With embedding **dimension 2** and embedding neighbourhood size 100 we get :
+//! ```text
+//! a guess at quality
+//! neighbourhood size used in embedding : 6
+//! nb neighbourhoods without a match : 925763,  mean number of neighbours conserved when match : 5.136e0
+//! embedded radii quantiles at 0.05 : 1.09e-2 , 0.25 : 1.41e-2, 0.5 :  2.30e-2, 0.75 : 1.11e-1, 0.85 : 1.62e-1, 0.95 : 2.62e-1
+//!
+//! statistics on conservation of neighborhood (of size nbng)
+//! neighbourhood size used in target space : 100
+//! quantiles on ratio : distance in embedded space of neighbours of origin space / distance of last neighbour in embedded space
+//! quantiles at 0.05 : 9.88e-2 , 0.25 : 5.09e-1, 0.5 :  1.72e0, 0.75 : 4.77e0, 0.85 : 7.78e0, 0.95 : 1.57e1
+//! ```
+//!
+//! Only 43% of points have some neighbours conserved and 50% of points need at 1.7 * the radius of embedded neighbour considered to retrieve all
+//! their neighbours.
+//!
+//! - With embedding **dimension 15** and embedding neighbourhood size 100 we get :
+//! ```text
+//! a guess at quality
+//!  neighbourhood size used in embedding : 6
+//!  nb neighbourhoods without a match : 104259,  mean number of neighbours conserved when match : 5.783e0
+//!  embedded radii quantiles at 0.05 : 7.73e-2 , 0.25 : 1.14e-1, 0.5 :  2.20e-1, 0.75 : 5.49e-1, 0.85 : 6.28e-1, 0.95 : 7.52e-1
+//!
+//! statistics on conservation of neighborhood (of size nbng)
+//! neighbourhood size used in target space : 100
+//! quantiles on ratio : distance in embedded space of neighbours of origin space / distance of last neighbour in embedded space
+//! quantiles at 0.05 : 4.43e-2 , 0.25 : 1.11e-1, 0.5 :  2.49e-1, 0.75 : 5.50e-1, 0.85 : 7.70e-1, 0.95 : 1.27e0
+//! ```
+//! So over 1_600_000 nodes only 100_000 do not retrieve their neighbours. 85% of points have their neighbours retrieved within 0.8 * the radius of
+//! embedded neighbour considered.
+//!
+//!
 use anyhow::anyhow;
 
 use std::fs::OpenOptions;
@@ -132,13 +165,13 @@ fn reformat(data: &mut Array2<f32>, rescale: bool) -> Vec<Vec<f32>> {
     datavec
 } // end of reformat
 
-// possible variations
-//  nb_col          : number of columns to read, 22 or 29
-//  sampling_factor : if >= 1. full data is embedded, but quality runs only with 64Gb for sampling_factor <= 0.15
-//  rescale         : true, can be set to false to check possible effect (really tiny)
-//  hierarchical    : if true use first layer to initialize embedding
-//  knbn            : to use various neighbourhood size for edge sampling
-
+/// possible variations  
+///  nb_col          : number of columns to read, 22 or 29  
+///  sampling_factor : if >= 1. full data is embedded, but quality runs only with 64Gb for sampling_factor <= 0.15  
+///  rescale         : true, can be set to false to check possible effect (really tiny)  
+///  hierarchical    : if true use first layer to initialize embedding  
+///  knbn            : to use various neighbourhood size for edge sampling  
+///  asked_dim       : default to 2 but in conjuntion with sampling factor, can see the impact on quality.  
 pub fn main() {
     //
     let _ = env_logger::builder().is_test(true).try_init();
@@ -152,9 +185,9 @@ pub fn main() {
     let nb_var = nb_col - 1;
     //
     fname.push_str("HIGGS.csv");
-    // use possibly subsampling , a factor of 0.15 is Ok with 64Gb
+    // quality estimation requires subsampling factor of 0.15 is Ok with 64Gb
     //============================
-    let sampling_factor = 1.;
+    let sampling_factor = 1.0;
     //============================
     log::info!("using subsampling factor : {:?}", sampling_factor);
     let res = read_higgs_csv(fname, nb_col, sampling_factor);
@@ -184,7 +217,7 @@ pub fn main() {
     basename.push_str(&varstring);
     let mut reloader = HnswIo::new(&directory, &basename);
     let mut hnsw_opt: Option<Hnsw<f32, DistL2>> = None;
-    let hnsw: Hnsw<f32, DistL2>;
+    let mut hnsw: Hnsw<f32, DistL2>;
     //
     // if we do not sub sample we try reloading
     if sampling_factor >= 1. {
@@ -222,7 +255,7 @@ pub fn main() {
         let nb_layer = 16.min((nbdata as f32).ln().trunc() as usize);
         //
         hnsw = Hnsw::<f32, DistL2>::new(max_nb_connection, nbdata, nb_layer, ef_c, DistL2 {});
-        //        hnsw.set_keeping_pruned(true);
+        hnsw.set_keeping_pruned(true);
         // we insert by block of 1_000_000
         let block_size = 1_000_000;
         let mut inserted = 0;
@@ -264,6 +297,8 @@ pub fn main() {
     embed_params.grad_step = 1.;
     embed_params.nb_sampling_by_edge = 10;
     embed_params.dmap_init = true;
+    // embed_params.asked_dim = 15;
+    //
     // if set to true, we use first layer embedding to initialize the whole embedding
     // ==============================================================================
     let hierarchical = true;
@@ -273,6 +308,7 @@ pub fn main() {
     let graphprojection;
     if !hierarchical {
         let knbn = 6;
+        log::info!("embedding from neighbourhood of size : {}", knbn);
         kgraph = kgraph_from_hnsw_all(&hnsw, knbn).unwrap();
         embedder = Embedder::new(&kgraph, embed_params);
         let embed_res = embedder.embed();
@@ -280,6 +316,7 @@ pub fn main() {
         assert!(embedder.get_embedded().is_some());
     } else {
         let knbn = 6;
+        log::info!("embedding from neighbourhood of size : {}", knbn);
         let projection_layer = 1;
         embed_params.nb_grad_batch = 40;
         embed_params.grad_factor = 5;

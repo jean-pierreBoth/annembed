@@ -3,7 +3,7 @@
 //!
 //! const MNIST_DIGITS_DIR : &'static str = "/home/jpboth/Data/MNIST/";
 //!
-//! to whatever directory you downloaded the [MNIST digits data](http://yann.lecun.com/exdb/mnist/)
+//! to whatever directory you downloaded the [MNIST digits data](https://www.kaggle.com/datasets/hojjatk/mnist-dataset)
 
 use ndarray::{s, Array1, Array3};
 use std::fs::OpenOptions;
@@ -45,7 +45,7 @@ impl MnistData {
         })
     } // end of new for MnistData
 
-    /// returns labels of images. lables[k] is the label of the k th image.
+    /// returns labels of images. lables\[k\] is the label of the k th image.
     pub fn get_labels(&self) -> &Array1<u8> {
         &self.labels
     }
@@ -321,7 +321,7 @@ pub fn main() {
     );
     csv_w.flush().unwrap();
     //
-    let _quality = embedder.get_quality_estimate_from_edge_length(100);
+    let _quality = embedder.get_quality_estimate_from_edge_length(50);
     //
     // Get some statistics on induced graph. This is not related to the embedding process
     //

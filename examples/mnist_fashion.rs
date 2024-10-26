@@ -240,6 +240,8 @@ pub fn main() {
     embed_params.grad_step = 1.;
     embed_params.nb_sampling_by_edge = 10;
     embed_params.dmap_init = true;
+    // to check the impact of dimension
+    //    embed_params.asked_dim = 15;
 
     let mut embedder;
     let kgraph;
@@ -289,7 +291,7 @@ pub fn main() {
     );
     csv_w.flush().unwrap();
     //
-    let _quality = embedder.get_quality_estimate_from_edge_length(100);
+    let _quality = embedder.get_quality_estimate_from_edge_length(50);
     // Get some statistics on induced graph. This is not related to the embedding process
     let knbn = 25;
     let kgraph: KGraph<f32> = kgraph_from_hnsw_all(&hnsw, knbn).unwrap();

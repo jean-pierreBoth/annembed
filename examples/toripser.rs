@@ -55,7 +55,7 @@ impl MnistData {
         })
     } // end of new for MnistData
 
-    /// returns labels of images. lables[k] is the label of the k th image.
+    /// returns labels of images. lables\[k\] is the label of the k th image.
     pub fn get_labels(&self) -> &Array1<u8> {
         &self.labels
     }
