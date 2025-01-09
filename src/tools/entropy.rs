@@ -170,32 +170,6 @@ fn near_to_1<F: Float>(f: F) -> bool {
     (f - one).abs() < Float::epsilon()
 }
 
-//==================================================================================
-
-/// Probabilistic neigheibourhood
-/// If y1 ,   , yn are the points in neigbourhood aroud y0
-/// lambda * d()
-
-pub struct ProbaNeighbour<F>
-where
-    F: Float + AddAssign + SubAssign + MulAssign + DivAssign + std::iter::Sum,
-{
-    point_id: u32,
-    /// list of neighbour's point_id
-    neighbours_id: Vec<u32>,
-    /// distance to each neighbour
-    distance: Vec<F>,
-    /// probability transition deduced from distances
-    proba: DiscreteProba<F>,
-    // rescale coefficient
-    lambda: f64,
-} // end of ProbaNeighbour
-
-impl<F> ProbaNeighbour<F> where
-    F: Float + AddAssign + SubAssign + MulAssign + DivAssign + std::iter::Sum
-{
-}
-
 //================================================================================
 
 #[cfg(test)]

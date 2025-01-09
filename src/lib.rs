@@ -1,7 +1,6 @@
 // for logging (debug mostly, switched at compile time in cargo.toml)
 
-#[macro_use]
-extern crate lazy_static;
+use lazy_static::lazy_static;
 
 pub mod diffmaps;
 pub mod embedder;

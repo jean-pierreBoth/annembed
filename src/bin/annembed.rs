@@ -8,21 +8,21 @@
 //! hnsw is an optional subcommand to change default parameters of the Hnsw structure. See [hnsw_rs](https://crates.io/crates/hnsw_rs).  
 //!
 //! - Parameters for embedding part are all optional The options give access to some fields of the [EmbedderParams] structure.  
-//!  --batch    : optional, a integer giving the number of batch to run. Default to 15.
-//!  --stepg    : optional, a float value , initial gradient step, default is 2.  
-//!  --scale    : optional, a float value, scale modification factor, default is 1.  
-//!  --nbsample : optional, a number of edge sampling , default is 10   
-//!  --layer    : optional, in case of hierarchical embedding num of the lower layer we consider to run preliminary step.
+//!     --batch    : optional, a integer giving the number of batch to run. Default to 15.
+//!     --stepg    : optional, a float value , initial gradient step, default is 2.  
+//!     --scale    : optional, a float value, scale modification factor, default is 1.  
+//!     --nbsample : optional, a number of edge sampling , default is 10   
+//!     --layer    : optional, in case of hierarchical embedding num of the lower layer we consider to run preliminary step.
 //!               default is set to 0 meaning one pass embedding
-//!  --dim      : optional, dimension of the embedding , default to 2.  
-//!  --quality  : optional, asks for quality estimation
-//!  --sampling : optional, for large data defines the fraction of sampled data as 1./sampling
+//!     --dim      : optional, dimension of the embedding , default to 2.  
+//!     --quality  : optional, asks for quality estimation
+//!     --sampling : optional, for large data defines the fraction of sampled data as 1./sampling
 //!
 //! - Parameters for the hnsw subcommand. For more details see [hnsw_rs](https://crates.io/crates/hnsw_rs).   
-//! --nbconn  : defines the number of connections by node in a layer.   Can range from 4 to 64 or more if necessary and enough memory
-//! --dist    : name of distance to use: "DistL1", "DistL2", "DistCosine", "DistJeyffreys"
-//! --ef      : controls the with of the search, a good guess is between 24 and 64 or more if necessay
-//! --knbn    : the number of nodes to use in retrieval requests.  
+//!     --nbconn  : defines the number of connections by node in a layer.   Can range from 4 to 64 or more if necessary and enough memory
+//!     --dist    : name of distance to use: "DistL1", "DistL2", "DistCosine", "DistJeyffreys"
+//!     --ef      : controls the with of the search, a good guess is between 24 and 64 or more if necessay
+//!     --knbn    : the number of nodes to use in retrieval requests.  
 //!     
 //! The csv file must have one record by vector to embed. The default delimiter is ','.  
 //! The output is a csv file with embedded vectors.  
@@ -55,7 +55,7 @@ pub struct HnswParams {
 } // end of struct HnswParams
 
 impl HnswParams {
-    pub fn default() -> Self {
+    pub fn my_default() -> Self {
         HnswParams {
             max_conn: 48,
             ef_c: 400,
@@ -95,7 +95,7 @@ impl Default for QualityParams {
 fn parse_hnsw_cmd(matches: &ArgMatches) -> Result<HnswParams, anyhow::Error> {
     log::debug!("in parse_hnsw_cmd");
 
-    let mut hnswparams = HnswParams::default();
+    let mut hnswparams = HnswParams::my_default();
     hnswparams.max_conn = *matches.get_one::<usize>("nbconn").unwrap();
     hnswparams.ef_c = *matches.get_one::<usize>("ef").unwrap();
     hnswparams.knbn = *matches.get_one::<usize>("knbn").unwrap();
@@ -308,7 +308,7 @@ pub fn main() {
             }
         }
     } else {
-        hnswparams = HnswParams::default();
+        hnswparams = HnswParams::my_default();
     }
     log::debug!("hnswparams : {:?}", hnswparams);
 

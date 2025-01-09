@@ -55,8 +55,8 @@ const PROBA_MIN: f32 = 1.0E-5;
 
 // to be used in emdedded space so small dimension. no need for simd and 
 #[inline]
-fn distl2<F:Float+ ndarray::ScalarOperand + Send + Sync>(a: &[F], b: &[F]) -> F 
-    where F : std::iter::Sum {
+fn distl2<F>(a: &[F], b: &[F]) -> F 
+    where F : Float+ ndarray::ScalarOperand + Send + Sync + std::iter::Sum {
     assert_eq!(a.len(), b.len());
     let norm : F = a.iter().zip(b.iter()).map(|t| (*t.0 - *t.1 ) * (*t.0 - *t.1)).sum();
     num_traits::Float::sqrt(norm)
@@ -287,7 +287,7 @@ where
     /// To get a matrix with row corresponding to DataId if they were already contiguous for 0 to nbdata use
     /// function  get_embedded_reindexed to get the permutation/reindexation unrolled!
     pub fn get_embedded(&self) -> Option<&Array2<F>> {
-        return self.embedding.as_ref();
+        self.embedding.as_ref()
     }
 
 
@@ -336,7 +336,7 @@ where
     
      /// returns the initial embedding. Same remark as for method get_embedded. Storage is optional TODO
      pub fn get_initial_embedding(&self) -> Option<&Array2<F>> {
-        return self.initial_embedding.as_ref();
+        self.initial_embedding.as_ref()
     }   
 
     pub fn get_initial_embedding_reindexed(&self) ->  Array2<F> {
@@ -424,8 +424,8 @@ where
             }
             ).collect();
         // We need to ensure that parallel iter did not permute data. 
-        for i in 0..transformed_neighbours.len() {
-            assert_eq!(i, transformed_neighbours[i].0);
+        for (i,item)  in transformed_neighbours.iter().enumerate() {
+            assert_eq!(i, item.0);
         }
         Some(transformed_neighbours)
 
@@ -475,15 +475,15 @@ where
     /// 
     /// In each neighbourhood of a point, taken as center in the initial space we:
     /// 
-    ///  - count the number of its neighbours for which the distance to the center is less than the radius of the neighbourhood (of size *nbng*) in embedded space. 
-    ///    For neighbourhood that have a match , we give the mean number of matches.    
+    /// - count the number of its neighbours for which the distance to the center is less than the radius of the neighbourhood (of size *nbng*) in embedded space. 
+    ///   For neighbourhood that have a match , we give the mean number of matches.    
     ///   This quantify the conservation of neighborhoods through the embedding. The lower the number of neighbourhoods without a match and the higher 
     ///   the mean number of matches, the better is the embedding.
     ///  
-    ///  -  compute the length of embedded edges joining original neighbours to a node and provide quantiles summary.
+    /// - compute the length of embedded edges joining original neighbours to a node and provide quantiles summary.
     /// 
-    ///  -  compute the ratio of these edge length to the radius of the ball in embedded space corresponding to nbng 'th neighbours.
-    ///     (question is: how much do we need to dilate the neighborhood in embedded space to retrieve the neighbours in original space?)  
+    /// - compute the ratio of these edge length to the radius of the ball in embedded space corresponding to nbng 'th neighbours.
+    ///   (question is: how much do we need to dilate the neighborhood in embedded space to retrieve the neighbours in original space?)  
     /// 
     /// The quantiles on ratio these distance are then dumped. The lower the median (or the mean), the better is the embedding.
     ///   
@@ -523,8 +523,6 @@ where
     /// ```
     /// So 9000 out of 70000 data points have no conserved neighbours, for the others points 5.6 out of 6 neighbours are retrieved.
     /// 75% of neighbourhood is conserved within a radius increased by a factor 0.8.
-
-
     // called by external binary (see examples)
     #[allow(unused)]
     pub fn get_quality_estimate_from_edge_length(&self, nbng : usize) -> Option<f64> {

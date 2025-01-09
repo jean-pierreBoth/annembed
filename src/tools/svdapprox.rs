@@ -235,10 +235,8 @@ where
     /// return frobenius norm
     pub fn norm_frobenius(&self) -> F {
         match &self.data {
-            MatMode::FULL(mat) => {
-                return norm_frobenius_full(&mat.view());
-            }
-            MatMode::CSR(csmat) => return norm_frobenius_csmat(&csmat.view()),
+            MatMode::FULL(mat) => norm_frobenius_full(&mat.view()),
+            MatMode::CSR(csmat) => norm_frobenius_csmat(&csmat.view()),
         }
     } // end of norm_frobenius
 } // end of impl block for MatRepr

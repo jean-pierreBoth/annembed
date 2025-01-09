@@ -174,6 +174,11 @@ Sources of examples are in corresponding directory.
 
     ![higgs_dmap](Images/higgs_initial_dmap.png.jpg)
 
+### **Genomics** applications can be found in the following [paper](https://doi.org/10.1093/nargab/lqae172):  
+   *Approximate nearest neighbor graph provides fast and efficient embedding with applications for large-scale biological data*.  
+  Jianshu Zhao, Jean Pierre Both, Konstantinos T Konstantinidis.  
+   NAR Genomics and Bioinformatics, Volume 6, Issue 4, December 2024.
+
 ### Usage
 
 ```rust
@@ -233,7 +238,7 @@ Two algorithms for range approximation used in approximated SVD are:
 
 ## Contributions
 
-The logo was designed by Jianshu Zao.
+The logo was designed by Jianshu Zhao.
 
 ## License
 

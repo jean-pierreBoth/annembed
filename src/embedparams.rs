@@ -1,5 +1,6 @@
 //! This module defines parameters for ann embedding.
 //!
+
 #[cfg_attr(doc, katexit::katexit)]
 /// It is necessary to describe briefly the model used in the embedding:
 ///
@@ -70,8 +71,8 @@
 ///
 /// - expression of the gradient
 ///
-
-/// main parameters driving Embeding
+///
+/// here are the main parameters driving Embeding
 #[derive(Clone, Copy)]
 pub struct EmbedderParams {
     /// embedding dimension : default to 2
@@ -98,6 +99,7 @@ pub struct EmbedderParams {
 } // end of EmbedderParams
 
 impl EmbedderParams {
+    #[allow(clippy::should_implement_trait)]
     pub fn default() -> Self {
         let asked_dim = 2;
         let dmap_init = true;

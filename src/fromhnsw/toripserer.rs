@@ -1,11 +1,9 @@
 //! Data extraction from a Hnsw structure to be processed by Julia Ripserer package with function
 //! in crate/Julia/toripserer.jl
 //!
-//! - We extract points in a neighbourhood around a center point of interest and dump in bson format
-//!  the distance matrix between points to be processed by Julia function localPersistency
+//! - We extract points in a neighbourhood around a center point of interest and dump in bson format the distance matrix between points to be processed by Julia function localPersistency
 //!
-//! - We try to compute global homology from projection of data on less populated layers. We dump
-//!  a csc matrix of projected cloud points to upper layers and dump the Csc matrix to be processed by Julia function projectedPersistency
+//! - We try to compute global homology from projection of data on less populated layers. We dump a csc matrix of projected cloud points to upper layers and dump the Csc matrix to be processed by Julia function projectedPersistency
 //!
 //!
 
