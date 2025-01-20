@@ -777,6 +777,7 @@ where
 /// -Vt array (r,n) with eigenvectors stored in column, so projected data are accessed by rows so that
 /// $$  A = U \cdot S \cdot Vt   $$
 ///
+#[derive(Clone)]
 pub struct SvdResult<F> {
     /// eigenvalues
     pub s: Option<Array1<F>>,

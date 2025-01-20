@@ -17,6 +17,7 @@ const FULL_SVD_SIZE_LIMIT: usize = 5000;
 /// We use a normalized symetric laplacian to go to the svd.
 /// But we want the left eigenvectors of the normalized R(andom)W(alk) laplacian so we must keep track
 /// of degrees (rown L1 norms)
+#[derive(Clone)]
 pub(crate) struct GraphLaplacian {
     // symetrized graph. Exactly D^{-1/2} * G * D^{-1/2}
     sym_laplacian: MatRepr<f32>,
