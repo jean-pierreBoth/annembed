@@ -10,9 +10,9 @@ use lax::{layout::MatrixLayout, JobSvd, Lapack};
 
 use crate::tools::{nodeparam::*, svdapprox::*};
 
-const FULL_MAT_REPR: usize = 5000;
+pub(crate) const FULL_MAT_REPR: usize = 5000;
 
-const FULL_SVD_SIZE_LIMIT: usize = 5000;
+pub(crate) const FULL_SVD_SIZE_LIMIT: usize = 5000;
 
 /// We use a normalized symetric laplacian to go to the svd.
 /// But we want the left eigenvectors of the normalized R(andom)W(alk) laplacian so we must keep track
@@ -97,6 +97,11 @@ impl GraphLaplacian {
     } // end of init_from_sv_approx
 } // end of impl GraphLaplacian
 
+//=======================================================================================
+
+//
+//TODO: superseded by methods of DiffusionMaps
+//
 // the function computes a symetric laplacian graph for svd with transition probabilities taken from NodeParams
 // We will then need the lower non zero eigenvalues and eigen vectors.
 // The best justification for this is in Diffusion Maps.
@@ -109,7 +114,7 @@ impl GraphLaplacian {
 
 pub(crate) fn get_laplacian(initial_space: &NodeParams) -> GraphLaplacian {
     //
-    log::debug!("in get_laplacian");
+    log::info!("in fn get_laplacian using alfa = 0.5",);
     //
     let nbnodes = initial_space.get_nb_nodes();
     // get stats
