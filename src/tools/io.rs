@@ -21,7 +21,7 @@ use csv::*;
 
 /// This function is mostly dedicated to write embedded data in very few dimensions
 pub fn write_csv_labeled_array2<F, T>(
-    csv_writer: &mut Writer<std::fs::File>,
+    csv_writer: &mut csv::Writer<std::fs::File>,
     labels: &[T],
     mat: &Array2<F>,
 ) -> std::io::Result<usize>

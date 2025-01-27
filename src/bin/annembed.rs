@@ -8,7 +8,7 @@
 //! hnsw is an optional subcommand to change default parameters of the Hnsw structure. See [hnsw_rs](https://crates.io/crates/hnsw_rs).  
 //!
 //! - Parameters for embedding.  
-//!  The options are optional and give access to some fields of the [EmbedderParams] structure.  
+//!     The options are optional and give access to some fields of the [EmbedderParams] structure.  
 //!
 //!     --batch    : optional, a integer giving the number of batch to run. Default to 15.  
 //!     --stepg    : optional, a float value , initial gradient step, default is 2.  

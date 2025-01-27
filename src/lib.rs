@@ -10,6 +10,7 @@ pub mod graphlaplace;
 pub mod hdbscan;
 pub mod prelude;
 pub mod tools;
+pub mod utils;
 
 lazy_static! {
     static ref LOG: u64 = init_log();

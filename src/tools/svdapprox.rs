@@ -870,7 +870,7 @@ where
         log::debug!("direct_svd calling svddc driver");
         let res_svd_b = F::svddc(layout, JobSvd::Some, slice_for_svd_opt.unwrap());
         if res_svd_b.is_err() {
-            println!("direct_svd, svddc failed");
+            return Err(String::from("direct_svd, svddc failed"));
         };
         // we have to decode res and fill in SvdApprox fields.
         // lax does encapsulte dgesvd (double) and sgesvd (single)  which returns U and Vt as vectors.
