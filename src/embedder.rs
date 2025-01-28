@@ -42,7 +42,7 @@ use std::time::{Duration, SystemTime};
 use crate::diffmaps::*;
 use crate::embedparams::*;
 use crate::fromhnsw::{kgproj::*, kgraph::kgraph_from_hnsw_all, kgraph::KGraph};
-use crate::tools::{dichotomy::*, nodeparam::*};
+use crate::tools::{dichotomy::*, nodeparam::*, clip::clip};
 use hnsw_rs::prelude::*;
 
 /// do not consider probabilities under PROBA_MIN, thresolded!!
@@ -1352,23 +1352,7 @@ where
     }
 } // end of get_scale_from_proba_normalisation
 
-// restrain value
-fn clip<F>(f: F, max: f64) -> F
-where
-    F: Float + num_traits::FromPrimitive,
-{
-    let f_r = f.to_f64().unwrap();
-    let truncated = if f_r > max {
-        log::trace!("truncated >");
-        max
-    } else if f_r < -max {
-        log::trace!("truncated <");
-        -max
-    } else {
-        f_r
-    };
-    F::from(truncated).unwrap()
-} // end clip
+
 
 /// computes the weight of an embedded edge.
 /// scale correspond at density observed at initial point in original graph (hence the asymetry)

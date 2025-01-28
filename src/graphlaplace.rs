@@ -241,7 +241,7 @@ pub(crate) fn svd_f32(b: &mut Array2<f32>) -> Result<SvdResult<f32>, String> {
     let r = res_svd_b.s.len();
     let m = b.shape()[0];
     // must convert from Real to Float ...
-    let s: Array1<f32> = res_svd_b.s.iter().map(|x| *x).collect::<Array1<f32>>();
+    let s: Array1<f32> = res_svd_b.s.iter().copied().collect::<Array1<f32>>();
     //
     // we have to decode res and fill in SvdApprox fields.
     // lax does encapsulte dgesvd (double) and sgesvd (single)  which returns U and Vt as vectors.
