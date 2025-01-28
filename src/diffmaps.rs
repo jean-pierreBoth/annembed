@@ -101,6 +101,7 @@ impl DiffusionMaps {
     }
 
     /// returns gr  ph laplacian if already computed and stored in structure
+    #[allow(unused)]
     pub(crate) fn get_laplacian(&mut self) -> Option<&mut GraphLaplacian> {
         self.laplacian.as_mut()
     }
@@ -135,12 +136,7 @@ impl DiffusionMaps {
     /// Return laplacian from hnsw nearest neighbours.
     /// If store is true, the laplacian is stored in structure DiffusionsMaps for future use
     /// F is float type we want the result in
-    #[allow(unused)]
-    pub(crate) fn laplacian_from_hnsw<T, D, F>(
-        &mut self,
-        hnsw: &Hnsw<T, D>,
-        store: bool,
-    ) -> GraphLaplacian
+    pub(crate) fn laplacian_from_hnsw<T, D, F>(&mut self, hnsw: &Hnsw<T, D>) -> GraphLaplacian
     where
         T: Clone + Send + Sync,
         D: Distance<T> + Send + Sync,
@@ -156,6 +152,30 @@ impl DiffusionMaps {
     {
         let knbn = hnsw.get_max_nb_connection();
         let kgraph = kgraph_from_hnsw_all::<T, D, F>(hnsw, knbn as usize).unwrap();
+        // we store indexset to be able to go back from index (in embedding) to dataId (in hnsw) as kgrap will be deleted
+        self.index = Some(kgraph.get_indexset().clone());
+        // get NodeParams.
+        let nodeparams = self.compute_dmap_nodeparams::<F>(&kgraph);
+        let laplacian = self.compute_laplacian(&nodeparams, self.params.get_alfa());
+        laplacian
+    }
+
+    pub(crate) fn laplacian_from_kgraph<F>(
+        &mut self,
+        kgraph: &KGraph<F>,
+        store: bool,
+    ) -> GraphLaplacian
+    where
+        F: Float
+            + FromPrimitive
+            + std::marker::Sync
+            + Send
+            + std::fmt::UpperExp
+            + std::iter::Sum
+            + std::ops::AddAssign
+            + std::ops::DivAssign
+            + Into<f64>,
+    {
         // we store indexset to be able to go back from index (in embedding) to dataId (in hnsw) as kgrap will be deleted
         self.index = Some(kgraph.get_indexset().clone());
         // get NodeParams.
@@ -299,7 +319,7 @@ impl DiffusionMaps {
 
     /// dmap specific edge proba compuatitons
     /// compute basic transition kernel, with global scaling , store estimated point density in diffusion Map for use in laplacian
-    pub(crate) fn compute_dmap_nodeparams<F>(&mut self, kgraph: &KGraph<F>) -> NodeParams
+    pub(crate) fn compute_dmap_nodeparams<F>(&self, kgraph: &KGraph<F>) -> NodeParams
     where
         F: Float
             + FromPrimitive
@@ -320,7 +340,6 @@ impl DiffusionMaps {
         let scales: Vec<F> = neighbour_hood
             .par_iter()
             .map(|edges| self.get_dist_around_node(kgraph, edges))
-            //            .map(|edges| self.get_dist_nearest_neighbour(edges))
             .collect();
         // collect scales quantiles
         let mut scales_q: CKMS<f64> = CKMS::<f64>::new(0.001);
@@ -339,7 +358,7 @@ impl DiffusionMaps {
         //
         // now we have scales we can remap edge length to weights.
         // we choose epsil to put weight on at least 5 neighbours when no shift
-        // TODO: depend on abscence of shift
+        // TODO: depend on absence of shift
         let epsil = 5.0f32.sqrt();
         let remap_weight = |w: F, shift: f32, scale: f32| {
             let arg = ((w.to_f32().unwrap() - shift) / (epsil * scale)).powf(2.);
@@ -381,7 +400,6 @@ impl DiffusionMaps {
                 let mut sum: f32 = 0.;
                 let _shift = neighbours[0].weight.to_f32().unwrap();
                 let from_scale = local_scales[i];
-
                 // TODO: no shift but could add drift with respect to local_scales variations
                 for n in neighbours {
                     let to_scale = local_scales[n.node];
@@ -401,11 +419,11 @@ impl DiffusionMaps {
             nodeparams.push(nodep);
         }
         //
-        self.q_density = Some(q_density);
         self.density_quantiles();
         NodeParams::new(nodeparams, kgraph.get_max_nbng())
     } // end to_dmap_nodeparams
 
+    //
     pub(crate) fn density_quantiles(&self) {
         if self.q_density.is_none() {
             log::error!("no density to get quantiles");
@@ -424,7 +442,6 @@ impl DiffusionMaps {
 
     // computes scale (mean norm of dist) around a point
     // we compute mean of dist to first neighbour around a point given outgoing edges and graph
-    #[allow(unused)]
     pub(crate) fn get_dist_around_node<F>(&self, kgraph: &KGraph<F>, out_edges: &[OutEdge<F>]) -> F
     where
         F: Float
@@ -447,14 +464,6 @@ impl DiffusionMaps {
           //
         rho_y_s.push(rho_x);
         rho_y_s.into_iter().sum::<F>() / F::from(out_edges.len()).unwrap()
-    }
-
-    #[allow(unused)]
-    pub(crate) fn get_dist_nearest_neighbour<F>(&self, out_edges: &[OutEdge<F>]) -> F
-    where
-        F: Float,
-    {
-        out_edges[0].weight
     }
 
     /// Do the whole work chain :graph conversion from hnsw structure, NodeParams transformation.  
@@ -481,11 +490,37 @@ impl DiffusionMaps {
             + std::ops::DivAssign
             + Into<f64>,
     {
-        let store = true;
-        if self.get_laplacian().is_none() {
-            let _ = self.laplacian_from_hnsw::<T, D, F>(hnsw, store);
-        }
-        let laplacian = self.get_laplacian().unwrap();
+        let mut laplacian = self.laplacian_from_hnsw::<T, D, F>(hnsw);
+        let embedded_reindexed = self
+            .embed_from_laplacian::<F>(&mut laplacian, asked_dim, t_opt)
+            .unwrap();
+        // now we can store laplacian
+        self.laplacian = Some(laplacian);
+        //
+        Ok(embedded_reindexed)
+    }
+
+    //
+
+    // once we have laplacian get compute eigenvectors and weight them with time and eigenvalues
+    fn embed_from_laplacian<F>(
+        &self,
+        laplacian: &mut GraphLaplacian,
+        asked_dim: usize,
+        t_opt: Option<f32>,
+    ) -> Result<Array2<F>>
+    where
+        F: Float
+            + FromPrimitive
+            + std::marker::Sync
+            + Send
+            + std::fmt::UpperExp
+            + std::iter::Sum
+            + std::ops::AddAssign
+            + std::ops::DivAssign
+            + Into<f64>,
+    {
+        //
         log::debug!("got laplacian, going to svd ... asked_dim :  {}", asked_dim);
         let svd_res: SvdResult<f32> = laplacian.do_svd(asked_dim + 25).unwrap();
         //
@@ -553,9 +588,9 @@ impl DiffusionMaps {
         }
         log::debug!("DiffusionMaps::embed_from_hnsw ended");
         //
-        self.svd = Some(svd_res.clone());
-        //
         let embedded_reindexed = self.embedding_reindexed(&embedded);
+        //
+        laplacian.svd_res = Some(svd_res);
         //
         Ok(embedded_reindexed)
     }

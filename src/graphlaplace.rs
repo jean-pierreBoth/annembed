@@ -24,9 +24,7 @@ pub(crate) struct GraphLaplacian {
     // the vector giving D of the symtrized graph
     pub(crate) degrees: Array1<f32>,
     //
-    _s: Option<Array1<f32>>,
-    //
-    _u: Option<Array2<f32>>,
+    pub(crate) svd_res: Option<SvdResult<f32>>,
 }
 
 impl GraphLaplacian {
@@ -34,8 +32,7 @@ impl GraphLaplacian {
         GraphLaplacian {
             sym_laplacian,
             degrees,
-            _s: None,
-            _u: None,
+            svd_res: None,
         }
     } // end of new for GraphLaplacian
 
