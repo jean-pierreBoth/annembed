@@ -156,15 +156,11 @@ impl DiffusionMaps {
         self.index = Some(kgraph.get_indexset().clone());
         // get NodeParams.
         let nodeparams = self.compute_dmap_nodeparams::<F>(&kgraph);
-        let laplacian = self.compute_laplacian(&nodeparams, self.params.get_alfa());
-        laplacian
+        self.compute_laplacian(&nodeparams, self.params.get_alfa())
     }
 
-    pub(crate) fn laplacian_from_kgraph<F>(
-        &mut self,
-        kgraph: &KGraph<F>,
-        store: bool,
-    ) -> GraphLaplacian
+    // to be called by embed_from_kgraph
+    pub(crate) fn laplacian_from_kgraph<F>(&mut self, kgraph: &KGraph<F>) -> GraphLaplacian
     where
         F: Float
             + FromPrimitive
@@ -179,12 +175,8 @@ impl DiffusionMaps {
         // we store indexset to be able to go back from index (in embedding) to dataId (in hnsw) as kgrap will be deleted
         self.index = Some(kgraph.get_indexset().clone());
         // get NodeParams.
-        let nodeparams = self.compute_dmap_nodeparams::<F>(&kgraph);
-        let laplacian = self.compute_laplacian(&nodeparams, self.params.get_alfa());
-        if store {
-            self.laplacian = Some(laplacian.clone())
-        }
-        laplacian
+        let nodeparams = self.compute_dmap_nodeparams::<F>(kgraph);
+        self.compute_laplacian(&nodeparams, self.params.get_alfa())
     }
 
     // transform nodeparams to a kernel.
@@ -466,6 +458,35 @@ impl DiffusionMaps {
         rho_y_s.into_iter().sum::<F>() / F::from(out_edges.len()).unwrap()
     }
 
+    // useful if we have already hnsw
+    #[allow(unused)]
+    pub(crate) fn embed_from_kgraph<F>(
+        &mut self,
+        kgraph: &KGraph<F>,
+        asked_dim: usize,
+        t_opt: Option<f32>,
+    ) -> Result<Array2<F>>
+    where
+        F: Float
+            + FromPrimitive
+            + std::marker::Sync
+            + Send
+            + std::fmt::UpperExp
+            + std::iter::Sum
+            + std::ops::AddAssign
+            + std::ops::DivAssign
+            + Into<f64>,
+    {
+        let mut laplacian = self.laplacian_from_kgraph::<F>(kgraph);
+        let embedded_reindexed = self
+            .embed_from_laplacian::<F>(&mut laplacian, asked_dim, t_opt)
+            .unwrap();
+        // now we can store laplacian
+        self.laplacian = Some(laplacian);
+        //
+        Ok(embedded_reindexed)
+    } // end of embed_from_kgraph
+
     /// Do the whole work chain :graph conversion from hnsw structure, NodeParams transformation.  
     /// T is the type on which distances in Hnsw are computed,
     /// F is f32 or f64 depending on how diffusions Maps is to be computed.  
@@ -498,7 +519,7 @@ impl DiffusionMaps {
         self.laplacian = Some(laplacian);
         //
         Ok(embedded_reindexed)
-    }
+    } // end of embed_from_hnsw
 
     //
 
@@ -759,6 +780,7 @@ mod tests {
     use std::time::{Duration, SystemTime};
 
     const MNIST_FASHION_DIR: &str = "/home/jpboth/Data/ANN/Fashion-MNIST/";
+    const MNIST_DIGITS_DIR: &str = "/home/jpboth/Data/ANN/MNIST/";
 
     fn log_init_test() {
         let _ = env_logger::builder().is_test(true).try_init();
@@ -780,6 +802,63 @@ mod tests {
             }
         }
         v
+    }
+
+    #[test]
+    fn dmap_digits() {
+        log_init_test();
+        //
+        log::info!("running mnist_digits");
+        //
+        let mnist_data = load_mnist_data(MNIST_DIGITS_DIR).unwrap();
+        let labels = mnist_data.get_labels().to_vec();
+        let images = mnist_data.get_images();
+        // convert images as vectors
+        let (_, _, nbimages) = images.dim();
+        let mut images_as_v = Vec::<Vec<f32>>::with_capacity(nbimages);
+        //
+        for k in 0..nbimages {
+            let v: Vec<f32> = images
+                .slice(s![.., .., k])
+                .iter()
+                .map(|v| *v as f32)
+                .collect();
+            images_as_v.push(v);
+        }
+        //
+        // do dmap embedding, laplacian computation
+        let dtime = 1.;
+        let mut dparams: DiffusionParams = DiffusionParams::new(4, Some(dtime));
+        dparams.set_alfa(0.);
+        //
+        let cpu_start = ProcessTime::now();
+        let sys_now = SystemTime::now();
+        // hnsw definition
+        let mut hnsw = Hnsw::<f32, DistL2>::new(16, images_as_v.len(), 16, 200, DistL2::default());
+        //
+        // we must pay fortran indexation once!. transform image to a vector
+        let data_with_id: Vec<(&Vec<f32>, usize)> =
+            images_as_v.iter().zip(0..images_as_v.len()).collect();
+        hnsw.parallel_insert(&data_with_id);
+        // dmaps
+        let mut diffusion_map = DiffusionMaps::new(dparams);
+        let emmbedded_res =
+            diffusion_map.embed_from_hnsw::<f32, DistL2, f32>(&mut hnsw, 10, Some(dtime));
+        if emmbedded_res.is_err() {
+            log::error!("embedding failed");
+            panic!("dmap_fashion failed");
+        };
+        //
+        println!(
+            " dmap embed time {:.2e} s, cpu time : {}",
+            sys_now.elapsed().unwrap().as_secs(),
+            cpu_start.elapsed().as_secs()
+        );
+        // dump
+        log::info!("dumping initial embedding in csv file");
+        let mut csv_w = csv::Writer::from_path("mnist_digits_dmap.csv").unwrap();
+        let _res = write_csv_labeled_array2(&mut csv_w, labels.as_slice(), &emmbedded_res.unwrap());
+        csv_w.flush().unwrap();
     }
 
     #[test]
