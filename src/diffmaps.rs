@@ -81,8 +81,6 @@ pub struct DiffusionMaps {
     q_density: Option<Vec<f32>>,
     //
     laplacian: Option<GraphLaplacian>,
-    /// can store svd result
-    svd: Option<SvdResult<f32>>,
     /// to keep track of rank DataId conversion
     index: Option<IndexSet<DataId>>,
 } // end of DiffusionMaps
@@ -95,7 +93,6 @@ impl DiffusionMaps {
             _node_params: None,
             q_density: None,
             laplacian: None,
-            svd: None,
             index: None,
         }
     }
@@ -108,7 +105,10 @@ impl DiffusionMaps {
 
     /// returns svd result computed in dmap embedding
     pub fn get_svd_res(&self) -> Option<&SvdResult<f32>> {
-        self.svd.as_ref()
+        match &self.laplacian {
+            Some(laplacian) => laplacian.svd_res.as_ref(),
+            _ => None,
+        }
     }
 
     fn get_index(&self) -> Option<&IndexSet<DataId>> {
@@ -197,6 +197,12 @@ impl DiffusionMaps {
         // get stats
         let max_nbng = initial_space.get_max_nbng();
         let node_params = initial_space;
+        // compute local_scales
+        let mut local_scale: Vec<f32> = node_params.params.iter().map(|n| n.scale).collect();
+        let mean_scale: f32 = local_scale.iter().sum();
+        for l in &mut local_scale {
+            *l /= mean_scale;
+        }
         // TODO define a threshold for dense/sparse representation
         if nbnodes <= FULL_MAT_REPR {
             log::debug!("get_laplacian using full matrix");
@@ -235,6 +241,17 @@ impl DiffusionMaps {
                 let mut row = symgraph.row_mut(i);
                 for j in 0..nbnodes {
                     row[[j]] /= (degrees[[i]] * degrees[[j]]).sqrt();
+                }
+            }
+            // possibly adjust for scale (introduce a bias in the laplacian)
+            // TODO: check if useful
+            let do_scale = true;
+            if do_scale {
+                for i in 0..nbnodes {
+                    let mut row = symgraph.row_mut(i);
+                    for j in 0..nbnodes {
+                        row[[j]] /= local_scale[i] * local_scale[j];
+                    }
                 }
             }
             //
@@ -321,6 +338,7 @@ impl DiffusionMaps {
             + std::iter::Sum
             + std::ops::AddAssign
             + std::ops::DivAssign
+            + std::iter::Sum
             + Into<f64>,
     {
         let nb_nodes = kgraph.get_nb_nodes();
@@ -328,17 +346,14 @@ impl DiffusionMaps {
         //
         let neighbour_hood = kgraph.get_neighbours();
         // compute a scale around each node, mean scale and quantiles on scale
-        // TODO:
-        let scales: Vec<F> = neighbour_hood
+        let local_scales: Vec<F> = neighbour_hood
             .par_iter()
             .map(|edges| self.get_dist_around_node(kgraph, edges))
             .collect();
         // collect scales quantiles
         let mut scales_q: CKMS<f64> = CKMS::<f64>::new(0.001);
-        let mut local_scales = Vec::<F>::with_capacity(scales.len());
-        for s in &scales {
+        for s in &local_scales {
             scales_q.insert((*s).into());
-            local_scales.push(*s);
         }
 
         println!("\n\n dmap scales quantiles at 0.05 : {:.2e} , 0.5 :  {:.2e}, 0.95 : {:.2e}, 0.99 : {:.2e}",
@@ -388,7 +403,6 @@ impl DiffusionMaps {
             } else {
                 let self_edge = OutEdge::<f32>::new(i, 1.);
                 edges.push(self_edge);
-                // TODO:
                 let mut sum: f32 = 0.;
                 let _shift = neighbours[0].weight.to_f32().unwrap();
                 let from_scale = local_scales[i];

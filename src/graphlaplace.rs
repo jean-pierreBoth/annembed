@@ -81,6 +81,7 @@ impl GraphLaplacian {
             println!("svd approximation failed");
             std::panic!();
         }
+        self.check_norms(svd_res.as_ref().unwrap());
         svd_res
     } // end if do_approx_svd
 
@@ -92,6 +93,17 @@ impl GraphLaplacian {
             self.do_approx_svd(asked_dim)
         }
     } // end of init_from_sv_approx
+
+    #[allow(unused)]
+    pub(crate) fn check_norms(&self, svd_res: &SvdResult<f32>) {
+        let u = svd_res.get_u_ref().unwrap();
+        log::info!("checking U norms , dim : {:?}", u.dim());
+        let (nb_rows, _) = u.dim();
+        for i in 0..nb_rows.min(3) {
+            let norm = norm_frobenius_full(&u.row(i));
+            println!(" vector {} norm {:.2e} ", i, norm);
+        }
+    }
 } // end of impl GraphLaplacian
 
 //=======================================================================================

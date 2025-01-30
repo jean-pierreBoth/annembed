@@ -799,10 +799,22 @@ impl<F> SvdResult<F> {
         &self.u
     }
 
+    /// return U by reference if any
+    #[inline]
+    pub fn get_u_ref(&self) -> Option<&Array2<F>> {
+        self.u.as_ref()
+    }
+
     /// returns Vt
     #[inline]
     pub fn get_vt(&self) -> &Option<Array2<F>> {
         &self.vt
+    }
+
+    /// returns Vt
+    #[inline]
+    pub fn get_vt_ref(&self) -> Option<&Array2<F>> {
+        self.vt.as_ref()
     }
 } // end of impl SvdResult
 
