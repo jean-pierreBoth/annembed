@@ -145,7 +145,7 @@ pub fn read_label_file(io_in: &mut dyn Read) -> Array1<u8> {
 } // end of fn read_label
 
 /// load mnist data from Directory
-pub fn load_mnist_data(dname: &str) -> anyhow::Result<MnistData> {
+pub fn load_mnist_train_data(dname: &str) -> anyhow::Result<MnistData> {
     let mut image_fname = String::from(dname);
     image_fname.push_str("train-images-idx3-ubyte");
     let image_path = PathBuf::from(image_fname.clone());
@@ -157,6 +157,28 @@ pub fn load_mnist_data(dname: &str) -> anyhow::Result<MnistData> {
 
     let mut label_fname = String::from(dname);
     label_fname.push_str("train-labels-idx1-ubyte");
+    let label_path = PathBuf::from(label_fname.clone());
+    let label_file_res = OpenOptions::new().read(true).open(&label_path);
+    if label_file_res.is_err() {
+        println!("could not open label file : {:?}", label_fname);
+        return Err(anyhow!("io error"));
+    }
+    //
+    Ok(MnistData::new(image_fname, label_fname).unwrap())
+}
+
+pub fn load_mnist_test_data(dname: &str) -> anyhow::Result<MnistData> {
+    let mut image_fname = String::from(dname);
+    image_fname.push_str("t10k-images-idx3-ubyte");
+    let image_path = PathBuf::from(image_fname.clone());
+    let image_file_res = OpenOptions::new().read(true).open(&image_path);
+    if image_file_res.is_err() {
+        println!("could not open image file : {:?}", image_fname);
+        return Err(anyhow!("io error"));
+    }
+
+    let mut label_fname = String::from(dname);
+    label_fname.push_str("t10k-labels-idx1-ubyte");
     let label_path = PathBuf::from(label_fname.clone());
     let label_file_res = OpenOptions::new().read(true).open(&label_path);
     if label_file_res.is_err() {

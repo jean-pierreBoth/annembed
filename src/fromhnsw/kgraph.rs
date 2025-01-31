@@ -356,8 +356,9 @@ where
 
 /// initialization of a graph with expected number of neighbours nbng.  
 ///
-/// This initialization corresponds to the case where use all points of the hnsw structure
-/// see also *initialize_from_layer* and *initialize_from_descendants*.   
+/// This initialization corresponds to the case where use all points of the hnsw structure.  
+/// Sell also [kgraph_from_hnsw_layer<T, D, F>()]
+///
 /// nbng is the maximal number of neighbours kept. The effective mean number can be less,
 /// in this case use the Hnsw.set_keeping_pruned(true) to restrict pruning in the search.
 ///
@@ -477,7 +478,7 @@ where
 
 /// extract points from layers (less populated) above a given layer (this provides sub sampling where each point has nbng neighbours.  
 ///
-/// The number of neighbours asked for must be smaller than for init_from_hnsw_all as we do inspect only
+/// The number of neighbours asked for must be smaller than for [kgraph_from_hnsw_all()] as we do inspect only
 /// a fraction of the points and a fraction of the neighbourhood of each point. (all the focus is inside a layer)
 pub fn kgraph_from_hnsw_layer<T, D, F>(
     hnsw: &Hnsw<T, D>,

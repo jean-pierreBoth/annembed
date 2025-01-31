@@ -1,4 +1,4 @@
-//!  (Kind of) Diffusion maps embedding.
+//!  Diffusion maps embedding.
 //!
 //! This module (presently) computes a diffusion embedding for the kernel constructed from nearest neighbours
 //! stored in a Hnsw structure, see in module [embedder](crate::embedder).  
@@ -72,6 +72,10 @@ impl DiffusionParams {
     }
 } // end of DiffusionParams
 
+/// The algorithm implements:
+///  *Variables bandwith diffusion kernels* Berry and Harlim. Appl. Comput. Harmon. Anal. 40 (2016) 68–96.
+///
+/// A random svd approximation is used to run on large number of items (See module [crate::tools::svdapprox])  
 pub struct DiffusionMaps {
     /// parameters to use
     params: DiffusionParams,
@@ -111,7 +115,7 @@ impl DiffusionMaps {
         }
     }
 
-    fn get_index(&self) -> Option<&IndexSet<DataId>> {
+    pub fn get_index(&self) -> Option<&IndexSet<DataId>> {
         self.index.as_ref()
     }
 
@@ -134,7 +138,6 @@ impl DiffusionMaps {
     } // end embed_hnsw
 
     /// Return laplacian from hnsw nearest neighbours.
-    /// If store is true, the laplacian is stored in structure DiffusionsMaps for future use
     /// F is float type we want the result in
     pub(crate) fn laplacian_from_hnsw<T, D, F>(&mut self, hnsw: &Hnsw<T, D>) -> GraphLaplacian
     where
@@ -154,9 +157,8 @@ impl DiffusionMaps {
         let kgraph = kgraph_from_hnsw_all::<T, D, F>(hnsw, knbn as usize).unwrap();
         // we store indexset to be able to go back from index (in embedding) to dataId (in hnsw) as kgrap will be deleted
         self.index = Some(kgraph.get_indexset().clone());
-        // get NodeParams.
-        let nodeparams = self.compute_dmap_nodeparams::<F>(&kgraph);
-        self.compute_laplacian(&nodeparams, self.params.get_alfa())
+        //
+        self.laplacian_from_kgraph(&kgraph)
     }
 
     // to be called by embed_from_kgraph
@@ -173,11 +175,13 @@ impl DiffusionMaps {
             + Into<f64>,
     {
         // we store indexset to be able to go back from index (in embedding) to dataId (in hnsw) as kgrap will be deleted
-        self.index = Some(kgraph.get_indexset().clone());
+        if self.index.is_none() {
+            self.index = Some(kgraph.get_indexset().clone());
+        }
         // get NodeParams.
         let nodeparams = self.compute_dmap_nodeparams::<F>(kgraph);
         self.compute_laplacian(&nodeparams, self.params.get_alfa())
-    }
+    } // end of laplacian_from_kgraph
 
     // transform nodeparams to a kernel.
     // We apply alfa parameter to possibly swap from Laplace-Beltrami to Ornstein-Uhlenbeck
@@ -425,18 +429,13 @@ impl DiffusionMaps {
             nodeparams.push(nodep);
         }
         //
-        self.density_quantiles();
+        self.density_quantiles(&q_density);
         NodeParams::new(nodeparams, kgraph.get_max_nbng())
     } // end to_dmap_nodeparams
 
     //
-    pub(crate) fn density_quantiles(&self) {
-        if self.q_density.is_none() {
-            log::error!("no density to get quantiles");
-            return;
-        }
+    pub(crate) fn density_quantiles(&self, d_density: &Vec<f32>) {
         let mut quant_densities: CKMS<f32> = CKMS::<f32>::new(0.001);
-        let d_density = self.q_density.as_ref().unwrap();
         for q in d_density {
             quant_densities.insert(*q);
         }
@@ -472,8 +471,8 @@ impl DiffusionMaps {
         rho_y_s.into_iter().sum::<F>() / F::from(out_edges.len()).unwrap()
     }
 
-    // useful if we have already hnsw
-    #[allow(unused)]
+    // useful if we have already hnsw.
+    // Note that embedded data are not reindexed to DataId
     pub(crate) fn embed_from_kgraph<F>(
         &mut self,
         kgraph: &KGraph<F>,
@@ -491,22 +490,19 @@ impl DiffusionMaps {
             + std::ops::DivAssign
             + Into<f64>,
     {
+        log::info!("in DiffusionMaps::embed_from_kgraph");
+        //
         let mut laplacian = self.laplacian_from_kgraph::<F>(kgraph);
-        let embedded_reindexed = self
+        let embedded = self
             .embed_from_laplacian::<F>(&mut laplacian, asked_dim, t_opt)
             .unwrap();
         // now we can store laplacian
         self.laplacian = Some(laplacian);
         //
-        Ok(embedded_reindexed)
+        Ok(embedded)
     } // end of embed_from_kgraph
 
-    /// Do the whole work chain :graph conversion from hnsw structure, NodeParams transformation.  
-    /// T is the type on which distances in Hnsw are computed,
-    /// F is f32 or f64 depending on how diffusions Maps is to be computed.  
-    /// The svd result are stored in the DiffusionMaps structure and accessible with the functions
-    /// [Self::get_svd_res()]
-    pub fn embed_from_hnsw<T, D, F>(
+    pub(crate) fn embed_from_hnsw_intern<T, D, F>(
         &mut self,
         hnsw: &Hnsw<T, D>,
         asked_dim: usize,
@@ -526,11 +522,46 @@ impl DiffusionMaps {
             + Into<f64>,
     {
         let mut laplacian = self.laplacian_from_hnsw::<T, D, F>(hnsw);
-        let embedded_reindexed = self
+        let embedded = self
             .embed_from_laplacian::<F>(&mut laplacian, asked_dim, t_opt)
             .unwrap();
         // now we can store laplacian
         self.laplacian = Some(laplacian);
+        //
+        Ok(embedded)
+    }
+
+    /// Do the whole work chain graph conversion from hnsw structure, NodeParams transformation and svd.
+    /// T is the type on which distances in Hnsw are computed,
+    /// F is f32 or f64 depending on how diffusions Maps is to be computed.  
+    /// The svd result are stored in the DiffusionMaps structure and accessible with the functions
+    /// [Self::get_svd_res()].  
+    /// Note that
+    pub fn embed_from_hnsw<T, D, F>(
+        &mut self,
+        hnsw: &Hnsw<T, D>,
+        asked_dim: usize,
+        t_opt: Option<f32>,
+    ) -> Result<Array2<F>>
+    where
+        D: Distance<T> + Send + Sync,
+        T: Clone + Send + Sync,
+        F: Float
+            + FromPrimitive
+            + std::marker::Sync
+            + Send
+            + std::fmt::UpperExp
+            + std::iter::Sum
+            + std::ops::AddAssign
+            + std::ops::DivAssign
+            + Into<f64>,
+    {
+        // we get embedded data without reindexation
+        let embedded = self
+            .embed_from_hnsw_intern(&hnsw, asked_dim, t_opt)
+            .unwrap();
+        // and we reindex
+        let embedded_reindexed = self.reindex_embedding(&embedded);
         //
         Ok(embedded_reindexed)
     } // end of embed_from_hnsw
@@ -538,6 +569,8 @@ impl DiffusionMaps {
     //
 
     // once we have laplacian get compute eigenvectors and weight them with time and eigenvalues
+    // This function returns an embeding in the graph indexing. To get back to DataId as sent in Hnsw.
+    // Use [Self::reindex_embedding()] to get back to original data indexing
     fn embed_from_laplacian<F>(
         &self,
         laplacian: &mut GraphLaplacian,
@@ -623,14 +656,14 @@ impl DiffusionMaps {
         }
         log::debug!("DiffusionMaps::embed_from_hnsw ended");
         //
-        let embedded_reindexed = self.embedding_reindexed(&embedded);
-        //
         laplacian.svd_res = Some(svd_res);
         //
-        Ok(embedded_reindexed)
+        Ok(embedded)
     }
 
-    fn embedding_reindexed<F>(&self, embedded: &Array2<F>) -> Array2<F>
+    /// This function reindex embedding according to original indexation
+    /// returns embedded data reindexed by DataId. This requires the DataId to be contiguous from 0 to nbdata.  
+    pub fn reindex_embedding<F>(&self, embedded: &Array2<F>) -> Array2<F>
     where
         F: Float,
     {
@@ -898,7 +931,7 @@ mod tests {
         }
         //
         // do dmap embedding, laplacian computation
-        let dtime = 1.;
+        let dtime = 5.;
         let mut dparams: DiffusionParams = DiffusionParams::new(4, Some(dtime));
         dparams.set_alfa(0.);
         //

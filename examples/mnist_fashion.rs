@@ -34,12 +34,28 @@ pub fn main() {
     //
     let _ = env_logger::builder().is_test(true).try_init();
     //
-    let fashion_data = load_mnist_data(MNIST_FASHION_DIR).unwrap();
-    let labels = fashion_data.get_labels().to_vec();
+    let fashion_data = load_mnist_train_data(MNIST_FASHION_DIR).unwrap();
+    let mut labels = fashion_data.get_labels().to_vec();
     let images = fashion_data.get_images();
     // convert images as vectors
     let (_, _, nbimages) = images.dim();
     let mut images_as_v = Vec::<Vec<f32>>::with_capacity(nbimages);
+    //
+    for k in 0..nbimages {
+        let v: Vec<f32> = images
+            .slice(s![.., .., k])
+            .iter()
+            .map(|v| *v as f32)
+            .collect();
+        images_as_v.push(v);
+    }
+    // load test data
+    // ===============
+    let fashion_test_data = load_mnist_test_data(MNIST_FASHION_DIR).unwrap();
+    labels.append(&mut fashion_test_data.get_labels().to_vec());
+    let images = fashion_test_data.get_images();
+    // convert images as vectors
+    let (_, _, nbimages) = images.dim();
     //
     for k in 0..nbimages {
         let v: Vec<f32> = images
@@ -86,7 +102,7 @@ pub fn main() {
     let graphprojection;
     let hierarchical = false;
     if !hierarchical {
-        let knbn = 6;
+        let knbn = 8;
         kgraph = kgraph_from_hnsw_all(&hnsw, knbn).unwrap();
         embedder = Embedder::new(&kgraph, embed_params);
         let embed_res = embedder.embed();
