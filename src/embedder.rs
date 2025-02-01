@@ -97,7 +97,7 @@ pub struct Embedder<'a, F> {
 
 impl<'a, F> Embedder<'a, F>
 where
-    F: Float + Lapack + ndarray::ScalarOperand + Send + Sync,
+    F: Float + Lapack + ndarray::ScalarOperand + Send + Sync + Into<f64>,
 {
     /// constructor from a graph and asked embedding dimension
     pub fn new(kgraph: &'a KGraph<F>, parameters: EmbedderParams) -> Self {
@@ -274,32 +274,54 @@ where
         let graph_to_embed = self.kgraph.unwrap();
         // construction of initial neighbourhood, scales and proba of edges from distances.
         // we will need  initial_space representation for graph laplacian and in cross entropy optimization
-        self.initial_space = Some(to_proba_edges(
-            graph_to_embed,
-            self.parameters.scale_rho as f32,
-            self.parameters.beta as f32,
-        ));
+
         // we can initialize embedding with diffusion maps or pure random.
         let mut initial_embedding;
         if self.parameters.dmap_init {
             // initial embedding via diffusion maps, in this case we have to have a coherent box normalization with random case
+            //
             let cpu_start = ProcessTime::now();
             let sys_start = SystemTime::now();
-            initial_embedding = get_dmap_embedding(
-                self.initial_space.as_ref().unwrap(),
-                self.parameters.get_dimension(),
-                None,
-            );
+            let dmapnew = true;
+            //
+            if dmapnew {
+                log::info!("using new dmaps");
+                let dtime = 5.;
+                let mut dparams: DiffusionParams = DiffusionParams::new(10, Some(dtime));
+                dparams.set_alfa(0.);
+                let mut diffusion_map = DiffusionMaps::new(dparams);
+               initial_embedding = diffusion_map.embed_from_kgraph::<F>(graph_to_embed,self.parameters.get_dimension() , Some(dtime)).unwrap();
+            }
+            else {
+                log::info!("using old dmaps");
+                self.initial_space = Some(to_proba_edges(
+                graph_to_embed,
+                self.parameters.scale_rho as f32,
+                self.parameters.beta as f32,
+                ));  
+                initial_embedding = get_dmap_embedding(
+                    self.initial_space.as_ref().unwrap(),
+                    self.parameters.get_dimension(),
+                    None,
+                );
+            }
+            
             println!(
                 " dmap initialization sys time(ms) {:.2e} cpu time(ms) {:.2e}",
                 sys_start.elapsed().unwrap().as_millis(),
                 cpu_start.elapsed().as_millis()
             );
-            set_data_box(&mut initial_embedding, 1.);
+ //           set_data_box(&mut initial_embedding, F::from(10.).unwrap());
         } else {
             // if we use random initialization we must have a box size coherent with renormalizes scales, so box size is 1.
             initial_embedding = self.get_random_init(1.);
         }
+        //
+        self.initial_space = Some(to_proba_edges(
+            graph_to_embed,
+            self.parameters.scale_rho as f32,
+            self.parameters.beta as f32,
+        ));
         let embedding_res = self.entropy_optimize(&self.parameters, &initial_embedding);
         // optional store dump initial embedding
         self.initial_embedding = Some(initial_embedding);
@@ -399,7 +421,7 @@ where
     } // end of get_initial_embedding_reindexed
 
     /// get random initialization in a square of side size
-    fn get_random_init(&mut self, size: f32) -> Array2<F> {
+    fn get_random_init(&self, size: f32) -> Array2<F> {
         log::trace!("Embedder get_random_init with size {:.2e}", size);
         //
         let nb_nodes = self.initial_space.as_ref().unwrap().get_nb_nodes();
@@ -1153,7 +1175,6 @@ where
 // Construct node params for later optimization
 // after this function Embedder structure do not need field kgraph anymore
 // This function relies on get_scale_from_proba_normalisation function which construct proabability-weighted edge around each node.
-// These 2 function are also the base of module dmap
 //
 pub(crate) fn to_proba_edges<F>(kgraph: &KGraph<F>, scale_rho: f32, beta: f32) -> NodeParams
 where
@@ -1410,7 +1431,7 @@ fn estimate_embedded_scales_from_initial_scales(initial_scales: &[f32]) -> Vec<f
 } // end of estimate_embedded_scale_from_initial_scales
 
 // renormalize data (center and enclose in a box of a given box size) before optimization of cross entropy
-fn set_data_box<F>(data: &mut Array2<F>, box_size: f64)
+fn set_data_box<F>(data: &mut Array2<F>, box_size: F)
 where
     F: Float
         + NumAssign
@@ -1437,10 +1458,10 @@ where
         }
     }
     //
-    max_max /= F::from(0.5 * box_size).unwrap();
+    max_max /= box_size / F::from(2.).unwrap();
     for f in data.iter_mut() {
         *f /= max_max;
-        assert!((*f).abs() <= F::one());
+        assert!((*f).abs() <= box_size);
     }
 } // end of set_data_box
 

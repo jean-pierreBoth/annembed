@@ -370,7 +370,13 @@ impl DiffusionMaps {
         // now we have scales we can remap edge length to weights.
         // we choose epsil to put weight on at least 5 neighbours when no shift
         // TODO: depend on absence of shift
-        let epsil = 5.0f32.sqrt();
+        let knbn = kgraph.get_max_nbng();
+        let epsil = knbn as f32 / 2.;
+        log::info!(
+            "compute_dmap_nodeparams knbn : {}, epsil : {:.2e}",
+            knbn,
+            epsil
+        );
         let remap_weight = |w: F, shift: f32, scale: f32| {
             let arg = ((w.to_f32().unwrap() - shift) / (epsil * scale)).powf(2.);
             (-arg).exp().max(PROBA_MIN)
@@ -857,7 +863,7 @@ mod tests {
         //
         log::info!("running mnist_digits");
         //
-        let mnist_data = load_mnist_data(MNIST_DIGITS_DIR).unwrap();
+        let mnist_data = load_mnist_train_data(MNIST_DIGITS_DIR).unwrap();
         let labels = mnist_data.get_labels().to_vec();
         let images = mnist_data.get_images();
         // convert images as vectors
@@ -914,12 +920,28 @@ mod tests {
         //
         log::info!("running mnist_fashion");
         //
-        let fashion_data = load_mnist_data(MNIST_FASHION_DIR).unwrap();
-        let labels = fashion_data.get_labels().to_vec();
-        let images = fashion_data.get_images();
+        let fashion_train_data = load_mnist_train_data(MNIST_FASHION_DIR).unwrap();
+        let mut labels = fashion_train_data.get_labels().to_vec();
+        let images = fashion_train_data.get_images();
         // convert images as vectors
         let (_, _, nbimages) = images.dim();
         let mut images_as_v = Vec::<Vec<f32>>::with_capacity(nbimages);
+        //
+        for k in 0..nbimages {
+            let v: Vec<f32> = images
+                .slice(s![.., .., k])
+                .iter()
+                .map(|v| *v as f32)
+                .collect();
+            images_as_v.push(v);
+        }
+        // load test data
+        // ===============
+        let fashion_test_data = load_mnist_test_data(MNIST_FASHION_DIR).unwrap();
+        labels.append(&mut fashion_test_data.get_labels().to_vec());
+        let images = fashion_test_data.get_images();
+        // convert images as vectors
+        let (_, _, nbimages) = images.dim();
         //
         for k in 0..nbimages {
             let v: Vec<f32> = images

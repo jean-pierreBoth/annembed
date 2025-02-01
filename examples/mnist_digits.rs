@@ -30,8 +30,8 @@ pub fn main() {
     //
     let _ = env_logger::builder().is_test(true).try_init();
     //
-    let digits_data = load_mnist_data(MNIST_DIGITS_DIR).unwrap();
-    let labels = digits_data.get_labels().to_vec();
+    let digits_data = load_mnist_train_data(MNIST_DIGITS_DIR).unwrap();
+    let mut labels = digits_data.get_labels().to_vec();
     let images = digits_data.get_images();
     // convert images as vectors
     let (_, _, nbimages) = images.dim();
@@ -46,7 +46,22 @@ pub fn main() {
         images_as_v.push(v);
     }
     //
-
+    // load test data
+    // ===============
+    let digits_test_data = load_mnist_test_data(MNIST_DIGITS_DIR).unwrap();
+    labels.append(&mut digits_test_data.get_labels().to_vec());
+    let images = digits_test_data.get_images();
+    // convert images as vectors
+    let (_, _, nbimages) = images.dim();
+    //
+    for k in 0..nbimages {
+        let v: Vec<f32> = images
+            .slice(s![.., .., k])
+            .iter()
+            .map(|v| *v as f32)
+            .collect();
+        images_as_v.push(v);
+    }
     //
     let ef_c = 50;
     let max_nb_connection = 70;
