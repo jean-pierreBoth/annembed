@@ -153,7 +153,8 @@ impl DiffusionMaps {
             + std::ops::DivAssign
             + Into<f64>,
     {
-        let knbn = hnsw.get_max_nb_connection();
+        // hnsw can have large max_nb_connection (typically 64), we set a bound
+        let knbn = hnsw.get_max_nb_connection().min(16);
         let kgraph = kgraph_from_hnsw_all::<T, D, F>(hnsw, knbn as usize).unwrap();
         // we store indexset to be able to go back from index (in embedding) to dataId (in hnsw) as kgrap will be deleted
         self.index = Some(kgraph.get_indexset().clone());

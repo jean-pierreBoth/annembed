@@ -385,6 +385,11 @@ where
     if max_nb_conn < nbng {
         log::info!("init_from_hnsw_all: number of neighbours must be less than hnsw max_nb_connection : {} ", max_nb_conn);
         println!("init_from_hnsw_all: number of neighbours must be less than hnsw max_nb_connection : {} ", max_nb_conn);
+    } else {
+        log::info!(
+            "kgraph_from_hnsw_all construction with {} nb_neighbours",
+            nbng
+        );
     }
     let point_indexation = hnsw.get_point_indexation();
     let nb_point = point_indexation.get_nb_point();
