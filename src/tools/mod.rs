@@ -7,3 +7,6 @@ pub mod entropy;
 pub mod io;
 pub mod nodeparam;
 pub mod svdapprox;
+
+// specific functions for initializing umap like embedding
+pub mod kdumap;

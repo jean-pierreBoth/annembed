@@ -125,16 +125,17 @@ pub fn main() {
         cpu_start.elapsed().as_secs()
     );
     // dump
-    log::info!("dumping initial embedding in csv file");
-    let mut csv_w = Writer::from_path("mnist_init_fashion.csv").unwrap();
-    // we can use get_embedded_reindexed as we indexed DataId contiguously in hnsw!
-    let _res = write_csv_labeled_array2(
-        &mut csv_w,
-        labels.as_slice(),
-        &embedder.get_initial_embedding_reindexed(),
-    );
-    csv_w.flush().unwrap();
-
+    if embed_params.dmap_init {
+        log::info!("dumping initial embedding in csv file");
+        let mut csv_w = Writer::from_path("mnist_init_fashion.csv").unwrap();
+        // we can use get_embedded_reindexed as we indexed DataId contiguously in hnsw!
+        let _res = write_csv_labeled_array2(
+            &mut csv_w,
+            labels.as_slice(),
+            &embedder.get_initial_embedding_reindexed(),
+        );
+        csv_w.flush().unwrap();
+    }
     log::info!("dumping in csv file");
     let mut csv_w = Writer::from_path("mnist_fashion.csv").unwrap();
     // we can use get_embedded_reindexed as we indexed DataId contiguously in hnsw!

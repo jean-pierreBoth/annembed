@@ -23,7 +23,7 @@ use sprs::{CsMat, TriMatBase};
 use crate::embedder::*;
 use crate::fromhnsw::{kgraph::KGraph, kgraph_from_hnsw_all};
 use crate::graphlaplace::*;
-use crate::tools::{clip, nodeparam::*, svdapprox::*};
+use crate::tools::{clip, kdumap::*, nodeparam::*, svdapprox::*};
 use anyhow::Result;
 use hnsw_rs::prelude::*;
 
