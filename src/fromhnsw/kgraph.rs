@@ -436,9 +436,9 @@ where
             );
             if vec_tmp.is_empty() {
                 let p_id = point.get_point_id();
-                log::error!(" graph will not be connected, isolated point at layer {}  , pos in layer : {} ", p_id.0, p_id.1);
-                println!(" graph will not be connected, isolated point at layer {}  , pos in layer : {} ", p_id.0, p_id.1);
-                return Err(anyhow!(" graph will not be connected, isolated point at layer {}  , pos in layer : {} ", p_id.0, p_id.1));
+                log::error!("kgraph_from_hnsw_all: graph will not be connected, isolated point at layer {}  , pos in layer : {} \n", p_id.0, p_id.1);
+                println!("kgraph_from_hnsw_all: graph will not be connected, isolated point at layer {}  , pos in layer : {} ", p_id.0, p_id.1);
+                return Err(anyhow!("kgraph_from_hnsw_all: graph will not be connected, isolated point at layer {}  , pos in layer : {} ", p_id.0, p_id.1));
             }
         }
         vec_tmp.truncate(nbng);

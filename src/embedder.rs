@@ -282,7 +282,7 @@ where
             //
             let cpu_start = ProcessTime::now();
             let sys_start = SystemTime::now();
-            let dmapnew = false;
+            let dmapnew = true;
             //
             if dmapnew {
                 log::info!("using new dmaps");
@@ -314,15 +314,15 @@ where
             );
             set_data_box(&mut initial_embedding, F::from(10.).unwrap());
         } else {
-            self.initial_space = Some(to_proba_edges(
-                graph_to_embed,
-                self.parameters.scale_rho as f32,
-                self.parameters.beta as f32,
-            ));
             // if we use random initialization we must have a box size coherent with renormalizes scales, so box size is 1.
             initial_embedding = self.get_random_init(1.);
         }
         //
+        self.initial_space = Some(to_proba_edges(
+            graph_to_embed,
+            self.parameters.scale_rho as f32,
+            self.parameters.beta as f32,
+        ));
         let embedding_res = self.entropy_optimize(&self.parameters, &initial_embedding);
         // optional store dump initial embedding
         self.initial_embedding = Some(initial_embedding);
@@ -599,7 +599,7 @@ where
         // compute max edge length from kgraph constructed from embedded points corresponding to nbng neighbours
         let max_edges_embedded = self.get_max_edge_length_embedded_kgraph(nbng);
         if max_edges_embedded.is_none() {
-            log::error!("cannot compute mean edge length from embedded data");
+            log::error!("get_quality_estimate_from_edge_length : cannot compute mean edge length from embedded data");
             return None;
         }
         let max_edges_embedded = max_edges_embedded.unwrap();
