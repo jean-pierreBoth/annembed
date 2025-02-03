@@ -28,7 +28,13 @@ use hnsw_rs::prelude::*;
 use crate::graphlaplace::*;
 use crate::tools::{clip, nodeparam::*, svdapprox::*};
 
-// TODO: doc
+/// The parameters are:
+///  - the dimension of the embedding.
+///  - the time of the embedding. By default it is computed using the decay of eigenvalues of the laplacian
+///  - the number of neighbours to use in the comoputation of the laplacian.  
+///     By default it is deduced by the number neighbours used in hnsw
+///     with a limitation up to 16 (as the hnsw can require a large number of connection). To limit the cpu time it is possible to reduce it.
+///     A good range is between 8 and 12.
 #[derive(Copy, Clone)]
 pub struct DiffusionParams {
     /// dimension of embedding
@@ -37,21 +43,36 @@ pub struct DiffusionParams {
     alfa: f32,
     /// embedding time
     t: Option<f32>,
+    /// number of neighbour used in the laplacian graph.
+    gnbn_opt: Option<usize>,
 } // end of DiffusionParams
 
 impl DiffusionParams {
-    pub fn new(asked_dim: usize, t_opt: Option<f32>) -> Self {
+    /// arguments are:
+    /// - embedding dimension
+    /// - optional diffusion time
+    /// - optional number of neighbours used in laplacian discretisation
+    pub fn new(asked_dim: usize, t_opt: Option<f32>, g_opt: Option<usize>) -> Self {
         DiffusionParams {
             asked_dim,
             alfa: 0.,
             t: t_opt,
+            gnbn_opt: g_opt,
         }
     }
     /// get embedding time
-    pub fn get_t(&self) -> Option<f32> {
+    pub fn get_time(&self) -> Option<f32> {
         self.t
     }
 
+    /// get dimension
+    pub fn get_dim(&self) -> usize {
+        self.asked_dim
+    }
+
+    pub fn get_gnbn(&self) -> Option<usize> {
+        return self.gnbn_opt;
+    }
     //
     /// modify the default alfa See Lafon paper.
     /// naural values are 0. , 1/2 and 1.
@@ -134,12 +155,16 @@ impl DiffusionMaps {
         let kgraph = kgraph_from_hnsw_all::<T, D, F>(hnsw, knbn as usize).unwrap();
         // get NodeParams. CAVEAT to_proba_edges apply initial shift!!
         let nodeparams = to_proba_edges::<F>(&kgraph, 1., 2.);
-        get_dmap_embedding::<F>(&nodeparams, self.params.asked_dim, self.params.get_t())
+        get_dmap_embedding::<F>(&nodeparams, self.params.asked_dim, self.params.get_time())
     } // end embed_hnsw
 
     /// Return laplacian from hnsw nearest neighbours.
     /// F is float type we want the result in
-    pub(crate) fn laplacian_from_hnsw<T, D, F>(&mut self, hnsw: &Hnsw<T, D>) -> GraphLaplacian
+    pub(crate) fn laplacian_from_hnsw<T, D, F>(
+        &mut self,
+        hnsw: &Hnsw<T, D>,
+        dparams: &DiffusionParams,
+    ) -> GraphLaplacian
     where
         T: Clone + Send + Sync,
         D: Distance<T> + Send + Sync,
@@ -153,8 +178,9 @@ impl DiffusionMaps {
             + std::ops::DivAssign
             + Into<f64>,
     {
+        let gnbn = dparams.get_gnbn().unwrap_or(16);
         // hnsw can have large max_nb_connection (typically 64), we set a bound
-        let knbn = hnsw.get_max_nb_connection().min(16);
+        let knbn = hnsw.get_max_nb_connection().min(gnbn as u8);
         let kgraph = kgraph_from_hnsw_all::<T, D, F>(hnsw, knbn as usize).unwrap();
         // we store indexset to be able to go back from index (in embedding) to dataId (in hnsw) as kgrap will be deleted
         self.index = Some(kgraph.get_indexset().clone());
@@ -483,8 +509,7 @@ impl DiffusionMaps {
     pub(crate) fn embed_from_kgraph<F>(
         &mut self,
         kgraph: &KGraph<F>,
-        asked_dim: usize,
-        t_opt: Option<f32>,
+        dparams: &DiffusionParams,
     ) -> Result<Array2<F>>
     where
         F: Float
@@ -499,6 +524,8 @@ impl DiffusionMaps {
     {
         log::info!("in DiffusionMaps::embed_from_kgraph");
         //
+        let asked_dim = dparams.get_dim();
+        let t_opt = dparams.get_time();
         let mut laplacian = self.laplacian_from_kgraph::<F>(kgraph);
         let embedded = self
             .embed_from_laplacian::<F>(&mut laplacian, asked_dim, t_opt)
@@ -512,8 +539,7 @@ impl DiffusionMaps {
     pub(crate) fn embed_from_hnsw_intern<T, D, F>(
         &mut self,
         hnsw: &Hnsw<T, D>,
-        asked_dim: usize,
-        t_opt: Option<f32>,
+        dparams: &DiffusionParams,
     ) -> Result<Array2<F>>
     where
         D: Distance<T> + Send + Sync,
@@ -528,7 +554,10 @@ impl DiffusionMaps {
             + std::ops::DivAssign
             + Into<f64>,
     {
-        let mut laplacian = self.laplacian_from_hnsw::<T, D, F>(hnsw);
+        let asked_dim = dparams.get_dim();
+        let t_opt = dparams.get_time();
+        //
+        let mut laplacian = self.laplacian_from_hnsw::<T, D, F>(hnsw, dparams);
         let embedded = self
             .embed_from_laplacian::<F>(&mut laplacian, asked_dim, t_opt)
             .unwrap();
@@ -547,8 +576,7 @@ impl DiffusionMaps {
     pub fn embed_from_hnsw<T, D, F>(
         &mut self,
         hnsw: &Hnsw<T, D>,
-        asked_dim: usize,
-        t_opt: Option<f32>,
+        dparams: &DiffusionParams,
     ) -> Result<Array2<F>>
     where
         D: Distance<T> + Send + Sync,
@@ -564,9 +592,7 @@ impl DiffusionMaps {
             + Into<f64>,
     {
         // we get embedded data without reindexation
-        let embedded = self
-            .embed_from_hnsw_intern(&hnsw, asked_dim, t_opt)
-            .unwrap();
+        let embedded = self.embed_from_hnsw_intern(&hnsw, dparams).unwrap();
         // and we reindex
         let embedded_reindexed = self.reindex_embedding(&embedded);
         //
@@ -882,7 +908,8 @@ mod tests {
         //
         // do dmap embedding, laplacian computation
         let dtime = 1.;
-        let mut dparams: DiffusionParams = DiffusionParams::new(4, Some(dtime));
+        let gnbn: usize = 16;
+        let mut dparams: DiffusionParams = DiffusionParams::new(4, Some(dtime), Some(gnbn));
         dparams.set_alfa(0.);
         //
         let cpu_start = ProcessTime::now();
@@ -896,8 +923,7 @@ mod tests {
         hnsw.parallel_insert(&data_with_id);
         // dmaps
         let mut diffusion_map = DiffusionMaps::new(dparams);
-        let emmbedded_res =
-            diffusion_map.embed_from_hnsw::<f32, DistL2, f32>(&mut hnsw, 10, Some(dtime));
+        let emmbedded_res = diffusion_map.embed_from_hnsw::<f32, DistL2, f32>(&mut hnsw, &dparams);
         if emmbedded_res.is_err() {
             log::error!("embedding failed");
             panic!("dmap_fashion failed");
@@ -955,13 +981,14 @@ mod tests {
         //
         // do dmap embedding, laplacian computation
         let dtime = 5.;
-        let mut dparams: DiffusionParams = DiffusionParams::new(4, Some(dtime));
+        let gnbn = 32;
+        let mut dparams: DiffusionParams = DiffusionParams::new(4, Some(dtime), Some(gnbn));
         dparams.set_alfa(0.);
         //
         let cpu_start = ProcessTime::now();
         let sys_now = SystemTime::now();
         // hnsw definition
-        let mut hnsw = Hnsw::<f32, DistL2>::new(16, images_as_v.len(), 16, 200, DistL2::default());
+        let mut hnsw = Hnsw::<f32, DistL2>::new(32, images_as_v.len(), 16, 200, DistL2::default());
         //
         // we must pay fortran indexation once!. transform image to a vector
         let data_with_id: Vec<(&Vec<f32>, usize)> =
@@ -969,8 +996,7 @@ mod tests {
         hnsw.parallel_insert(&data_with_id);
         // dmaps
         let mut diffusion_map = DiffusionMaps::new(dparams);
-        let emmbedded_res =
-            diffusion_map.embed_from_hnsw::<f32, DistL2, f32>(&mut hnsw, 10, Some(dtime));
+        let emmbedded_res = diffusion_map.embed_from_hnsw::<f32, DistL2, f32>(&mut hnsw, &dparams);
         if emmbedded_res.is_err() {
             log::error!("embedding failed");
             panic!("dmap_fashion failed");
@@ -996,7 +1022,8 @@ mod tests {
         let data = generate_1d_gaussian(nb_data);
         // do dmap embedding, laplacian computation
         let dtime = 1.;
-        let mut dparams: DiffusionParams = DiffusionParams::new(4, Some(dtime));
+        let gnbn = 12;
+        let mut dparams: DiffusionParams = DiffusionParams::new(4, Some(dtime), Some(gnbn));
         dparams.set_alfa(1.);
 
         // hnsw definition
@@ -1010,8 +1037,7 @@ mod tests {
         //
         //
         let mut diffusion_map = DiffusionMaps::new(dparams);
-        let emmbedded_res =
-            diffusion_map.embed_from_hnsw::<f32, DistL2, f32>(&mut hnsw, 10, Some(dtime));
+        let emmbedded_res = diffusion_map.embed_from_hnsw::<f32, DistL2, f32>(&mut hnsw, &dparams);
         if emmbedded_res.is_err() {
             log::error!("embedding failed");
         };
