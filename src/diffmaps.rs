@@ -22,11 +22,10 @@ use sprs::{CsMat, TriMatBase};
 
 use crate::embedder::*;
 use crate::fromhnsw::{kgraph::KGraph, kgraph_from_hnsw_all};
-use anyhow::Result;
-use hnsw_rs::prelude::*;
-//use crate::fromhnsw::*;
 use crate::graphlaplace::*;
 use crate::tools::{clip, nodeparam::*, svdapprox::*};
+use anyhow::Result;
+use hnsw_rs::prelude::*;
 
 /// The parameters are:
 ///  - the dimension of the embedding.
@@ -152,7 +151,15 @@ impl DiffusionMaps {
     {
         //
         let knbn = hnsw.get_max_nb_connection();
-        let kgraph = kgraph_from_hnsw_all::<T, D, F>(hnsw, knbn as usize).unwrap();
+        let kgraph_res: anyhow::Result<KGraph<F>> =
+            kgraph_from_hnsw_all::<T, D, F>(hnsw, knbn as usize);
+        if kgraph_res.is_err() {
+            panic!(
+                "kgraph_from_hnsw_all failed {:?}",
+                kgraph_res.err().unwrap()
+            );
+        };
+        let kgraph = kgraph_res.unwrap();
         // get NodeParams. CAVEAT to_proba_edges apply initial shift!!
         let nodeparams = to_proba_edges::<F>(&kgraph, 1., 2.);
         get_dmap_embedding::<F>(&nodeparams, self.params.asked_dim, self.params.get_time())
@@ -181,7 +188,14 @@ impl DiffusionMaps {
         let gnbn = dparams.get_gnbn().unwrap_or(16);
         // hnsw can have large max_nb_connection (typically 64), we set a bound
         let knbn = hnsw.get_max_nb_connection().min(gnbn as u8);
-        let kgraph = kgraph_from_hnsw_all::<T, D, F>(hnsw, knbn as usize).unwrap();
+        let kgraph_res = kgraph_from_hnsw_all::<T, D, F>(hnsw, knbn as usize);
+        if kgraph_res.is_err() {
+            panic!(
+                "kgraph_from_hnsw_all failed {:?}",
+                kgraph_res.err().unwrap()
+            );
+        }
+        let kgraph = kgraph_res.unwrap();
         // we store indexset to be able to go back from index (in embedding) to dataId (in hnsw) as kgrap will be deleted
         self.index = Some(kgraph.get_indexset().clone());
         //

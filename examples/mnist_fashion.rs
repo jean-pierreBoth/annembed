@@ -66,8 +66,8 @@ pub fn main() {
         images_as_v.push(v);
     }
     //
-    let ef_c = 400;
-    let max_nb_connection = 24;
+    let ef_c = 200;
+    let max_nb_connection = 16;
     let nbimages = images_as_v.len();
     let nb_layer = 16.min((nbimages as f32).ln().trunc() as usize);
     let cpu_start = ProcessTime::now();
@@ -102,7 +102,7 @@ pub fn main() {
     let graphprojection;
     let hierarchical = false;
     if !hierarchical {
-        let knbn = 8;
+        let knbn = 16;
         kgraph = kgraph_from_hnsw_all(&hnsw, knbn).unwrap();
         embedder = Embedder::new(&kgraph, embed_params);
         let embed_res = embedder.embed();

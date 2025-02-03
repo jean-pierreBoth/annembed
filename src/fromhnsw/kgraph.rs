@@ -362,10 +362,7 @@ where
 /// nbng is the maximal number of neighbours kept. The effective mean number can be less,
 /// in this case use the Hnsw.set_keeping_pruned(true) to restrict pruning in the search.
 ///
-pub fn kgraph_from_hnsw_all<T, D, F>(
-    hnsw: &Hnsw<T, D>,
-    nbng: usize,
-) -> std::result::Result<KGraph<F>, usize>
+pub fn kgraph_from_hnsw_all<T, D, F>(hnsw: &Hnsw<T, D>, nbng: usize) -> anyhow::Result<KGraph<F>>
 where
     T: Clone + Send + Sync,
     D: Distance<T> + Send + Sync,
@@ -374,7 +371,6 @@ where
     //
     log::debug!("entering kgraph_from_hnsw_all");
     //
-    let max_nbng = nbng;
     let mut nb_point_below_nbng = 0;
     let mut mean_deficient_neighbour_size: usize = 0;
     let mut minimum_nbng = nbng;
@@ -383,8 +379,8 @@ where
     let max_nb_conn = hnsw.get_max_nb_connection() as usize; // morally this the k of knn bu we have that for each layer
                                                              // check consistency between max_nb_conn and nbng
     if max_nb_conn < nbng {
-        log::info!("init_from_hnsw_all: number of neighbours must be less than hnsw max_nb_connection : {} ", max_nb_conn);
-        println!("init_from_hnsw_all: number of neighbours must be less than hnsw max_nb_connection : {} ", max_nb_conn);
+        log::info!("init_from_hnsw_all: number of neighbours asked {} must be less than hnsw max_nb_connection : {} ", nbng, max_nb_conn);
+        println!("init_from_hnsw_all: number of neighbours asked {} must be less than hnsw max_nb_connection : {} ", nbng, max_nb_conn);
     } else {
         log::info!(
             "kgraph_from_hnsw_all construction with {} nb_neighbours",
@@ -434,13 +430,15 @@ where
             mean_deficient_neighbour_size += vec_tmp.len();
             log::trace!(
                 "neighbours must have {} neighbours, point {} got only {}",
-                max_nbng,
+                nbng,
                 point_id,
                 vec_tmp.len()
             );
             if vec_tmp.is_empty() {
                 let p_id = point.get_point_id();
-                log::warn!(" graph will not be connected, isolated point at layer {}  , pos in layer : {} ", p_id.0, p_id.1);
+                log::error!(" graph will not be connected, isolated point at layer {}  , pos in layer : {} ", p_id.0, p_id.1);
+                println!(" graph will not be connected, isolated point at layer {}  , pos in layer : {} ", p_id.0, p_id.1);
+                return Err(anyhow!(" graph will not be connected, isolated point at layer {}  , pos in layer : {} ", p_id.0, p_id.1));
             }
         }
         vec_tmp.truncate(nbng);
@@ -474,7 +472,7 @@ where
     }
     //
     Ok(KGraph {
-        max_nbng,
+        max_nbng: nbng,
         nbnodes,
         neighbours,
         node_set,

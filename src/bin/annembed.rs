@@ -442,7 +442,11 @@ where
     );
     hnsw.parallel_insert(data_with_id);
     hnsw.dump_layer_info();
-    let kgraph = kgraph_from_hnsw_all(&hnsw, hnswparams.knbn).unwrap();
+    let kgraph_res = kgraph_from_hnsw_all(&hnsw, hnswparams.knbn);
+    if kgraph_res.is_err() {
+        panic!("kgraph_from_hnsw_all could not construct connected graph");
+    }
+    let kgraph = kgraph_res.unwrap();
     if hubdim_asked {
         // hubness and intrinsic dimension.
         log::info!("minimum number of neighbours {}", kgraph.get_max_nbng());

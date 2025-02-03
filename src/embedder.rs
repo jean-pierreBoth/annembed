@@ -282,15 +282,16 @@ where
             //
             let cpu_start = ProcessTime::now();
             let sys_start = SystemTime::now();
-            let dmapnew = true;
+            let dmapnew = false;
             //
             if dmapnew {
                 log::info!("using new dmaps");
                 let dtime = 5.;
-                let mut dparams: DiffusionParams = DiffusionParams::new(10, Some(dtime));
+                let gnbn = 16;
+                let mut dparams: DiffusionParams = DiffusionParams::new(10, Some(dtime), Some(gnbn));
                 dparams.set_alfa(0.);
                 let mut diffusion_map = DiffusionMaps::new(dparams);
-               initial_embedding = diffusion_map.embed_from_kgraph::<F>(graph_to_embed,self.parameters.get_dimension() , Some(dtime)).unwrap();
+               initial_embedding = diffusion_map.embed_from_kgraph::<F>(graph_to_embed, &dparams).unwrap();
             }
             else {
                 log::info!("using old dmaps");
@@ -311,17 +312,17 @@ where
                 sys_start.elapsed().unwrap().as_millis(),
                 cpu_start.elapsed().as_millis()
             );
- //           set_data_box(&mut initial_embedding, F::from(10.).unwrap());
+            set_data_box(&mut initial_embedding, F::from(10.).unwrap());
         } else {
+            self.initial_space = Some(to_proba_edges(
+                graph_to_embed,
+                self.parameters.scale_rho as f32,
+                self.parameters.beta as f32,
+            ));
             // if we use random initialization we must have a box size coherent with renormalizes scales, so box size is 1.
             initial_embedding = self.get_random_init(1.);
         }
         //
-        self.initial_space = Some(to_proba_edges(
-            graph_to_embed,
-            self.parameters.scale_rho as f32,
-            self.parameters.beta as f32,
-        ));
         let embedding_res = self.entropy_optimize(&self.parameters, &initial_embedding);
         // optional store dump initial embedding
         self.initial_embedding = Some(initial_embedding);
@@ -511,7 +512,7 @@ where
         }
         hnsw.parallel_insert_slice(&data_with_id);
         // compute kgraph from hnsw and sum edge length
-        let optimal_graph: Result<KGraph<F>, usize> = kgraph_from_hnsw_all(&hnsw, nbng);
+        let optimal_graph: anyhow::Result<KGraph<F>> = kgraph_from_hnsw_all(&hnsw, nbng);
         if optimal_graph.is_err() {
             log::error!("could not compute optimal graph");
             return None;
