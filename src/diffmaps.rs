@@ -390,10 +390,16 @@ impl DiffusionMaps {
         let mut nodeparams = Vec::<NodeParam>::with_capacity(nb_nodes);
         //
         let neighbour_hood = kgraph.get_neighbours();
+        let nbgh_size = kgraph.get_max_nbng().min(8);
+        log::info!(
+            "compute_dmap_nodeparams kgraph nbng : {}, using size {}",
+            kgraph.get_max_nbng(),
+            nbgh_size
+        );
         // compute a scale around each node, mean scale and quantiles on scale
         let local_scales: Vec<F> = neighbour_hood
             .par_iter()
-            .map(|edges| self.get_dist_around_node(kgraph, edges))
+            .map(|edges| self.get_dist_around_node(kgraph, edges, nbgh_size))
             .collect();
         // collect scales quantiles
         let mut scales_q: CKMS<f64> = CKMS::<f64>::new(0.001);
@@ -412,14 +418,15 @@ impl DiffusionMaps {
         // we choose epsil to put weight on at least 5 neighbours when no shift
         // TODO: depend on absence of shift
         let knbn = kgraph.get_max_nbng();
-        let epsil = knbn as f32 / 2.;
+        let beta = 2.0f32;
+        let epsil = 2.0f32.powf(1. / beta);
         log::info!(
             "compute_dmap_nodeparams knbn : {}, epsil : {:.2e}",
             knbn,
             epsil
         );
         let remap_weight = |w: F, shift: f32, scale: f32| {
-            let arg = ((w.to_f32().unwrap() - shift) / (epsil * scale)).powf(2.);
+            let arg = ((w.to_f32().unwrap() - shift) / (epsil * scale)).powf(beta);
             (-arg).exp().max(PROBA_MIN)
         };
         // now we loop on all nodes
@@ -467,7 +474,7 @@ impl DiffusionMaps {
                     sum += weight;
                 }
                 // TODO: we adjust self_edge
-                edges[0].weight = 1.;
+                edges[0].weight = 1.0 / nb_edges as f32;
                 sum += edges[0].weight;
                 q_density.push(sum);
             }
@@ -494,7 +501,12 @@ impl DiffusionMaps {
 
     // computes scale (mean norm of dist) around a point
     // we compute mean of dist to first neighbour around a point given outgoing edges and graph
-    pub(crate) fn get_dist_around_node<F>(&self, kgraph: &KGraph<F>, out_edges: &[OutEdge<F>]) -> F
+    pub(crate) fn get_dist_around_node<F>(
+        &self,
+        kgraph: &KGraph<F>,
+        out_edges: &[OutEdge<F>],
+        nbng_used: usize,
+    ) -> F
     where
         F: Float
             + FromPrimitive
@@ -509,13 +521,14 @@ impl DiffusionMaps {
         let rho_x = out_edges[0].weight;
         let mut rho_y_s = Vec::<F>::with_capacity(out_edges.len() + 1);
         //
-        for neighbour in out_edges {
+        for neighbour in out_edges.iter().take(nbng_used) {
             let y_i = neighbour.node; // y_i is a NodeIx = usize
             rho_y_s.push(kgraph.get_neighbours()[y_i][0].weight);
         } // end of for i
           //
         rho_y_s.push(rho_x);
-        rho_y_s.into_iter().sum::<F>() / F::from(out_edges.len()).unwrap()
+        let size = rho_y_s.len();
+        rho_y_s.into_iter().sum::<F>() / F::from(size).unwrap()
     }
 
     // useful if we have already hnsw.
@@ -922,14 +935,14 @@ mod tests {
         //
         // do dmap embedding, laplacian computation
         let dtime = 1.;
-        let gnbn: usize = 16;
+        let gnbn: usize = 32;
         let mut dparams: DiffusionParams = DiffusionParams::new(4, Some(dtime), Some(gnbn));
-        dparams.set_alfa(0.);
+        dparams.set_alfa(1.);
         //
         let cpu_start = ProcessTime::now();
         let sys_now = SystemTime::now();
         // hnsw definition
-        let mut hnsw = Hnsw::<f32, DistL2>::new(16, images_as_v.len(), 16, 200, DistL2::default());
+        let mut hnsw = Hnsw::<f32, DistL2>::new(32, images_as_v.len(), 16, 200, DistL2::default());
         //
         // we must pay fortran indexation once!. transform image to a vector
         let data_with_id: Vec<(&Vec<f32>, usize)> =
@@ -994,15 +1007,17 @@ mod tests {
         }
         //
         // do dmap embedding, laplacian computation
-        let dtime = 5.;
-        let gnbn = 32;
+        let dtime = 1.;
+        let gnbn = 64;
         let mut dparams: DiffusionParams = DiffusionParams::new(4, Some(dtime), Some(gnbn));
-        dparams.set_alfa(0.);
+        dparams.set_alfa(0.0);
         //
         let cpu_start = ProcessTime::now();
         let sys_now = SystemTime::now();
         // hnsw definition
         let mut hnsw = Hnsw::<f32, DistL2>::new(32, images_as_v.len(), 16, 200, DistL2::default());
+        // folloqing is necessary
+        hnsw.set_keeping_pruned(true);
         //
         // we must pay fortran indexation once!. transform image to a vector
         let data_with_id: Vec<(&Vec<f32>, usize)> =

@@ -282,7 +282,7 @@ where
             //
             let cpu_start = ProcessTime::now();
             let sys_start = SystemTime::now();
-            let dmapnew = true;
+            let dmapnew = false;
             //
             if dmapnew {
                 log::info!("using new dmaps");
