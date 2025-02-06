@@ -243,7 +243,7 @@ impl DiffusionMaps {
         let max_nbng = initial_space.get_max_nbng();
         let node_params = initial_space;
         // compute local_scales
-        let mut local_scale: Vec<f32> = node_params.params.iter().map(|n| n.scale).collect();
+        let mut local_scale: Array1<f32> = node_params.params.iter().map(|n| n.scale).collect();
         let mean_scale: f32 = local_scale.iter().sum();
         for l in &mut local_scale {
             *l /= mean_scale;
@@ -272,7 +272,9 @@ impl DiffusionMaps {
             // IEEE TRANSACTIONS ON PATTERN ANALYSIS AND MACHINE INTELLIGENCE,VOL. 28, NO. 11,NOVEMBER 2006
             //
             // compute q_alfa which is a proxy for density of data, then we use alfa for possible reweight for density
-            let q = symgraph.sum_axis(Axis(1));
+            let mut q = symgraph.sum_axis(Axis(1));
+            // scale normalization
+            q *= &local_scale;
             let mut degrees = Array1::<f32>::zeros(q.len());
             for i in 0..nbnodes {
                 let mut row = symgraph.row_mut(i);
@@ -390,7 +392,7 @@ impl DiffusionMaps {
         let mut nodeparams = Vec::<NodeParam>::with_capacity(nb_nodes);
         //
         let neighbour_hood = kgraph.get_neighbours();
-        let nbgh_size = kgraph.get_max_nbng().min(8);
+        let nbgh_size = kgraph.get_max_nbng().min(16);
         log::info!(
             "compute_dmap_nodeparams kgraph nbng : {}, using size {}",
             kgraph.get_max_nbng(),
@@ -474,7 +476,7 @@ impl DiffusionMaps {
                     sum += weight;
                 }
                 // TODO: we adjust self_edge
-                edges[0].weight = 1.0 / nb_edges as f32;
+                edges[0].weight = edges[1].weight / 2.;
                 sum += edges[0].weight;
                 q_density.push(sum);
             }
@@ -650,7 +652,14 @@ impl DiffusionMaps {
     {
         //
         log::debug!("got laplacian, going to svd ... asked_dim :  {}", asked_dim);
-        let svd_res: SvdResult<f32> = laplacian.do_svd(asked_dim + 25).unwrap();
+        let svd_res = laplacian.do_svd(asked_dim + 25);
+        if svd_res.is_err() {
+            log::error!("embed_from_laplacian call of laplacian.do_svd failed");
+            panic!("embed_from_laplacian call of laplacian.do_svd failed");
+        } else {
+            log::debug!("do_svd returns OK");
+        }
+        let svd_res = svd_res.unwrap();
         //
         // As we used a laplacian and probability transitions we eigenvectors corresponding to lower eigenvalues
         let lambdas = svd_res.get_sigma().as_ref().unwrap();
@@ -705,7 +714,7 @@ impl DiffusionMaps {
         for i in 0..u.nrows() {
             let row_i = u.row(i);
             let weight_i = (laplacian.degrees[i] / sum_diag).sqrt();
-            for j in 0..real_dim {
+            for j in 0..real_dim - 1 {
                 // divide j value by diagonal and convert to F. take l_{i}^{t} as in dmap
                 embedded[[i, j]] = F::from_f64(clip::clip(
                     normalized_lambdas[j + 1].powf(time) * row_i[j + 1] / weight_i,
@@ -937,12 +946,13 @@ mod tests {
         let dtime = 1.;
         let gnbn: usize = 32;
         let mut dparams: DiffusionParams = DiffusionParams::new(4, Some(dtime), Some(gnbn));
-        dparams.set_alfa(1.);
+        dparams.set_alfa(0.0);
         //
         let cpu_start = ProcessTime::now();
         let sys_now = SystemTime::now();
         // hnsw definition
         let mut hnsw = Hnsw::<f32, DistL2>::new(32, images_as_v.len(), 16, 200, DistL2::default());
+        hnsw.set_keeping_pruned(true);
         //
         // we must pay fortran indexation once!. transform image to a vector
         let data_with_id: Vec<(&Vec<f32>, usize)> =
@@ -1008,14 +1018,14 @@ mod tests {
         //
         // do dmap embedding, laplacian computation
         let dtime = 1.;
-        let gnbn = 64;
-        let mut dparams: DiffusionParams = DiffusionParams::new(4, Some(dtime), Some(gnbn));
+        let gnbn = 32;
+        let mut dparams: DiffusionParams = DiffusionParams::new(20, Some(dtime), Some(gnbn));
         dparams.set_alfa(0.0);
         //
         let cpu_start = ProcessTime::now();
         let sys_now = SystemTime::now();
         // hnsw definition
-        let mut hnsw = Hnsw::<f32, DistL2>::new(32, images_as_v.len(), 16, 200, DistL2::default());
+        let mut hnsw = Hnsw::<f32, DistL2>::new(64, images_as_v.len(), 16, 200, DistL2::default());
         // folloqing is necessary
         hnsw.set_keeping_pruned(true);
         //
@@ -1042,61 +1052,4 @@ mod tests {
         let _res = write_csv_labeled_array2(&mut csv_w, labels.as_slice(), &emmbedded_res.unwrap());
         csv_w.flush().unwrap();
     } // end of dmap_fashion
-
-    #[test]
-    fn harlim_4() {
-        log_init_test();
-        //
-        let nb_data = 20000;
-        let data = generate_1d_gaussian(nb_data);
-        // do dmap embedding, laplacian computation
-        let dtime = 1.;
-        let gnbn = 12;
-        let mut dparams: DiffusionParams = DiffusionParams::new(4, Some(dtime), Some(gnbn));
-        dparams.set_alfa(1.);
-
-        // hnsw definition
-        let mut hnsw = Hnsw::<f32, DistL2>::new(16, nb_data, 16, 200, DistL2::default());
-        //        hnsw.set_keeping_pruned(true);
-        //
-        for (i, d) in data.iter().enumerate() {
-            hnsw.insert((&[*d], i));
-        }
-        log::info!("hnsw insertion done");
-        //
-        //
-        let mut diffusion_map = DiffusionMaps::new(dparams);
-        let emmbedded_res = diffusion_map.embed_from_hnsw::<f32, DistL2, f32>(&mut hnsw, &dparams);
-        if emmbedded_res.is_err() {
-            log::error!("embedding failed");
-        };
-        let svd_res = diffusion_map.get_svd_res().unwrap();
-        // get left eigen vectors array dimension is ()
-        let left_u = svd_res.get_u().as_ref().unwrap();
-        log::info!("left eigenvector dim : {:?}", left_u.dim());
-        //
-        log::info!("harlim_4 got embedding of size : {:?}", left_u.dim());
-        // eigenvectors are Hermite polynomials
-        let (vec_size, nb_vec) = left_u.dim();
-        let dump_size = 40;
-        let xmin = &data[0];
-        let xmax = data.last().unwrap();
-        log::info!("xmin = {:.3e}, xmax = {:.3e}", xmin, xmax);
-        let gap = (nb_data - 1) / dump_size;
-        let mut x = xmin;
-        for i in 0..6 {
-            let mut j = 0;
-            log::info!("vec of rank i : {}", i);
-            println!("vec of rank i = {}", i);
-            println!(" x     v ");
-            while x < xmax && j * gap < data.len() {
-                let x = data[j * gap];
-                let v = left_u[[j, i]];
-                println!("{:.3e} , {:.3e}, ", x, v);
-                j = j + 1;
-            }
-        }
-        // compare with H3(x) = 1./sqrt(6.) * (x*x*x - 3*x)
-        let emmbedded = diffusion_map.embed_hnsw::<f32, DistL2, f32>(&mut hnsw);
-    } // end of harlim_4
 } // end of mod tests
