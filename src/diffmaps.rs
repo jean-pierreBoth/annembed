@@ -274,7 +274,7 @@ impl DiffusionMaps {
             // compute q_alfa which is a proxy for density of data, then we use alfa for possible reweight for density
             let mut q = symgraph.sum_axis(Axis(1));
             // scale normalization
-            q *= &local_scale;
+            q /= &local_scale;
             let mut degrees = Array1::<f32>::zeros(q.len());
             for i in 0..nbnodes {
                 let mut row = symgraph.row_mut(i);
@@ -317,7 +317,7 @@ impl DiffusionMaps {
                 } // end of for j
             }
             // now we iter on the hasmap symetrize the graph, and insert in triplets transition_proba
-            let mut diagonal = Array1::<f32>::zeros(nbnodes);
+            let mut q = Array1::<f32>::zeros(nbnodes);
             let mut rows = Vec::<usize>::with_capacity(nbnodes * 2 * max_nbng);
             let mut cols = Vec::<usize>::with_capacity(nbnodes * 2 * max_nbng);
             let mut values = Vec::<f32>::with_capacity(nbnodes * 2 * max_nbng);
@@ -333,32 +333,35 @@ impl DiffusionMaps {
                 rows.push(*i);
                 cols.push(*j);
                 values.push(sym_val);
-                diagonal[*i] += sym_val;
+                q[*i] += sym_val;
                 //
                 rows.push(*j);
                 cols.push(*i);
                 values.push(sym_val);
-                diagonal[*j] += sym_val;
+                q[*j] += sym_val;
             }
+            // scale normalization. We get something like a kernel density estimate
+            q /= &local_scale;
+            let mut degrees = Array1::<f32>::zeros(q.len());
+            //
             // as in FULL Representation we avoided the I diagnoal term which cancels anyway
             // Now we apply density weighting according to alfa
             for i in 0..rows.len() {
                 let row = rows[i];
                 let col = cols[i];
-                values[i] /= (diagonal[row] * diagonal[col]).powf(alfa);
+                values[i] /= (q[row] * q[col]).powf(alfa);
             }
             // now we normalize rows
             // Now we reset non diagonal terms to D^-1/2 G D^-1/2  i.e  val[i,j]/(D[i]*D[j])^1/2
             //
-            diagonal.fill(0.);
             for (i, v) in &mut values.iter().enumerate() {
                 let row = rows[i];
-                diagonal[row] += v;
+                degrees[row] += v;
             }
             for i in 0..values.len() {
                 let row = rows[i];
                 let col = cols[i];
-                values[i] /= (diagonal[row] * diagonal[col]).sqrt();
+                values[i] /= (degrees[row] * degrees[col]).sqrt();
             }
             log::trace!("allocating csr laplacian");
             let laplacian = TriMatBase::<Vec<usize>, Vec<f32>>::from_triplets(
@@ -368,7 +371,7 @@ impl DiffusionMaps {
                 values,
             );
             let csr_mat: CsMat<f32> = laplacian.to_csr();
-            GraphLaplacian::new(MatRepr::from_csrmat(csr_mat), diagonal)
+            GraphLaplacian::new(MatRepr::from_csrmat(csr_mat), degrees)
         } // end case CsMat
           //
     }
@@ -718,7 +721,7 @@ impl DiffusionMaps {
                 // divide j value by diagonal and convert to F. take l_{i}^{t} as in dmap
                 embedded[[i, j]] = F::from_f64(clip::clip(
                     normalized_lambdas[j + 1].powf(time) * row_i[j + 1] / weight_i,
-                    5.,
+                    3.,
                 ) as f64)
                 .unwrap();
             }

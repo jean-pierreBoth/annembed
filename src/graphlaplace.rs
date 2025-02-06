@@ -71,7 +71,11 @@ impl GraphLaplacian {
         // TODO adjust epsil ?
         // we need one dim more beccause we get rid of first eigen vector as in dmap, and for slowly decreasing spectrum RANK approx is
         // better see Halko-Tropp
-        let svdmode = RangeApproxMode::RANK(RangeRank::new(20, 5));
+        let rank = 20;
+        let nbiter = 5;
+        log::trace!("asking svd, RangeRank rank : {}, nbiter : {}", rank, nbiter);
+        //
+        let svdmode = RangeApproxMode::RANK(RangeRank::new(rank, nbiter));
         let svd_res = svdapprox.direct_svd(svdmode);
         log::trace!("exited svd");
         if svd_res.is_err() {
@@ -93,6 +97,8 @@ impl GraphLaplacian {
 
     #[allow(unused)]
     pub(crate) fn check_norms(&self, svd_res: &SvdResult<f32>) {
+        log::trace!("in of check_norms");
+        //
         let u = svd_res.get_u_ref().unwrap();
         log::info!("checking U norms , dim : {:?}", u.dim());
         let (nb_rows, _) = u.dim();
@@ -100,6 +106,7 @@ impl GraphLaplacian {
             let norm = norm_frobenius_full(&u.row(i));
             println!(" vector {} norm {:.2e} ", i, norm);
         }
+        log::trace!("end of check_norms");
     }
 } // end of impl GraphLaplacian
 
