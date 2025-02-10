@@ -101,8 +101,10 @@ pub struct DiffusionMaps {
     params: DiffusionParams,
     /// node parameters coming from graph transformation
     _node_params: Option<NodeParams>,
-    // estimated densitiy of points from local_scale / median_scale
-    q_density: Option<Vec<f32>>,
+    // ratio from local_scale / median_scale
+    normed_scales: Option<Array1<f32>>,
+    // mean scale
+    mean_scale: f32,
     //
     laplacian: Option<GraphLaplacian>,
     /// to keep track of rank DataId conversion
@@ -115,7 +117,8 @@ impl DiffusionMaps {
         DiffusionMaps {
             params,
             _node_params: None,
-            q_density: None,
+            normed_scales: None,
+            mean_scale: 0.,
             laplacian: None,
             index: None,
         }
@@ -221,6 +224,16 @@ impl DiffusionMaps {
         }
         // get NodeParams.
         let nodeparams = self.compute_dmap_nodeparams::<F>(kgraph);
+        // compute local_scales
+        let mut local_scale: Array1<f32> = nodeparams.params.iter().map(|n| n.scale).collect();
+        let mut mean_scale: f32 = local_scale.iter().sum();
+        mean_scale /= local_scale.len() as f32;
+        for l in &mut local_scale {
+            *l /= mean_scale;
+        }
+        self.normed_scales = Some(local_scale);
+        self.mean_scale = mean_scale;
+        //
         self.compute_laplacian(&nodeparams, self.params.get_alfa())
     } // end of laplacian_from_kgraph
 
@@ -243,11 +256,7 @@ impl DiffusionMaps {
         let max_nbng = initial_space.get_max_nbng();
         let node_params = initial_space;
         // compute local_scales
-        let mut local_scale: Array1<f32> = node_params.params.iter().map(|n| n.scale).collect();
-        let mean_scale: f32 = local_scale.iter().sum();
-        for l in &mut local_scale {
-            *l /= mean_scale;
-        }
+        let local_scale = self.normed_scales.as_ref().unwrap();
         // TODO define a threshold for dense/sparse representation
         if nbnodes <= FULL_MAT_REPR {
             log::debug!("get_laplacian using full matrix");
@@ -274,7 +283,7 @@ impl DiffusionMaps {
             // compute q_alfa which is a proxy for density of data, then we use alfa for possible reweight for density
             let mut q = symgraph.sum_axis(Axis(1));
             // scale normalization
-            q /= &local_scale;
+            q /= local_scale;
             let mut degrees = Array1::<f32>::zeros(q.len());
             for i in 0..nbnodes {
                 let mut row = symgraph.row_mut(i);
@@ -341,7 +350,7 @@ impl DiffusionMaps {
                 q[*j] += sym_val;
             }
             // scale normalization. We get something like a kernel density estimate
-            q /= &local_scale;
+            q /= local_scale;
             let mut degrees = Array1::<f32>::zeros(q.len());
             //
             // as in FULL Representation we avoided the I diagnoal term which cancels anyway
@@ -404,7 +413,8 @@ impl DiffusionMaps {
         // compute a scale around each node, mean scale and quantiles on scale
         let local_scales: Vec<F> = neighbour_hood
             .par_iter()
-            .map(|edges| self.get_dist_around_node(kgraph, edges, nbgh_size))
+            //            .map(|edges| self.get_dist_around_node(kgraph, edges, nbgh_size))
+            .map(|edges| self.get_dist_l2_from_node(edges, 8))
             .collect();
         // collect scales quantiles
         let mut scales_q: CKMS<f64> = CKMS::<f64>::new(0.001);
@@ -412,7 +422,8 @@ impl DiffusionMaps {
             scales_q.insert((*s).into());
         }
 
-        println!("\n\n dmap scales quantiles at 0.05 : {:.2e} , 0.5 :  {:.2e}, 0.95 : {:.2e}, 0.99 : {:.2e}",
+        println!("\n\n dmap scales quantiles at 0.01 : {:.2e}  0.05 : {:.2e} , 0.5 :  {:.2e}, 0.95 : {:.2e}, 0.99 : {:.2e}",
+        scales_q.query(0.01).unwrap().1,
         scales_q.query(0.05).unwrap().1, scales_q.query(0.5).unwrap().1,
         scales_q.query(0.95).unwrap().1, scales_q.query(0.99).unwrap().1);
         println!();
@@ -422,9 +433,10 @@ impl DiffusionMaps {
         // now we have scales we can remap edge length to weights.
         // we choose epsil to put weight on at least 5 neighbours when no shift
         // TODO: depend on absence of shift
+        let mut nb_weight_to_low = 0usize;
         let knbn = kgraph.get_max_nbng();
         let beta = 2.0f32;
-        let epsil = 2.0f32.powf(1. / beta);
+        let epsil = (scales_q.query(0.99).unwrap().1 / scales_q.query(0.01).unwrap().1) as f32;
         log::info!(
             "compute_dmap_nodeparams knbn : {}, epsil : {:.2e}",
             knbn,
@@ -432,7 +444,7 @@ impl DiffusionMaps {
         );
         let remap_weight = |w: F, shift: f32, scale: f32| {
             let arg = ((w.to_f32().unwrap() - shift) / (epsil * scale)).powf(beta);
-            (-arg).exp().max(PROBA_MIN)
+            (-arg).exp()
         };
         // now we loop on all nodes
         for i in 0..nb_nodes {
@@ -473,7 +485,11 @@ impl DiffusionMaps {
                 for n in neighbours {
                     let to_scale = local_scales[n.node];
                     let local_scale = (to_scale * from_scale).sqrt().to_f32().unwrap();
-                    let weight: f32 = remap_weight(n.weight, 0., local_scale);
+                    let mut weight: f32 = remap_weight(n.weight, 0., local_scale);
+                    if weight < PROBA_MIN {
+                        weight = weight.max(PROBA_MIN);
+                        nb_weight_to_low += 1;
+                    }
                     let edge = OutEdge::<f32>::new(n.node, weight);
                     edges.push(edge);
                     sum += weight;
@@ -481,12 +497,18 @@ impl DiffusionMaps {
                 // TODO: we adjust self_edge
                 edges[0].weight = edges[1].weight / 2.;
                 sum += edges[0].weight;
-                q_density.push(sum);
+                q_density.push(sum / edges.len() as f32);
             }
             // allocate a NodeParam and keep track of real scale of node
             let nodep = NodeParam::new(local_scales[i].to_f32().unwrap(), edges);
             nodeparams.push(nodep);
         }
+        //
+        log::info!(
+            "to_dmap_nodeparams: proba of weight < {:.2e} = {:.2e}",
+            PROBA_MIN,
+            nb_weight_to_low as f32 / nodeparams.len() as f32
+        );
         //
         self.density_quantiles(&q_density);
         NodeParams::new(nodeparams, kgraph.get_max_nbng())
@@ -534,6 +556,29 @@ impl DiffusionMaps {
         rho_y_s.push(rho_x);
         let size = rho_y_s.len();
         rho_y_s.into_iter().sum::<F>() / F::from(size).unwrap()
+    } // end of get_dist_around_node
+
+    // computes scale (mean norm of dist) around a point
+    // we compute L2 mean of distance from a node
+    #[allow(unused)]
+    pub(crate) fn get_dist_l2_from_node<F>(&self, out_edges: &[OutEdge<F>], nbng: usize) -> F
+    where
+        F: Float
+            + FromPrimitive
+            + std::marker::Sync
+            + Send
+            + std::fmt::UpperExp
+            + std::iter::Sum
+            + std::ops::AddAssign
+            + std::iter::Sum,
+    {
+        //
+        let dist2: F = out_edges
+            .iter()
+            .take(nbng)
+            .map(|e| e.weight * e.weight)
+            .sum();
+        (dist2 / F::from(out_edges.len()).unwrap()).sqrt()
     }
 
     // useful if we have already hnsw.
@@ -713,17 +758,17 @@ impl DiffusionMaps {
             "DiffusionMaps::embed_from_hnsw applying dmap time {:.2e}",
             time
         );
+        // we must renormalize by
         let sum_diag = laplacian.degrees.iter().sum::<f32>();
+        let scales = self.normed_scales.as_ref().unwrap();
         for i in 0..u.nrows() {
             let row_i = u.row(i);
-            let weight_i = (laplacian.degrees[i] / sum_diag).sqrt();
+            let weight_i = scales[i] * (laplacian.degrees[i] / sum_diag).sqrt();
             for j in 0..real_dim - 1 {
                 // divide j value by diagonal and convert to F. take l_{i}^{t} as in dmap
-                embedded[[i, j]] = F::from_f64(clip::clip(
-                    normalized_lambdas[j + 1].powf(time) * row_i[j + 1] / weight_i,
-                    3.,
-                ) as f64)
-                .unwrap();
+                embedded[[i, j]] =
+                    F::from_f32(normalized_lambdas[j + 1].powf(time) * row_i[j + 1] / weight_i)
+                        .unwrap();
             }
         }
         log::debug!("DiffusionMaps::embed_from_hnsw ended");
@@ -949,7 +994,7 @@ mod tests {
         let dtime = 1.;
         let gnbn: usize = 32;
         let mut dparams: DiffusionParams = DiffusionParams::new(4, Some(dtime), Some(gnbn));
-        dparams.set_alfa(0.0);
+        dparams.set_alfa(1.0);
         //
         let cpu_start = ProcessTime::now();
         let sys_now = SystemTime::now();
@@ -1023,7 +1068,7 @@ mod tests {
         let dtime = 1.;
         let gnbn = 32;
         let mut dparams: DiffusionParams = DiffusionParams::new(20, Some(dtime), Some(gnbn));
-        dparams.set_alfa(0.0);
+        dparams.set_alfa(1.0);
         //
         let cpu_start = ProcessTime::now();
         let sys_now = SystemTime::now();
