@@ -23,6 +23,7 @@ use sprs::{CsMat, TriMatBase};
 use crate::embedder::*;
 use crate::fromhnsw::{kgraph::KGraph, kgraph_from_hnsw_all};
 use crate::graphlaplace::*;
+#[allow(unused)]
 use crate::tools::{clip, kdumap::*, nodeparam::*, svdapprox::*};
 use anyhow::Result;
 use hnsw_rs::prelude::*;
@@ -74,10 +75,10 @@ impl DiffusionParams {
     }
     //
     /// modify the default alfa See Lafon paper.
-    /// naural values are 0. , 1/2 and 1.
+    /// natural values are 0. , 1/2 and 1.
     pub fn set_alfa(&mut self, alfa: f32) {
-        if !(0. ..=1.).contains(&alfa) {
-            println!("not changing alfa, alfa should be in [0. , 1.] ");
+        if !(-1.01..=1.).contains(&alfa) {
+            println!("not changing alfa, alfa should be in [-1. , 1.] ");
             return;
         }
         self.alfa = alfa;
@@ -106,6 +107,8 @@ pub struct DiffusionMaps {
     // mean scale
     mean_scale: f32,
     //
+    q_density: Option<Vec<f32>>,
+    //
     laplacian: Option<GraphLaplacian>,
     /// to keep track of rank DataId conversion
     index: Option<IndexSet<DataId>>,
@@ -119,6 +122,7 @@ impl DiffusionMaps {
             _node_params: None,
             normed_scales: None,
             mean_scale: 0.,
+            q_density: None,
             laplacian: None,
             index: None,
         }
@@ -223,7 +227,7 @@ impl DiffusionMaps {
             self.index = Some(kgraph.get_indexset().clone());
         }
         // get NodeParams.
-        let nodeparams = self.compute_dmap_nodeparams::<F>(kgraph);
+        let (nodeparams, mut q_density) = self.compute_dmap_nodeparams::<F>(kgraph, 8);
         // compute local_scales
         let mut local_scale: Array1<f32> = nodeparams.params.iter().map(|n| n.scale).collect();
         let mut mean_scale: f32 = local_scale.iter().sum();
@@ -231,6 +235,13 @@ impl DiffusionMaps {
         for l in &mut local_scale {
             *l /= mean_scale;
         }
+        //
+        for i in 0..q_density.len() {
+            q_density[i] /= local_scale[i]
+        }
+        self.get_quantiles("final q_density/scale", &q_density);
+        //
+        self.q_density = Some(q_density);
         self.normed_scales = Some(local_scale);
         self.mean_scale = mean_scale;
         //
@@ -385,9 +396,16 @@ impl DiffusionMaps {
           //
     }
 
-    /// dmap specific edge proba compuatitons
-    /// compute basic transition kernel, with global scaling , store estimated point density in diffusion Map for use in laplacian
-    pub(crate) fn compute_dmap_nodeparams<F>(&self, kgraph: &KGraph<F>) -> NodeParams
+    // remap node params expressing distance to proba knowing scale to adopt
+    // scales must not be normalized by their mean
+    // The function returns Nodeparams corresponding to new kernel and associated density (computed as mean transition proba)
+    fn scales_to_kernel<F>(
+        &self,
+        kgraph: &KGraph<F>,
+        nbng: usize,
+        local_scales: &Vec<F>,
+        scale_to_kernel: &dyn Fn(F, f32, f32) -> f32,
+    ) -> (NodeParams, Vec<f32>)
     where
         F: Float
             + FromPrimitive
@@ -397,36 +415,14 @@ impl DiffusionMaps {
             + std::iter::Sum
             + std::ops::AddAssign
             + std::ops::DivAssign
-            + std::iter::Sum
             + Into<f64>,
     {
-        let nb_nodes = kgraph.get_nb_nodes();
-        let mut nodeparams = Vec::<NodeParam>::with_capacity(nb_nodes);
+        log::info!("in DiffusionMaps::scales_to_kernel");
         //
+        let nb_nodes = kgraph.get_nb_nodes();
         let neighbour_hood = kgraph.get_neighbours();
-        let nbgh_size = kgraph.get_max_nbng().min(16);
-        log::info!(
-            "compute_dmap_nodeparams kgraph nbng : {}, using size {}",
-            kgraph.get_max_nbng(),
-            nbgh_size
-        );
-        // compute a scale around each node, mean scale and quantiles on scale
-        let local_scales: Vec<F> = neighbour_hood
-            .par_iter()
-            //            .map(|edges| self.get_dist_around_node(kgraph, edges, nbgh_size))
-            .map(|edges| self.get_dist_l2_from_node(edges, 8))
-            .collect();
-        // collect scales quantiles
-        let mut scales_q: CKMS<f64> = CKMS::<f64>::new(0.001);
-        for s in &local_scales {
-            scales_q.insert((*s).into());
-        }
-
-        println!("\n\n dmap scales quantiles at 0.01 : {:.2e}  0.05 : {:.2e} , 0.5 :  {:.2e}, 0.95 : {:.2e}, 0.99 : {:.2e}",
-        scales_q.query(0.01).unwrap().1,
-        scales_q.query(0.05).unwrap().1, scales_q.query(0.5).unwrap().1,
-        scales_q.query(0.95).unwrap().1, scales_q.query(0.99).unwrap().1);
-        println!();
+        //
+        let mut nodeparams = Vec::<NodeParam>::with_capacity(nb_nodes);
         // we keep local scale to possible kernel weighting
         let mut q_density: Vec<f32> = Vec::<f32>::with_capacity(nb_nodes);
         //
@@ -434,18 +430,6 @@ impl DiffusionMaps {
         // we choose epsil to put weight on at least 5 neighbours when no shift
         // TODO: depend on absence of shift
         let mut nb_weight_to_low = 0usize;
-        let knbn = kgraph.get_max_nbng();
-        let beta = 2.0f32;
-        let epsil = (scales_q.query(0.99).unwrap().1 / scales_q.query(0.01).unwrap().1) as f32;
-        log::info!(
-            "compute_dmap_nodeparams knbn : {}, epsil : {:.2e}",
-            knbn,
-            epsil
-        );
-        let remap_weight = |w: F, shift: f32, scale: f32| {
-            let arg = ((w.to_f32().unwrap() - shift) / (epsil * scale)).powf(beta);
-            (-arg).exp()
-        };
         // now we loop on all nodes
         for i in 0..nb_nodes {
             let neighbours = &neighbour_hood[i];
@@ -484,8 +468,9 @@ impl DiffusionMaps {
                 // TODO: no shift but could add drift with respect to local_scales variations
                 for n in neighbours {
                     let to_scale = local_scales[n.node];
-                    let local_scale = (to_scale * from_scale).sqrt().to_f32().unwrap();
-                    let mut weight: f32 = remap_weight(n.weight, 0., local_scale);
+                    let local_scale = (to_scale * from_scale).sqrt();
+                    let mut weight: f32 =
+                        scale_to_kernel(n.weight, 0., local_scale.to_f32().unwrap());
                     if weight < PROBA_MIN {
                         weight = weight.max(PROBA_MIN);
                         nb_weight_to_low += 1;
@@ -510,24 +495,175 @@ impl DiffusionMaps {
             nb_weight_to_low as f32 / nodeparams.len() as f32
         );
         //
-        self.density_quantiles(&q_density);
-        NodeParams::new(nodeparams, kgraph.get_max_nbng())
-    } // end to_dmap_nodeparams
+        log::info!(
+            "to_dmap_nodeparams: proba of weight < {:.2e} = {:.2e}",
+            PROBA_MIN,
+            nb_weight_to_low as f32 / nodeparams.len() as f32
+        );
+        //
+        (
+            NodeParams::new(nodeparams, kgraph.get_max_nbng()),
+            q_density,
+        )
+    }
+
+    /// dmap specific edge proba compuatitons
+    /// - compute basic transition kernel, with global scaling from l2 distances
+    /// - estimate density
+    /// - re estimate scale from density with from_density_to_new_scales
+    ///
+    pub(crate) fn compute_dmap_nodeparams<F>(
+        &self,
+        kgraph: &KGraph<F>,
+        nbng: usize,
+    ) -> (NodeParams, Vec<f32>)
+    where
+        F: Float
+            + FromPrimitive
+            + std::marker::Sync
+            + Send
+            + std::fmt::UpperExp
+            + std::iter::Sum
+            + std::ops::AddAssign
+            + std::ops::DivAssign
+            + std::iter::Sum
+            + Into<f64>,
+    {
+        //       let nb_nodes = kgraph.get_nb_nodes();
+        //       let mut nodeparams = Vec::<NodeParam>::with_capacity(nb_nodes);
+        //
+        let neighbour_hood = kgraph.get_neighbours();
+        let nbgh_size = kgraph.get_max_nbng().min(nbng);
+        log::info!(
+            "compute_dmap_nodeparams kgraph nbng : {}, using size {}",
+            kgraph.get_max_nbng(),
+            nbgh_size
+        );
+        // compute a scale around each node, mean scale and quantiles on scale
+        let local_scales: Vec<F> = neighbour_hood
+            .par_iter()
+            //            .map(|edges| self.get_dist_around_node(kgraph, edges, nbgh_size))
+            .map(|edges| self.get_dist_l2_from_node(edges, 8))
+            .collect();
+        // collect scales quantiles
+        let scales_q = self.get_quantiles("scales quantiles first pass", &local_scales);
+        println!();
+        // we keep local scale to possible kernel weighting
+        //
+        // now we have scales we can remap edge length to weights.
+        // we choose epsil to put weight on at least 5 neighbours when no shift
+        // TODO: depend on absence of shift
+        let knbn = kgraph.get_max_nbng();
+        let beta = 2.0f32;
+        let epsil = (scales_q.query(0.99).unwrap().1 / scales_q.query(0.01).unwrap().1) as f32;
+        log::info!(
+            "compute_dmap_nodeparams knbn : {}, epsil : {:.2e}",
+            knbn,
+            epsil
+        );
+        // from scales to proba
+        let remap_weight = |w: F, shift: f32, scale: f32| {
+            let arg = ((w.to_f32().unwrap() - shift) / (epsil * scale)).powf(beta);
+            (-arg).exp()
+        };
+        let (_, q_density) = self.scales_to_kernel(kgraph, nbng, &local_scales, &remap_weight);
+        self.get_quantiles("density quantiles first pass", &q_density);
+        //
+        let (nodeparams, q_density) = self.density_to_kernel(
+            kgraph,
+            nbgh_size,
+            &local_scales,
+            &q_density,
+            -0.5,
+            &remap_weight,
+        );
+        //
+        self.get_quantiles("density quantiles second pass", &q_density);
+        //
+        (nodeparams, q_density)
+    } // end compute_dmap_nodeparams
+
+    // after a first guess for scales get re-estimate scales from q_densities
+    // computed from scales estimated via get_dist_l2_from_node
+    // beta parameter described in harlim-berry paper. Should be < 0.
+    fn density_to_kernel<F>(
+        &self,
+        kgraph: &KGraph<F>,
+        nbng: usize,
+        local_scales_step0: &Vec<F>,
+        q_densities: &Vec<f32>,
+        beta: f32,
+        remap_weight: &dyn Fn(F, f32, f32) -> f32,
+    ) -> (NodeParams, Vec<f32>)
+    where
+        F: Float
+            + FromPrimitive
+            + std::marker::Sync
+            + Send
+            + std::fmt::UpperExp
+            + std::iter::Sum
+            + std::ops::AddAssign
+            + std::ops::DivAssign
+            + std::iter::Sum
+            + Into<f64>,
+    {
+        log::info!("in DiffusionMaps::from_density_to_new_scales");
+        //
+        let nbgh_size = kgraph.get_max_nbng().min(nbng);
+        log::info!(
+            "compute_dmap_nodeparams kgraph nbng : {}, using size {}",
+            kgraph.get_max_nbng(),
+            nbgh_size
+        );
+        //
+        // compute a scale around each node, mean scale and quantiles on scale
+        let sum_scale_step0: f32 = local_scales_step0.iter().map(|s| *s).sum::<F>().into() as f32;
+        let mean_scale_step0 = sum_scale_step0 / local_scales_step0.len() as f32;
+        //
+        log::info!("mean scale step 0 : {:.2e}", mean_scale_step0);
+        //
+        let local_scales: Vec<F> = q_densities
+            .par_iter()
+            .map(|d| F::from_f32(mean_scale_step0 * d.powf(beta)).unwrap())
+            .collect();
+        // collect scales quantiles
+        let _ = self.get_quantiles::<F>("scales quantiles second pass", &local_scales);
+        // compute a scale around each node, mean scale and quantiles on scale
+        let sum_scale: f32 = local_scales.iter().map(|s| *s).sum::<F>().into() as f32;
+        let mean_scale = sum_scale / local_scales.len() as f32;
+        log::info!("mean scale step 0 : {:.2e}", mean_scale);
+        // Now we define kernel with new scales
+        let (nodeparams, q_density) =
+            self.scales_to_kernel(kgraph, nbng, &local_scales, &remap_weight);
+        // got here we have local scales, densities and kernel corresponding to densities
+        //
+        (nodeparams, q_density)
+    } // end of from_density_to_new_scales
 
     //
-    pub(crate) fn density_quantiles(&self, d_density: &Vec<f32>) {
-        let mut quant_densities: CKMS<f32> = CKMS::<f32>::new(0.001);
-        for q in d_density {
-            quant_densities.insert(*q);
+
+    // just dump some quantiles (mostly scales and densities)
+    pub(crate) fn get_quantiles<F>(&self, message: &str, values: &Vec<F>) -> CKMS<f64>
+    where
+        F: Float + Into<f64>,
+    {
+        log::info!("\n\n {}", message);
+        let mut quant_densities: CKMS<f64> = CKMS::<f64>::new(0.001);
+        for q in values {
+            quant_densities.insert((*q).into());
         }
-        println!("\n\n densities quantiles at 0.05 : {:.2e} , 0.5 :  {:.2e}, 0.95 : {:.2e}, 0.99 : {:.2e}",
+        println!("quantiles at 0.01 : {:.2e}, 0.05 : {:.2e} , 0.5 :  {:.2e}, 0.95 : {:.2e}, 0.99 : {:.2e}",
+        quant_densities.query(0.01).unwrap().1,
         quant_densities.query(0.05).unwrap().1, quant_densities.query(0.5).unwrap().1,
         quant_densities.query(0.95).unwrap().1, quant_densities.query(0.99).unwrap().1);
         println!();
+        //
+        quant_densities
     }
 
     // computes scale (mean norm of dist) around a point
     // we compute mean of dist to first neighbour around a point given outgoing edges and graph
+    #[allow(unused)]
     pub(crate) fn get_dist_around_node<F>(
         &self,
         kgraph: &KGraph<F>,
@@ -557,6 +693,8 @@ impl DiffusionMaps {
         let size = rho_y_s.len();
         rho_y_s.into_iter().sum::<F>() / F::from(size).unwrap()
     } // end of get_dist_around_node
+
+    //
 
     // computes scale (mean norm of dist) around a point
     // we compute L2 mean of distance from a node
@@ -992,7 +1130,7 @@ mod tests {
         //
         // do dmap embedding, laplacian computation
         let dtime = 1.;
-        let gnbn: usize = 32;
+        let gnbn: usize = 16;
         let mut dparams: DiffusionParams = DiffusionParams::new(4, Some(dtime), Some(gnbn));
         dparams.set_alfa(1.0);
         //
@@ -1066,9 +1204,9 @@ mod tests {
         //
         // do dmap embedding, laplacian computation
         let dtime = 1.;
-        let gnbn = 32;
+        let gnbn = 16;
         let mut dparams: DiffusionParams = DiffusionParams::new(20, Some(dtime), Some(gnbn));
-        dparams.set_alfa(1.0);
+        dparams.set_alfa(1.);
         //
         let cpu_start = ProcessTime::now();
         let sys_now = SystemTime::now();
