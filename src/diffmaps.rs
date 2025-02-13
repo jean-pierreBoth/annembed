@@ -28,6 +28,7 @@ use crate::tools::{clip, kdumap::*, nodeparam::*, svdapprox::*};
 use anyhow::Result;
 use hnsw_rs::prelude::*;
 
+// TODO: katex doc
 /// The parameters are:
 ///  - the dimension of the embedding.
 ///  - the time of the embedding. By default it is computed using the decay of eigenvalues of the laplacian
@@ -35,12 +36,16 @@ use hnsw_rs::prelude::*;
 ///     By default it is deduced by the number neighbours used in hnsw
 ///     with a limitation up to 16 (as the hnsw can require a large number of connection). To limit the cpu time it is possible to reduce it.
 ///     A good range is between 8 and 12.
+///  - alfa
+///  - beta
 #[derive(Copy, Clone)]
 pub struct DiffusionParams {
     /// dimension of embedding
     asked_dim: usize,
-    /// exponent of sampling law. By default we use 0.
+    /// kernel biaising exponent of sampling law. By default we use 0.
     alfa: f32,
+    /// exponent for going from density to scales
+    beta: f32,
     /// embedding time
     t: Option<f32>,
     /// number of neighbour used in the laplacian graph.
@@ -55,7 +60,8 @@ impl DiffusionParams {
     pub fn new(asked_dim: usize, t_opt: Option<f32>, g_opt: Option<usize>) -> Self {
         DiffusionParams {
             asked_dim,
-            alfa: 0.,
+            alfa: 1.,
+            beta: 0.,
             t: t_opt,
             gnbn_opt: g_opt,
         }
@@ -84,8 +90,22 @@ impl DiffusionParams {
         self.alfa = alfa;
     }
 
+    pub fn set_beta(&mut self, beta: f32) {
+        if !(-1.01..=1.).contains(&beta) {
+            println!(
+                "not changing beta, beta should be in -1,1. Usual values are 0. -0.5 see doc "
+            );
+            return;
+        }
+        self.beta = beta;
+    }
+
     pub fn get_alfa(&self) -> f32 {
         self.alfa
+    }
+
+    pub fn get_beta(&self) -> f32 {
+        self.beta
     }
 
     pub fn get_embedding_dimension(&self) -> usize {
@@ -525,8 +545,11 @@ impl DiffusionMaps {
             + std::iter::Sum
             + Into<f64>,
     {
-        //       let nb_nodes = kgraph.get_nb_nodes();
-        //       let mut nodeparams = Vec::<NodeParam>::with_capacity(nb_nodes);
+        log::info!(
+            "Diffusion computing kernels with using alfa : {:.2e} , beta : {:.2e}",
+            self.params.get_alfa(),
+            self.params.get_beta()
+        );
         //
         let neighbour_hood = kgraph.get_neighbours();
         let nbgh_size = kgraph.get_max_nbng().min(nbng);
@@ -569,7 +592,7 @@ impl DiffusionMaps {
             nbgh_size,
             &local_scales,
             &q_density,
-            -0.5,
+            self.params.get_beta(),
             &remap_weight,
         );
         //
@@ -602,7 +625,7 @@ impl DiffusionMaps {
             + std::iter::Sum
             + Into<f64>,
     {
-        log::info!("in DiffusionMaps::from_density_to_new_scales");
+        log::info!("in DiffusionMaps::density_to_kernel, beta : {:.2e}", beta);
         //
         let nbgh_size = kgraph.get_max_nbng().min(nbng);
         log::info!(
@@ -1133,7 +1156,7 @@ mod tests {
         let dtime = 1.;
         let gnbn: usize = 16;
         let mut dparams: DiffusionParams = DiffusionParams::new(4, Some(dtime), Some(gnbn));
-        dparams.set_alfa(0.5);
+        //        dparams.set_alfa(0.5);
         //
         let cpu_start = ProcessTime::now();
         let sys_now = SystemTime::now();
@@ -1207,7 +1230,7 @@ mod tests {
         let dtime = 1.;
         let gnbn = 16;
         let mut dparams: DiffusionParams = DiffusionParams::new(20, Some(dtime), Some(gnbn));
-        dparams.set_alfa(0.5);
+        //        dparams.set_alfa(0.5);
         //
         let cpu_start = ProcessTime::now();
         let sys_now = SystemTime::now();
