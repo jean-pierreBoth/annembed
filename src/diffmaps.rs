@@ -50,6 +50,8 @@ pub struct DiffusionParams {
     t: Option<f32>,
     /// number of neighbour used in the laplacian graph.
     gnbn_opt: Option<usize>,
+    ///
+    h_layer: Option<usize>,
 } // end of DiffusionParams
 
 impl DiffusionParams {
@@ -64,6 +66,7 @@ impl DiffusionParams {
             beta: 0.,
             t: t_opt,
             gnbn_opt: g_opt,
+            h_layer: None,
         }
     }
     /// get embedding time
@@ -100,6 +103,10 @@ impl DiffusionParams {
         }
     }
 
+    pub fn set_hlayer(&mut self, layer: usize) {
+        self.h_layer = Some(layer);
+    }
+
     pub fn get_alfa(&self) -> f32 {
         self.alfa
     }
@@ -108,11 +115,30 @@ impl DiffusionParams {
         self.beta
     }
 
+    pub fn get_hlayer(&self) -> usize {
+        match self.h_layer {
+            Some(l) => l,
+            _ => 0,
+        }
+    }
+
     pub fn get_embedding_dimension(&self) -> usize {
         self.asked_dim
     }
 } // end of DiffusionParams
 
+impl Default for DiffusionParams {
+    fn default() -> Self {
+        DiffusionParams {
+            asked_dim: 2,
+            alfa: 1.,
+            beta: 0.,
+            t: Some(5.),
+            gnbn_opt: Some(16),
+            h_layer: None,
+        }
+    }
+}
 /// The algorithm implements:
 ///  *Variables bandwith diffusion kernels* Berry and Harlim. Appl. Comput. Harmon. Anal. 40 (2016) 68–96.
 ///
@@ -741,7 +767,7 @@ impl DiffusionMaps {
 
     // useful if we have already hnsw.
     // Note that embedded data are not reindexed to DataId
-    pub(crate) fn embed_from_kgraph<F>(
+    pub fn embed_from_kgraph<F>(
         &mut self,
         kgraph: &KGraph<F>,
         dparams: &DiffusionParams,
@@ -807,7 +833,7 @@ impl DiffusionMaps {
     /// F is f32 or f64 depending on how diffusions Maps is to be computed.  
     /// The svd result are stored in the DiffusionMaps structure and accessible with the functions
     /// [Self::get_svd_res()].  
-    /// Note that
+    /// Note that returned data are reindexed! (come with original Id)
     pub fn embed_from_hnsw<T, D, F>(
         &mut self,
         hnsw: &Hnsw<T, D>,
