@@ -72,7 +72,7 @@ impl DiffusionParams {
     }
 
     /// get dimension
-    pub fn get_dim(&self) -> usize {
+    pub fn get_data_dim(&self) -> usize {
         self.asked_dim
     }
 
@@ -90,14 +90,14 @@ impl DiffusionParams {
         self.alfa = alfa;
     }
 
+    // set beta, must be negative in range -1. 0.
     pub fn set_beta(&mut self, beta: f32) {
-        if !(-1.01..=1.).contains(&beta) {
-            println!(
-                "not changing beta, beta should be in -1,1. Usual values are 0. -0.5 see doc "
-            );
+        if (-1.01..=0.).contains(&beta) {
+            self.beta = beta;
+        } else {
+            println!("not changing beta, beta should be in -1,0 Usual values are 0. -0.5 see doc ");
             return;
         }
-        self.beta = beta;
     }
 
     pub fn get_alfa(&self) -> f32 {
@@ -277,6 +277,8 @@ impl DiffusionMaps {
         initial_space: &NodeParams,
         alfa: f32,
     ) -> GraphLaplacian {
+        // TODO:
+        let scale_renormalization = true;
         //
         log::info!(
             "in GraphLaplacian::compute_laplacian, using alfa : {:.2e}",
@@ -329,15 +331,7 @@ impl DiffusionMaps {
                 let mut row = symgraph.row_mut(i);
                 for j in 0..nbnodes {
                     row[[j]] /= (degrees[[i]] * degrees[[j]]).sqrt();
-                }
-            }
-            // possibly adjust for scale (introduce a bias in the laplacian)
-            // TODO: check if useful
-            let do_scale = true;
-            if do_scale {
-                for i in 0..nbnodes {
-                    let mut row = symgraph.row_mut(i);
-                    for j in 0..nbnodes {
+                    if scale_renormalization {
                         row[[j]] /= local_scale[i] * local_scale[j];
                     }
                 }
@@ -403,8 +397,10 @@ impl DiffusionMaps {
                 let row = rows[i];
                 let col = cols[i];
                 values[i] /= (degrees[row] * degrees[col]).sqrt();
+                if scale_renormalization {
+                    values[i] /= local_scale[row] * local_scale[col];
+                }
             }
-            // TODO: renormilzation by scale after q
             log::trace!("allocating csr laplacian");
             let laplacian = TriMatBase::<Vec<usize>, Vec<f32>>::from_triplets(
                 (nbnodes, nbnodes),
@@ -572,7 +568,7 @@ impl DiffusionMaps {
         // now we have scales we can remap edge length to weights.
         // we choose epsil to put weight on at least 5 neighbours when no shift
         // TODO: depend on absence of shift
-        let beta = 2.0f32;
+        let exponent = 2.0f32;
         let epsil = (scales_q.query(0.99).unwrap().1 / scales_q.query(0.01).unwrap().1) as f32;
         log::info!(
             "compute_dmap_nodeparams knbn : {}, epsil : {:.2e}",
@@ -581,7 +577,7 @@ impl DiffusionMaps {
         );
         // from scales to proba
         let remap_weight = |w: F, shift: f32, scale: f32| {
-            let arg = ((w.to_f32().unwrap() - shift) / (epsil * scale)).powf(beta);
+            let arg = ((w.to_f32().unwrap() - shift) / (epsil * scale)).powf(exponent);
             (-arg).exp()
         };
         let (_, q_density) = self.scales_to_kernel(kgraph, &local_scales, epsil, &remap_weight);
@@ -763,7 +759,7 @@ impl DiffusionMaps {
     {
         log::info!("in DiffusionMaps::embed_from_kgraph");
         //
-        let asked_dim = dparams.get_dim();
+        let asked_dim = dparams.get_data_dim();
         let t_opt = dparams.get_time();
         let mut laplacian = self.laplacian_from_kgraph::<F>(kgraph);
         let embedded = self
@@ -793,7 +789,7 @@ impl DiffusionMaps {
             + std::ops::DivAssign
             + Into<f64>,
     {
-        let asked_dim = dparams.get_dim();
+        let asked_dim = dparams.get_data_dim();
         let t_opt = dparams.get_time();
         //
         let mut laplacian = self.laplacian_from_hnsw::<T, D, F>(hnsw, dparams);
@@ -1156,7 +1152,8 @@ mod tests {
         let dtime = 1.;
         let gnbn: usize = 16;
         let mut dparams: DiffusionParams = DiffusionParams::new(4, Some(dtime), Some(gnbn));
-        //        dparams.set_alfa(0.5);
+        dparams.set_alfa(1.);
+        dparams.set_beta(-1.);
         //
         let cpu_start = ProcessTime::now();
         let sys_now = SystemTime::now();
@@ -1230,7 +1227,8 @@ mod tests {
         let dtime = 1.;
         let gnbn = 16;
         let mut dparams: DiffusionParams = DiffusionParams::new(20, Some(dtime), Some(gnbn));
-        //        dparams.set_alfa(0.5);
+        dparams.set_alfa(1.);
+        dparams.set_beta(-1.);
         //
         let cpu_start = ProcessTime::now();
         let sys_now = SystemTime::now();

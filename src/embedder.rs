@@ -289,7 +289,8 @@ where
                 let dtime = 5.;
                 let gnbn = 16;
                 let mut dparams: DiffusionParams = DiffusionParams::new(10, Some(dtime), Some(gnbn));
-                dparams.set_alfa(0.);
+                dparams.set_alfa(1.);
+                dparams.set_beta(-1.);
                 let mut diffusion_map = DiffusionMaps::new(dparams);
                initial_embedding = diffusion_map.embed_from_kgraph::<F>(graph_to_embed, &dparams).unwrap();
             }
