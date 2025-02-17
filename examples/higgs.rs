@@ -38,7 +38,10 @@
 //! embedded neighbour considered.
 //!
 //!
+use annembed::diffmaps::DiffusionParams;
 use anyhow::anyhow;
+
+use clap::{Arg, ArgAction, ArgMatches, Command};
 
 use std::fs::OpenOptions;
 use std::io::BufReader;
@@ -57,6 +60,7 @@ use annembed::prelude::*;
 use cpu_time::ProcessTime;
 use std::time::{Duration, SystemTime};
 
+use annembed::diffmaps::*;
 use annembed::fromhnsw::kgproj::KGraphProjection;
 use annembed::fromhnsw::kgraph::kgraph_from_hnsw_all;
 
@@ -165,7 +169,108 @@ fn reformat(data: &mut Array2<f32>, rescale: bool) -> Vec<Vec<f32>> {
     datavec
 } // end of reformat
 
-/// possible variations  
+//==================================================================
+
+struct HiggsArg {
+    dmap: bool,
+}
+
+// returns true if dmap is asked
+fn parse_higgs_matches(argmatches: &ArgMatches) -> HiggsArg {
+    // for now just that
+    let dmap = argmatches.contains_id("dmap");
+    HiggsArg { dmap: dmap }
+} // end of parse_higgs_matches
+
+//
+
+// do umap like embeddding
+fn entropy_embedding(labels: &Vec<u8>, hnsw: &Hnsw<f32, DistL2>, sampling_factor: f64) {
+    //
+    let mut embed_params = EmbedderParams::default();
+    embed_params.nb_grad_batch = 25;
+    embed_params.scale_rho = 0.75;
+    embed_params.beta = 1.;
+    embed_params.grad_step = 1.;
+    embed_params.nb_sampling_by_edge = 10;
+    embed_params.dmap_init = true;
+    // embed_params.asked_dim = 15;
+    //
+    // if set to true, we use first layer embedding to initialize the whole embedding
+    // ==============================================================================
+    let hierarchical = true;
+    //===============================================================================
+    let mut embedder;
+    let kgraph;
+    let graphprojection;
+    if !hierarchical {
+        let knbn = 6;
+        log::info!("embedding from neighbourhood of size : {}", knbn);
+        kgraph = kgraph_from_hnsw_all(&hnsw, knbn).unwrap();
+        embedder = Embedder::new(&kgraph, embed_params);
+        let embed_res = embedder.embed();
+        assert!(embed_res.is_ok());
+        assert!(embedder.get_embedded().is_some());
+    } else {
+        let knbn = 6;
+        log::info!("embedding from neighbourhood of size : {}", knbn);
+        let projection_layer = 1;
+        embed_params.nb_grad_batch = 40;
+        embed_params.grad_factor = 5;
+        log::info!("graph projection on layer : {}", projection_layer);
+        graphprojection = KGraphProjection::<f32>::new(&hnsw, knbn, projection_layer);
+        embedder = Embedder::from_hkgraph(&graphprojection, embed_params);
+        let embed_res = embedder.embed();
+        assert!(embed_res.is_ok());
+        assert!(embedder.get_embedded().is_some());
+    }
+
+    // dump
+    log::info!("dumping initial embedding in csv file");
+    let mut csv_w = Writer::from_path("higgs_initial_embedded.csv").unwrap();
+    // we can use get_embedded_reindexed as we indexed DataId contiguously in hnsw!
+    let _res = write_csv_labeled_array2(
+        &mut csv_w,
+        labels.as_slice(),
+        &embedder.get_initial_embedding_reindexed(),
+    );
+    csv_w.flush().unwrap();
+
+    log::info!("dumping in csv file");
+    let mut csv_w = Writer::from_path("higgs_embedded.csv").unwrap();
+    // we can use get_embedded_reindexed as we indexed DataId contiguously in hnsw!
+    let _res = write_csv_labeled_array2(
+        &mut csv_w,
+        labels.as_slice(),
+        &embedder.get_embedded_reindexed(),
+    );
+    csv_w.flush().unwrap();
+    //
+    //
+    // quality too memory consuming. must subsample
+    //
+    if sampling_factor <= 0.2 {
+        log::info!("estimating quality");
+        let _quality = embedder.get_quality_estimate_from_edge_length(100);
+    }
+}
+
+// diffusionmap embedding
+fn dmap_embedding(labels: &Vec<u8>, hnsw: &Hnsw<f32, DistL2>, dmap_params: &DiffusionParams) {
+    log::info!("doing dmap embedding");
+    let mut dmapembedder = DiffusionMaps::new(*dmap_params);
+    let res = dmapembedder.embed_from_hnsw::<f32, DistL2, f32>(hnsw, dmap_params);
+    if res.is_err() {
+        log::error!("dmap_embedding failed");
+    }
+    let embedded = res.unwrap();
+} // end of dmap_embedding
+
+//====================================================================================
+
+///  By defaut a umap like embedding is done
+///  if the --dmap is used it is a dmap embedding
+///
 ///  nb_col          : number of columns to read, 22 or 29  
 ///  sampling_factor : if >= 1. full data is embedded, but quality runs only with 64Gb for sampling_factor <= 0.15  
 ///  rescale         : true, can be set to false to check possible effect (really tiny)  
@@ -176,19 +281,34 @@ pub fn main() {
     //
     let _ = env_logger::builder().is_test(true).try_init();
     //
+    let higgcmdarg = Command::new("higgs")
+    .arg(Arg::new("dist")
+        .long("dist")
+        .short('d')
+        .required(true)
+        .action(ArgAction::Set)
+        .value_parser(clap::value_parser!(String))
+        .help("distance is required   \"DistL1\" , \"DistL2\", \"DistCosine\", \"DistJeyffreys\"  "))
+    .arg(Arg::new("dmap")
+        .long("dmap")
+        .required(false)
+        .help("takes no value")).get_matches();
+    //
+    let higgsarg = parse_higgs_matches(&higgcmdarg);
+    //
     let mut fname = String::from(HIGGS_DIR);
+    // parameters to play with
     // choose if we run on 22 or 29 columns id est on 21 or 28 variables
     // first column is label. We have one column more than variables
     //====================
     let nb_col = 29;
+    let rescale = true;
+    // quality estimation requires subsampling factor of 0.15 is Ok with 64Gb
+    let sampling_factor = 1.0;
     //====================
     let nb_var = nb_col - 1;
     //
     fname.push_str("HIGGS.csv");
-    // quality estimation requires subsampling factor of 0.15 is Ok with 64Gb
-    //============================
-    let sampling_factor = 1.0;
-    //============================
     log::info!("using subsampling factor : {:?}", sampling_factor);
     let res = read_higgs_csv(fname, nb_col, sampling_factor);
     if res.is_err() {
@@ -197,8 +317,6 @@ pub fn main() {
     }
     let mut res = res.unwrap();
     let labels = res.0;
-    // =====================
-    let rescale = true;
     // =====================
     let data = reformat(&mut res.1, rescale);
     drop(res.1); // we do not need res.1 anymore
@@ -290,75 +408,19 @@ pub fn main() {
     //
     // now we embed
     //
-    let mut embed_params = EmbedderParams::default();
-    embed_params.nb_grad_batch = 25;
-    embed_params.scale_rho = 0.75;
-    embed_params.beta = 1.;
-    embed_params.grad_step = 1.;
-    embed_params.nb_sampling_by_edge = 10;
-    embed_params.dmap_init = true;
-    // embed_params.asked_dim = 15;
+    let sys_now = SystemTime::now();
+    let cpu_start = ProcessTime::now();
     //
-    // if set to true, we use first layer embedding to initialize the whole embedding
-    // ==============================================================================
-    let hierarchical = true;
-    //===============================================================================
-    let mut embedder;
-    let kgraph;
-    let graphprojection;
-    if !hierarchical {
-        let knbn = 6;
-        log::info!("embedding from neighbourhood of size : {}", knbn);
-        kgraph = kgraph_from_hnsw_all(&hnsw, knbn).unwrap();
-        embedder = Embedder::new(&kgraph, embed_params);
-        let embed_res = embedder.embed();
-        assert!(embed_res.is_ok());
-        assert!(embedder.get_embedded().is_some());
+    let dmap = higgsarg.dmap;
+    if !dmap {
+        entropy_embedding(&labels, &hnsw, sampling_factor);
     } else {
-        let knbn = 6;
-        log::info!("embedding from neighbourhood of size : {}", knbn);
-        let projection_layer = 1;
-        embed_params.nb_grad_batch = 40;
-        embed_params.grad_factor = 5;
-        log::info!("graph projection on layer : {}", projection_layer);
-        graphprojection = KGraphProjection::<f32>::new(&hnsw, knbn, projection_layer);
-        embedder = Embedder::from_hkgraph(&graphprojection, embed_params);
-        let embed_res = embedder.embed();
-        assert!(embed_res.is_ok());
-        assert!(embedder.get_embedded().is_some());
+        let mut dmap_params = DiffusionParams::default();
+        dmap_embedding(&labels, &hnsw, &dmap_params);
     }
     println!(
         " ann embed total sys time(s) {:.2e}  cpu time {:.2e}",
         sys_now.elapsed().unwrap().as_secs(),
         cpu_start.elapsed().as_secs()
     );
-    // dump
-    log::info!("dumping initial embedding in csv file");
-    let mut csv_w = Writer::from_path("higgs_initial_embedded.csv").unwrap();
-    // we can use get_embedded_reindexed as we indexed DataId contiguously in hnsw!
-    let _res = write_csv_labeled_array2(
-        &mut csv_w,
-        labels.as_slice(),
-        &embedder.get_initial_embedding_reindexed(),
-    );
-    csv_w.flush().unwrap();
-
-    log::info!("dumping in csv file");
-    let mut csv_w = Writer::from_path("higgs_embedded.csv").unwrap();
-    // we can use get_embedded_reindexed as we indexed DataId contiguously in hnsw!
-    let _res = write_csv_labeled_array2(
-        &mut csv_w,
-        labels.as_slice(),
-        &embedder.get_embedded_reindexed(),
-    );
-    csv_w.flush().unwrap();
-    //
-    drop(hnsw);
-    //
-    // quality too memory consuming. must subsample
-    //
-    if sampling_factor <= 0.2 {
-        log::info!("estimating quality");
-        let _quality = embedder.get_quality_estimate_from_edge_length(100);
-    }
 } // end of main

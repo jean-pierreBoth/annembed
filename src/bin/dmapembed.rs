@@ -1,17 +1,16 @@
 //! annembed binary.  
 //!
-//! This module provides just access to floating point diffusion map data embedding.  
+//! This module provides just access to diffusion map data embedding.  
 //! Command syntax is embed input --csv csvfile  [--outfile | -o  output_name] [--delim u8] [various embedding parameters] [hnsw params] .  
 //!
-//!  --outfile or -o to specify the name of csv file containing embedded vectors. By default the name is "embedded.csv"
+//!  --outfile or -o to specify the name of csv file containing embedded vectors. By default the name is "dmap-embedded.csv"
 //!
 //! hnsw is an optional subcommand to change default parameters of the Hnsw structure. See [hnsw_rs](https://crates.io/crates/hnsw_rs).  
 //!
-//! - Parameters for embedding.  
-//!     The options are optional and give access to some fields of the [EmbedderParams] structure.  
+//! - Parameters for Diffusion Maps.  
+//!     The options are optional and give access to some fields of the [DiffusinMapParams] structure.  
 //!
-//!     --layer    : optional, in case of hierarchical embedding num of the lower layer we consider to run preliminary step.
-//!               default is set to 0 meaning one pass embedding.  
+//!     --layer    : optional, in case of large data, the embedding is restricted to the data above layer given in arg otherwise all layers are used.
 //!     --dim      : optional, dimension of the embedding , default to 2.  
 //!
 //!     --quality  : optional, asks for quality estimation.  
@@ -193,7 +192,7 @@ pub fn main() {
     // Now the command line
     // ===================
     //
-    let matches = Command::new("annembed")
+    let matches = Command::new("dmapembed")
         //        .subcommand_required(true)
         .arg_required_else_help(true)
         .arg(
@@ -221,32 +220,33 @@ pub fn main() {
                 .value_parser(clap::value_parser!(char))
                 .help("delimiter can be ' ', ','"),
         )
-        // ann group flags
+        // dmap group flags
         .arg(
-            Arg::new("batch")
+            Arg::new("alfa")
                 .required(false)
-                .long("batch")
+                .long("alfa")
                 .action(ArgAction::Set)
-                .value_parser(clap::value_parser!(usize))
-                .default_value("20")
-                .help("number of batches to run"),
+                .value_parser(clap::value_parser!(f32))
+                .default_value("1.0")
+                .help("modulate laplacian with drift according to density"),
         )
         .arg(
-            Arg::new("grap_step")
+            Arg::new("beta")
                 .required(false)
-                .long("stepg")
+                .long("beta")
                 .action(ArgAction::Set)
-                .value_parser(clap::value_parser!(f64))
-                .help("gradient step"),
+                .value_parser(clap::value_parser!(f32))
+                .default_value("0.0")
+                .help("value shoud be between -1. and 0."),
         )
         .arg(
-            Arg::new("nbsample")
+            Arg::new("time")
                 .required(false)
-                .long("nbsample")
+                .long("time")
                 .action(ArgAction::Set)
-                .value_parser(clap::value_parser!(usize))
-                .default_value("10")
-                .help("number of edge sampling"),
+                .value_parser(clap::value_parser!(f32))
+                .default_value("5.0")
+                .help("diffusion time, usually between 0. ad 5."),
         )
         .arg(
             Arg::new("hierarchy")
@@ -259,15 +259,6 @@ pub fn main() {
                 .help("expecting a layer num"),
         )
         .arg(
-            Arg::new("scale")
-                .required(false)
-                .long("scale")
-                .action(ArgAction::Set)
-                .value_parser(clap::value_parser!(f64))
-                .default_value("1.0")
-                .help("spatial scale factor"),
-        )
-        .arg(
             Arg::new("dimension")
                 .required(false)
                 .long("dim")
@@ -276,15 +267,6 @@ pub fn main() {
                 .value_parser(clap::value_parser!(usize))
                 .default_value("2")
                 .help("dimension of embedding"),
-        )
-        .arg(
-            Arg::new("quality")
-                .required(false)
-                .long("quality")
-                .short('q')
-                .action(ArgAction::Set)
-                .value_parser(clap::value_parser!(f64))
-                .help("specify sampling fraction, should <= 1."),
         )
         .subcommand(hnswcmd)
         .get_matches();
@@ -337,7 +319,7 @@ pub fn main() {
         None => b',',
     };
     // set output filename and check if option is present in command
-    let mut csv_output = String::from("embedded.csv");
+    let mut csv_output = String::from("dmap_embedded.csv");
     let csv_out = matches.get_one::<String>("outfile");
     if let Some(out) = csv_out {
         csv_output.clone_from(out);
@@ -364,6 +346,7 @@ pub fn main() {
     //
     let cpu_start = ProcessTime::now();
     let sys_now = SystemTime::now();
+    let mut dmapembedder = DiffusionMaps::new(dmapparams);
 
     log::info!("dumping in csv file {}", csv_output);
     let mut csv_w = csv::Writer::from_path(csv_output).unwrap();
@@ -376,7 +359,6 @@ pub fn main() {
             sys_now.elapsed().unwrap().as_secs(),
             cpu_time.as_secs()
         );
-        let mut dmapembedder = DiffusionMaps::new(dmapparams);
         let embed_res = dmapembedder.embed_from_kgraph(&kgraph, &dmapparams);
         if embed_res.is_err() {
             log::error!("diffusion map embedding failed");
@@ -400,21 +382,45 @@ pub fn main() {
             nb_layer,
             dmapparams.get_hlayer(),
         );
-        panic!("not yet implemented");
-        /*         let mut embedder = Embedder::from_hkgraph(&graphprojection, dmapparams);
-        let embed_res = embedder.embed();
-        assert!(embed_res.is_ok());
-        assert!(embedder.get_embedded().is_some());
-        let _res = write_csv_array2(&mut csv_w, &embedder.get_embedded_reindexed());
-        csv_w.flush().unwrap();
+        let small_graph = graphprojection.get_small_graph();
+        let embed_res = dmapembedder.embed_from_kgraph(&small_graph, &dmapparams);
+        if embed_res.is_err() {
+            log::error!("diffusion map embedding failed");
+            std::process::exit(1);
+        }
+        let embedded_data = embed_res.unwrap();
         //
-        if quality.is_some() {
-            let _quality = embedder.get_quality_estimate_from_edge_length(100);
-        } */
+        // we can use get_embedded_reindexed as we indexed DataId contiguously in hnsw!
+        let _res = write_csv_array2(&mut csv_w, &embedded_data);
+        csv_w.flush().unwrap();
     }
 } // end of main
 
 //==========================================================================
+
+fn init_hnsw<'a, 'b, 'c, Dist>(
+    data_with_id: &'a [(&Vec<f64>, usize)],
+    hnswparams: &'b HnswParams,
+    nb_layer: usize,
+) -> Hnsw<'c, f64, Dist>
+where
+    Dist: Distance<f64> + Default + Send + Sync,
+{
+    let nb_data = data_with_id.len();
+    let hnsw = Hnsw::<f64, Dist>::new(
+        hnswparams.max_conn,
+        nb_data,
+        nb_layer,
+        hnswparams.ef_c,
+        Dist::default(),
+    );
+    hnsw.parallel_insert(data_with_id);
+    hnsw.dump_layer_info();
+    //
+    hnsw
+} // end of init_hnsw
+
+//
 
 // construct kgraph case not hierarchical
 fn get_kgraph<Dist>(
@@ -426,16 +432,7 @@ where
     Dist: Distance<f64> + Default + Send + Sync,
 {
     //
-    let nb_data = data_with_id.len();
-    let hnsw = Hnsw::<f64, Dist>::new(
-        hnswparams.max_conn,
-        nb_data,
-        nb_layer,
-        hnswparams.ef_c,
-        Dist::default(),
-    );
-    hnsw.parallel_insert(data_with_id);
-    hnsw.dump_layer_info();
+    let hnsw: Hnsw<'_, f64, Dist> = init_hnsw::<Dist>(data_with_id, hnswparams, nb_layer);
     let kgraph_res = kgraph_from_hnsw_all(&hnsw, hnswparams.knbn);
     if kgraph_res.is_err() {
         panic!("kgraph_from_hnsw_all could not construct connected graph");
@@ -458,16 +455,7 @@ where
     Dist: Distance<f64> + Default + Send + Sync,
 {
     //
-    let nb_data = data_with_id.len();
-    let hnsw = Hnsw::<f64, Dist>::new(
-        hnswparams.max_conn,
-        nb_data,
-        nb_layer,
-        hnswparams.ef_c,
-        Dist::default(),
-    );
-    hnsw.parallel_insert(data_with_id);
-    hnsw.dump_layer_info();
+    let hnsw: Hnsw<'_, f64, Dist> = init_hnsw::<Dist>(data_with_id, hnswparams, nb_layer);
     KGraphProjection::<f64>::new(&hnsw, hnswparams.knbn, layer_proj)
 } // end of get_kgraph_projection
 
