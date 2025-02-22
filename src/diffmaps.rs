@@ -125,6 +125,10 @@ impl DiffusionParams {
     pub fn get_embedding_dimension(&self) -> usize {
         self.asked_dim
     }
+
+    pub fn set_embedding_dimension(&mut self, asked_dim: usize) {
+        self.asked_dim = asked_dim;
+    }
 } // end of DiffusionParams
 
 impl Default for DiffusionParams {
@@ -134,7 +138,7 @@ impl Default for DiffusionParams {
             alfa: 1.,
             beta: 0.,
             t: Some(5.),
-            gnbn_opt: Some(16),
+            gnbn_opt: Some(8),
             h_layer: None,
         }
     }
@@ -948,7 +952,7 @@ impl DiffusionMaps {
         for i in 0..u.nrows() {
             let row_i = u.row(i);
             let weight_i = scales[i] * (laplacian.degrees[i] / sum_diag).sqrt();
-            for j in 0..real_dim - 1 {
+            for j in 0..real_dim {
                 // divide j value by diagonal and convert to F. take l_{i}^{t} as in dmap
                 embedded[[i, j]] =
                     F::from_f32(normalized_lambdas[j + 1].powf(time) * row_i[j + 1] / weight_i)
@@ -1065,9 +1069,9 @@ where
                     .unwrap();
         }
     }
-    log::debug!("ended get_dmap_initial_embedding");
+    log::debug!("ended get_dmap_embedding");
     embedded
-} // end of get_dmap_initial_embedding
+} // end of get_dmap_embedding
 
 //======================================================================================================================
 

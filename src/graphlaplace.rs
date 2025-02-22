@@ -101,9 +101,9 @@ impl GraphLaplacian {
         //
         let u = svd_res.get_u_ref().unwrap();
         log::info!("checking U norms , dim : {:?}", u.dim());
-        let (nb_rows, _) = u.dim();
-        for i in 0..nb_rows.min(3) {
-            let norm = norm_frobenius_full(&u.row(i));
+        let (nb_rows, nb_cols) = u.dim();
+        for i in 0..nb_cols.min(3) {
+            let norm = norm_frobenius_full(&u.column(i));
             println!(" vector {} norm {:.2e} ", i, norm);
         }
         log::trace!("end of check_norms");

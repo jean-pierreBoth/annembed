@@ -62,7 +62,7 @@ use std::time::{Duration, SystemTime};
 
 use annembed::diffmaps::*;
 use annembed::fromhnsw::kgproj::KGraphProjection;
-use annembed::fromhnsw::kgraph::kgraph_from_hnsw_all;
+use annembed::fromhnsw::kgraph::{kgraph_from_hnsw_all, kgraph_from_hnsw_layer};
 
 const HIGGS_DIR: &str = "/home/jpboth/Data/";
 
@@ -72,6 +72,7 @@ const HIGGS_DIR: &str = "/home/jpboth/Data/";
 fn read_higgs_csv(
     fname: String,
     nb_column: usize,
+    // subsampling factor
     subsampling_factor: f64,
 ) -> anyhow::Result<(Vec<u8>, Array2<f32>)> {
     //
@@ -173,19 +174,27 @@ fn reformat(data: &mut Array2<f32>, rescale: bool) -> Vec<Vec<f32>> {
 
 struct HiggsArg {
     dmap: bool,
+    sampling_factor: f64,
 }
 
 // returns true if dmap is asked
 fn parse_higgs_matches(argmatches: &ArgMatches) -> HiggsArg {
+    let sampling_factor = *argmatches.get_one::<f64>("subsampling").unwrap();
     // for now just that
     let dmap = argmatches.contains_id("dmap");
-    HiggsArg { dmap: dmap }
+    log::info!("diffusion map asked");
+    HiggsArg {
+        dmap: dmap,
+        sampling_factor,
+    }
 } // end of parse_higgs_matches
 
 //
 
 // do umap like embeddding
 fn entropy_embedding(labels: &Vec<u8>, hnsw: &Hnsw<f32, DistL2>, sampling_factor: f64) {
+    //
+    log::info!("doing umap like embedding");
     //
     let mut embed_params = EmbedderParams::default();
     embed_params.nb_grad_batch = 25;
@@ -256,14 +265,39 @@ fn entropy_embedding(labels: &Vec<u8>, hnsw: &Hnsw<f32, DistL2>, sampling_factor
 }
 
 // diffusionmap embedding
-fn dmap_embedding(labels: &Vec<u8>, hnsw: &Hnsw<f32, DistL2>, dmap_params: &DiffusionParams) {
-    log::info!("doing dmap embedding");
+fn dmap_embedding(
+    labels: &Vec<u8>,
+    hnsw: &Hnsw<f32, DistL2>,
+    layer: usize,
+    dmap_params: &DiffusionParams,
+) {
+    log::info!(
+        "\n doing dmap embedding, hnsw total nb points : {} using layers from layer {}",
+        hnsw.get_nb_point(),
+        layer
+    );
+    let embedded: Array2<f32>;
+    //
     let mut dmapembedder = DiffusionMaps::new(*dmap_params);
-    let res = dmapembedder.embed_from_hnsw::<f32, DistL2, f32>(hnsw, dmap_params);
-    if res.is_err() {
-        log::error!("dmap_embedding failed");
+    if layer >= 1 {
+        let kgraph = kgraph_from_hnsw_layer::<f32, DistL2, f32>(hnsw, 8, 1).unwrap();
+        let res = dmapembedder.embed_from_kgraph(&kgraph, dmap_params);
+        if res.is_err() {
+            log::error!("dmap_embedding failed");
+        }
+        embedded = res.unwrap();
+    } else {
+        let res = dmapembedder.embed_from_hnsw::<f32, DistL2, f32>(hnsw, dmap_params);
+        if res.is_err() {
+            log::error!("dmap_embedding failed");
+        }
+        embedded = res.unwrap();
     }
-    let embedded = res.unwrap();
+    log::info!("dumping in csv file");
+    let mut csv_w = Writer::from_path("higgs_dmap_embedded.csv").unwrap();
+    // we can use get_embedded_reindexed as we indexed DataId contiguously in hnsw!
+    let _res = write_csv_labeled_array2(&mut csv_w, labels.as_slice(), &embedded);
+    csv_w.flush().unwrap();
 } // end of dmap_embedding
 
 //====================================================================================
@@ -289,22 +323,30 @@ pub fn main() {
         .action(ArgAction::Set)
         .value_parser(clap::value_parser!(String))
         .help("distance is required   \"DistL1\" , \"DistL2\", \"DistCosine\", \"DistJeyffreys\"  "))
+    .arg(Arg::new("subsampling")
+        .long("factor")
+        .required(false)
+        .action(ArgAction::Set)
+        .value_parser(clap::value_parser!(f64))
+        .default_value("1.0")
+        .help("subsampling factor between 0. and 1."))
     .arg(Arg::new("dmap")
         .long("dmap")
         .required(false)
+        .action(ArgAction::SetTrue)
         .help("takes no value")).get_matches();
     //
     let higgsarg = parse_higgs_matches(&higgcmdarg);
     //
     let mut fname = String::from(HIGGS_DIR);
     // parameters to play with
-    // choose if we run on 22 or 29 columns id est on 21 or 28 variables
+    // choose if we run on 22 or 29 columns id estimation on 21 or 28 variables
     // first column is label. We have one column more than variables
     //====================
     let nb_col = 29;
     let rescale = true;
     // quality estimation requires subsampling factor of 0.15 is Ok with 64Gb
-    let sampling_factor = 1.0;
+    let sampling_factor = higgsarg.sampling_factor;
     //====================
     let nb_var = nb_col - 1;
     //
@@ -374,6 +416,7 @@ pub fn main() {
         //
         hnsw = Hnsw::<f32, DistL2>::new(max_nb_connection, nbdata, nb_layer, ef_c, DistL2 {});
         hnsw.set_keeping_pruned(true);
+        hnsw.modify_level_scale(0.5);
         // we insert by block of 1_000_000
         let block_size = 1_000_000;
         let mut inserted = 0;
@@ -416,7 +459,16 @@ pub fn main() {
         entropy_embedding(&labels, &hnsw, sampling_factor);
     } else {
         let mut dmap_params = DiffusionParams::default();
-        dmap_embedding(&labels, &hnsw, &dmap_params);
+        dmap_params.set_embedding_dimension(5);
+        dmap_params.set_alfa(1.);
+        dmap_params.set_beta(0.);
+        if sampling_factor >= 0.5 {
+            // embed from layer 1 upper to spare memory if full dat are loaded
+            dmap_embedding(&labels, &hnsw, 1, &dmap_params);
+        } else {
+            // embed from layer 1 upper to spare memory if full dat are loaded
+            dmap_embedding(&labels, &hnsw, 0, &dmap_params);
+        }
     }
     println!(
         " ann embed total sys time(s) {:.2e}  cpu time {:.2e}",
