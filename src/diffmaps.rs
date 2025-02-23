@@ -50,7 +50,7 @@ pub struct DiffusionParams {
     t: Option<f32>,
     /// number of neighbour used in the laplacian graph.
     gnbn_opt: Option<usize>,
-    ///
+    //
     h_layer: Option<usize>,
 } // end of DiffusionParams
 
@@ -80,7 +80,7 @@ impl DiffusionParams {
     }
 
     pub fn get_gnbn(&self) -> Option<usize> {
-        return self.gnbn_opt;
+        self.gnbn_opt
     }
     //
     /// modify the default alfa See Lafon paper.
@@ -99,7 +99,6 @@ impl DiffusionParams {
             self.beta = beta;
         } else {
             println!("not changing beta, beta should be in -1,0 Usual values are 0. -0.5 see doc ");
-            return;
         }
     }
 
@@ -115,11 +114,9 @@ impl DiffusionParams {
         self.beta
     }
 
+    /// returns layer above which diffusion map will run (default is 0)
     pub fn get_hlayer(&self) -> usize {
-        match self.h_layer {
-            Some(l) => l,
-            _ => 0,
-        }
+        self.h_layer.unwrap_or_default()
     }
 
     pub fn get_embedding_dimension(&self) -> usize {
@@ -450,7 +447,7 @@ impl DiffusionMaps {
     fn scales_to_kernel<F>(
         &self,
         kgraph: &KGraph<F>,
-        local_scales: &Vec<F>,
+        local_scales: &[F],
         scale_ratio: f32,
         scale_to_kernel: &dyn Fn(F, f32, f32) -> f32,
     ) -> (NodeParams, Vec<f32>)
@@ -634,7 +631,7 @@ impl DiffusionMaps {
         &self,
         kgraph: &KGraph<F>,
         nbng: usize,
-        local_scales_step0: &Vec<F>,
+        local_scales_step0: &[F],
         q_densities: &Vec<f32>,
         beta: f32,
         remap_weight: &dyn Fn(F, f32, f32) -> f32,
@@ -661,7 +658,7 @@ impl DiffusionMaps {
         );
         //
         // compute a scale around each node, mean scale and quantiles on scale
-        let sum_scale_step0: f32 = local_scales_step0.iter().map(|s| *s).sum::<F>().into() as f32;
+        let sum_scale_step0: f32 = local_scales_step0.iter().copied().sum::<F>().into() as f32;
         let mean_scale_step0 = sum_scale_step0 / local_scales_step0.len() as f32;
         //
         log::info!("mean scale step 0: {:.2e}", mean_scale_step0);
@@ -679,7 +676,7 @@ impl DiffusionMaps {
             epsil
         );
         // compute a scale around each node, mean scale and quantiles on scale
-        let sum_scale: f32 = local_scales.iter().map(|s| *s).sum::<F>().into() as f32;
+        let sum_scale: f32 = local_scales.iter().copied().sum::<F>().into() as f32;
         let mean_scale = sum_scale / local_scales.len() as f32;
         log::info!("mean scale step 1 : {:.2e}", mean_scale);
         // Now we define kernel with new scales
@@ -857,7 +854,7 @@ impl DiffusionMaps {
             + Into<f64>,
     {
         // we get embedded data without reindexation
-        let embedded = self.embed_from_hnsw_intern(&hnsw, dparams).unwrap();
+        let embedded = self.embed_from_hnsw_intern(hnsw, dparams).unwrap();
         // and we reindex
         let embedded_reindexed = self.reindex_embedding(&embedded);
         //
@@ -931,7 +928,7 @@ impl DiffusionMaps {
                 u.ncols()
             );
         }
-        let real_dim = asked_dim.min(u.ncols());
+        let real_dim = asked_dim.min(u.ncols() - 1);
         // we can get svd from approx range so that nrows and ncols can be number of nodes!
         let mut embedded = Array2::<F>::zeros((u.nrows(), real_dim));
         // according to theory (See Luxburg or Lafon-Keller diffusion maps) we must go back to eigen vectors of rw laplacian.
@@ -1258,7 +1255,7 @@ mod tests {
         let gnbn = 16;
         let mut dparams: DiffusionParams = DiffusionParams::new(20, Some(dtime), Some(gnbn));
         dparams.set_alfa(1.);
-        dparams.set_beta(-1.);
+        dparams.set_beta(0.);
         //
         let cpu_start = ProcessTime::now();
         let sys_now = SystemTime::now();

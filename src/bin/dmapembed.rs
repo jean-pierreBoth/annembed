@@ -1,26 +1,31 @@
 //! annembed binary.  
 //!
-//! This module provides just access to diffusion map data embedding.  
-//! Command syntax is embed input --csv csvfile  [--outfile | -o  output_name] [--delim u8] [various embedding parameters] [hnsw params] .  
+//! This module provides access to diffusion map data embedding via nearest neighbour computed by hnsw.  
+//! Command syntax is:  
+//!  dmapembed --csv csvfile  [--outfile | -o  output_name] [--delim u8] [dmap embedding parameters] [hnsw params] .  
 //!
 //!  --outfile or -o to specify the name of csv file containing embedded vectors. By default the name is "dmap-embedded.csv"
 //!
 //! hnsw is an optional subcommand to change default parameters of the Hnsw structure. See [hnsw_rs](https://crates.io/crates/hnsw_rs).  
 //!
-//! - Parameters for Diffusion Maps.  
-//!     The options are optional and give access to some fields of the [DiffusinMapParams] structure.  
-//!
-//!     --layer    : optional, in case of large data, the embedding is restricted to the data above layer given in arg otherwise all layers are used.
-//!     --dim      : optional, dimension of the embedding , default to 2.  
-//!
-//!     --quality  : optional, asks for quality estimation.  
-//!     --sampling : optional, for large data defines the fraction of sampled data as 1./sampling
 //!
 //! - Parameters for the hnsw subcommand. For more details see [hnsw_rs](https://crates.io/crates/hnsw_rs).   
 //!     --nbconn  : defines the number of connections by node in a layer.   Can range from 4 to 64 or more if necessary and enough memory.  
 //!     --dist    : name of distance to use: "DistL1", "DistL2", "DistCosine", "DistJeyffreys".  
 //!     --ef      : controls the with of the search, a good guess is between 24 and 64 or more if necessary.  
 //!     --knbn    : the number of nodes to use in retrieval requests.  
+//!
+//! - Parameters for Diffusion Maps.  
+//!     The options are optional and give access to some fields of the \[DiffusinMapParams\] structure.  
+//!
+//!     --layer    : optional, in case of large data, the embedding is restricted to the data above layer given in arg otherwise all layers are used.
+//!     --dim      : optional, dimension of the embedding , default to 2.  
+//!     --alfa     : default to 1.
+//!     --beta     : default to 0. (corresponds to data sampled uniformly).
+//!                  For highly variable density beta can adjusted between in the range 0. .. -1.  
+//!     --sampling : optional, for large data defines the fraction < 1. of sampled data
+//!
+
 //!     
 //! The csv file must have one record by vector to embed. The default delimiter is ','.  
 //! The output is a csv file with embedded vectors.  
@@ -383,7 +388,7 @@ pub fn main() {
             dmapparams.get_hlayer(),
         );
         let small_graph = graphprojection.get_small_graph();
-        let embed_res = dmapembedder.embed_from_kgraph(&small_graph, &dmapparams);
+        let embed_res = dmapembedder.embed_from_kgraph(small_graph, &dmapparams);
         if embed_res.is_err() {
             log::error!("diffusion map embedding failed");
             std::process::exit(1);
@@ -398,9 +403,9 @@ pub fn main() {
 
 //==========================================================================
 
-fn init_hnsw<'a, 'b, 'c, Dist>(
-    data_with_id: &'a [(&Vec<f64>, usize)],
-    hnswparams: &'b HnswParams,
+fn init_hnsw<'c, Dist>(
+    data_with_id: &[(&Vec<f64>, usize)],
+    hnswparams: &HnswParams,
     nb_layer: usize,
 ) -> Hnsw<'c, f64, Dist>
 where
@@ -437,9 +442,7 @@ where
     if kgraph_res.is_err() {
         panic!("kgraph_from_hnsw_all could not construct connected graph");
     }
-    let kgraph = kgraph_res.unwrap();
-    //
-    kgraph
+    kgraph_res.unwrap()
 } // end of get_kgraph
 
 //

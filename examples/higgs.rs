@@ -302,15 +302,22 @@ fn dmap_embedding(
 
 //====================================================================================
 
-///  By defaut a umap like embedding is done
-///  if the --dmap is used it is a dmap embedding
+///  By defaut a umap like embedding is done.
+///  The command takes the following args:
 ///
-///  nb_col          : number of columns to read, 22 or 29  
-///  sampling_factor : if >= 1. full data is embedded, but quality runs only with 64Gb for sampling_factor <= 0.15  
-///  rescale         : true, can be set to false to check possible effect (really tiny)  
-///  hierarchical    : if true use first layer to initialize embedding  
-///  knbn            : to use various neighbourhood size for edge sampling  
-///  asked_dim       : default to 2 but in conjuntion with sampling factor, can see the impact on quality.  
+///  * --dmap is used it is a dmap embedding
+///   
+///  * --factor sampling_factor
+///       sampling_factor : if >= 1. full data is embedded, but quality runs only with 64Gb for sampling_factor <= 0.15  
+///  * --dist "DistL2" or "DistL1"
+///
+///  The others variables can be modified in the code
+///
+///  - nb_col          : number of columns to read, 22 or 29  
+///  - rescale         : true, can be set to false to check possible effect (really tiny)  
+///  - hierarchical    : if true use first layer to initialize embedding  
+///  - knbn            : to use various neighbourhood size for edge sampling  
+///  - asked_dim       : default to 2 but in conjuntion with sampling factor, can see the impact on quality.  
 pub fn main() {
     //
     let _ = env_logger::builder().is_test(true).try_init();
