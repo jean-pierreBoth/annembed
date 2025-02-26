@@ -462,7 +462,7 @@ impl DiffusionMaps {
             + std::ops::DivAssign
             + Into<f64>,
     {
-        log::info!("in DiffusionMaps::scales_to_kernel");
+        log::debug!("in DiffusionMaps::scales_to_kernel");
         //
         let nb_nodes = kgraph.get_nb_nodes();
         let neighbour_hood = kgraph.get_neighbours();
@@ -525,7 +525,8 @@ impl DiffusionMaps {
                     sum += weight;
                 }
                 // TODO: we adjust self_edge
-                edges[0].weight = edges[1].weight / 2.;
+                //                edges[0].weight = edges[1].weight / 2.;
+                edges[0].weight = 1. / 2.;
                 sum += edges[0].weight;
                 q_density.push(sum / edges.len() as f32);
             }
@@ -534,11 +535,14 @@ impl DiffusionMaps {
             nodeparams.push(nodep);
         }
         //
-        log::info!(
-            "to_dmap_nodeparams: proba of weight < {:.2e} = {:.2e}",
-            PROBA_MIN,
-            nb_weight_to_low as f32 / nodeparams.len() as f32
-        );
+        let low_weight = nb_weight_to_low as f32 / nodeparams.len() as f32;
+        if low_weight > 0. {
+            log::info!(
+                "to_dmap_nodeparams: proba of weight < {:.2e} = {:.2e}",
+                PROBA_MIN,
+                low_weight
+            );
+        }
         //
         (
             NodeParams::new(nodeparams, kgraph.get_max_nbng()),
@@ -596,13 +600,15 @@ impl DiffusionMaps {
         // we choose epsil to put weight on at least 5 neighbours when no shift
         // TODO: depend on absence of shift
         let exponent = 2.0f32;
-        let epsil = (scales_q.query(0.99).unwrap().1 / scales_q.query(0.01).unwrap().1) as f32;
+        let scale_width =
+            (scales_q.query(0.99).unwrap().1 / scales_q.query(0.01).unwrap().1) as f32;
         log::info!(
             "compute_dmap_nodeparams knbn : {}, epsil : {:.2e}",
             nbgh_size,
-            epsil
+            scale_width
         );
         // from scales to proba
+        let epsil = scale_width / 2.;
         let remap_weight = |w: F, shift: f32, scale: f32| {
             let arg = ((w.to_f32().unwrap() - shift) / (epsil * scale)).powf(exponent);
             (-arg).exp()
