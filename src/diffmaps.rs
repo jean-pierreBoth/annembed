@@ -891,7 +891,7 @@ impl DiffusionMaps {
     {
         //
         log::debug!("got laplacian, going to svd ... asked_dim :  {}", asked_dim);
-        let svd_res = laplacian.do_svd(asked_dim + 25);
+        let svd_res = laplacian.do_svd(asked_dim + 15);
         if svd_res.is_err() {
             log::error!("embed_from_laplacian call of laplacian.do_svd failed");
             panic!("embed_from_laplacian call of laplacian.do_svd failed");
