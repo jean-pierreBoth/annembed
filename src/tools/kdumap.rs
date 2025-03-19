@@ -16,7 +16,7 @@ use sprs::{CsMat, TriMatBase}; // we could use also greenwald_khanna
 
 use rayon::prelude::*;
 
-use rand::{thread_rng, Rng};
+use rand::Rng;
 
 use crate::fromhnsw::kgraph::KGraph;
 use crate::graphlaplace::*;
@@ -66,7 +66,7 @@ where
                 perplexity_q.insert(param.0);
                 scale_q.insert(param.1.scale);
                 // choose random edge to audit
-                let j = thread_rng().gen_range(0..param.1.edges.len());
+                let j = rand::rng().random_range(0..param.1.edges.len());
                 weight_q.insert(param.1.edges[j].weight);
                 max_nbng = param.1.edges.len().max(max_nbng);
                 assert_eq!(param.1.edges.len(), neighbour_hood[*i].len());

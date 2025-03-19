@@ -178,7 +178,7 @@ mod tests {
     use super::*;
     use rand::prelude::*;
 
-    use rand::distributions::Uniform;
+    use rand::distr::Uniform;
     use rand_xoshiro::Xoshiro256PlusPlus;
 
     #[allow(dead_code)]
@@ -189,9 +189,11 @@ mod tests {
     #[test]
 
     fn test_proba_ann() {
-        let unif_01 = Uniform::<f64>::new(0., 1.);
+        let unif_01 = Uniform::<f64>::new(0., 1.).unwrap();
         let mut rng = Xoshiro256PlusPlus::seed_from_u64(234567_u64);
-        let p: Vec<f64> = (0..50).map(|_| unif_01.sample(&mut rng)).collect();
+        let p: Vec<f64> = (0..50)
+            .map(|_| unif_01.sample(&mut rng))
+            .collect::<Vec<f64>>();
         let mut proba = DiscreteProba::new(&p);
         let _entropy = proba.renyi_entropy(&[1., 2.]);
     } // end of test_proba_ann

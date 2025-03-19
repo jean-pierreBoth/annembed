@@ -15,8 +15,6 @@ use indexmap::set::*;
 
 use std::cmp::Ordering;
 
-use rand::thread_rng;
-
 use quantiles::ckms::CKMS; // we could use also greenwald_khanna
 
 use rayon::prelude::*;
@@ -24,7 +22,7 @@ use rayon::prelude::*;
 use hnsw_rs::prelude::*;
 
 use crate::tools::{dimension::*, nodeparam::*};
-use rand::distributions::Distribution;
+use rand::distr::Distribution;
 
 // morally F should be f32 and f64.
 // The solution from ndArray is F : Float + AddAssign + SubAssign + MulAssign + DivAssign + RemAssign + Display + Debug + LowerExp + UpperExp + (ScalarOperand + LinalgScalar) + Send + Sync.
@@ -226,8 +224,8 @@ where
         // TODO sampling without replacement?
         let mut dims = Vec::<f64>::with_capacity(sampling_size);
         let nb_nodes = self.get_nb_nodes();
-        let mut rng = thread_rng();
-        let between = rand_distr::Uniform::from(0..nb_nodes);
+        let mut rng = rand::rng();
+        let between = rand_distr::Uniform::new(0, nb_nodes).unwrap();
         // TODO to be parallelized if necessary
         for _ in 0..sampling_size {
             let node = between.sample(&mut rng);
@@ -628,7 +626,7 @@ mod tests {
     use std::io::BufWriter;
     use std::path::Path;
 
-    use rand::distributions::Uniform;
+    use rand::distr::Uniform;
     use rand::prelude::*;
 
     use crate::fromhnsw::hubness;
@@ -643,8 +641,8 @@ mod tests {
 
     fn gen_rand_data_f32(nb_elem: usize, dim: usize) -> Vec<Vec<f32>> {
         let mut data = Vec::<Vec<f32>>::with_capacity(nb_elem);
-        let mut rng = thread_rng();
-        let unif = Uniform::<f32>::new(0., 1.);
+        let mut rng = rand::rng();
+        let unif = Uniform::<f32>::new(0., 1.).unwrap();
         for i in 0..nb_elem {
             let val = 10. * i as f32 * rng.sample(unif);
             let v: Vec<f32> = (0..dim).map(|_| val * rng.sample(unif)).collect();
@@ -778,8 +776,8 @@ mod tests {
         let size = 30;
         let mut idxset = IndexSet::<usize>::with_capacity(size);
         let from = 10000;
-        let between = Uniform::from(from..from + size);
-        let mut rng = rand::thread_rng();
+        let between = Uniform::new(from, from + size).unwrap();
+        let mut rng = rand::rng();
 
         for _i in 0..100000 {
             let xsi = between.sample(&mut rng);

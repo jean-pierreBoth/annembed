@@ -47,7 +47,7 @@ use std::fs::OpenOptions;
 use std::io::BufReader;
 use std::path::{Path, PathBuf};
 
-use rand::distributions::{Distribution, Uniform};
+use rand::distr::{Distribution, Uniform};
 
 use csv::Writer;
 
@@ -96,8 +96,8 @@ fn read_higgs_csv(
     let mut data = Array2::<f32>::zeros((0, nb_var));
     let mut rdr = csv::Reader::from_reader(bufreader);
     //
-    let unif_01 = Uniform::<f64>::new(0., 1.);
-    let mut rng = rand::thread_rng();
+    let unif_01 = Uniform::<f64>::new(0., 1.).unwrap();
+    let mut rng = rand::rng();
     //
     for result in rdr.records() {
         // The iterator yields Result<StringRecord, Error>, so we check the
