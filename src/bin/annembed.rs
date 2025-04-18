@@ -216,7 +216,8 @@ pub fn main() {
     let matches = Command::new("annembed")
         //        .subcommand_required(true)
         .arg_required_else_help(true)
-        .about("Non-linear Dimension Reduction/Embedding via Approximate Nearest Neighbor Graph")
+        .about("Non-linear Dimension Reduction/Embedding via Approximate Nearest Neighbor Graph, HNSW Initialization")
+        .version("0.2.4")
         .arg(
             Arg::new("csvfile")
                 .long("csv")
