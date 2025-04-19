@@ -43,6 +43,9 @@ path = "examples/higgs.rs"
 name = "annembed"
 path = "src/bin/annembed.rs"
 
+[[bin]]
+name = "dmapembed"
+path = "src/bin/dmapembed.rs"
 
 [dependencies]
 # default is version spec is ^ meaning can update up to max non null version number
@@ -50,7 +53,7 @@ path = "src/bin/annembed.rs"
 #
 
 
-clap = { version = "4.4", features = ["derive"] }
+clap = { version = "4.5", features = ["derive"] }
 
 
 # for //
