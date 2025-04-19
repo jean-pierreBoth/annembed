@@ -43,6 +43,9 @@ path = "examples/higgs.rs"
 name = "embed"
 path = "src/bin/annembed.rs"
 
+[[bin]]
+name = "dmapembed"
+path = "src/bin/dmapembed.rs"
 
 [dependencies]
 # default is version spec is ^ meaning can update up to max non null version number
