@@ -10,7 +10,7 @@ use std::fs::OpenOptions;
 use std::io::{BufRead, BufReader, Read};
 use std::path::Path;
 
-use rand::distributions::{Distribution, Uniform};
+use rand::distr::{Distribution, Uniform};
 
 use num_traits::Float;
 use std::str::FromStr;
@@ -149,8 +149,8 @@ where
         bufreader.read_line(&mut headerline)?;
     }
     //
-    let unif_01 = Uniform::<f64>::new(0., 1.);
-    let mut rng = rand::thread_rng();
+    let unif_01 = Uniform::<f64>::new(0., 1.).unwrap();
+    let mut rng = rand::rng();
     //
     let mut num_record: usize = 0;
     let mut nb_fields = 0;

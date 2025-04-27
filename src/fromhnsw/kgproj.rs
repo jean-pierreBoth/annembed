@@ -474,8 +474,9 @@ mod tests {
 
     use super::*;
 
-    use rand::distributions::Uniform;
+    use rand::distr::Uniform;
     use rand::prelude::*;
+    use rand::rng;
 
     #[cfg(test)]
     fn log_init_test() {
@@ -487,8 +488,8 @@ mod tests {
 
     fn gen_rand_data_f32(nb_elem: usize, dim: usize) -> Vec<Vec<f32>> {
         let mut data = Vec::<Vec<f32>>::with_capacity(nb_elem);
-        let mut rng = thread_rng();
-        let unif = Uniform::<f32>::new(0., 1.);
+        let mut rng = rng();
+        let unif = Uniform::<f32>::new(0., 1.).unwrap();
         for i in 0..nb_elem {
             let val = 10. * i as f32 * rng.sample(unif);
             let v: Vec<f32> = (0..dim).map(|_| val * rng.sample(unif)).collect();

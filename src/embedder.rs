@@ -29,9 +29,9 @@ use parking_lot::RwLock;
 use rayon::prelude::*;
 use std::sync::Arc;
 
-use rand::distributions::Uniform;
-use rand::{thread_rng, Rng};
-use rand_distr::WeightedAliasIndex;
+use rand::distr::Uniform;
+use rand::{rng, Rng};
+use rand_distr::weighted::WeightedAliasIndex;
 use rand_distr::{Distribution, Normal};
 
 use indexmap::set::*;
@@ -219,7 +219,7 @@ where
         log::info!("doing projection");
         let (nb_nodes_small, _) = first_embedding.dim();
         // we were cautious on indexation so we can do:
-        let mut rng = thread_rng();
+        let mut rng = rand::rng();
         for i in 0..nb_nodes_small {
             for j in 0..dim {
                 second_step_init[[i, j]] = first_embedding[[i, j]];
@@ -428,8 +428,8 @@ where
         //
         let nb_nodes = self.initial_space.as_ref().unwrap().get_nb_nodes();
         let mut initial_embedding = Array2::<F>::zeros((nb_nodes, self.get_asked_dimension()));
-        let unif = Uniform::<f32>::new(-size / 2., size / 2.);
-        let mut rng = thread_rng();
+        let unif = Uniform::<f32>::new(-size / 2., size / 2.).unwrap();
+        let mut rng = rand::rng();
         for i in 0..nb_nodes {
             for j in 0..self.get_asked_dimension() {
                 initial_embedding[[i, j]] = F::from(rng.sample(unif)).unwrap();
@@ -1035,7 +1035,7 @@ where
         let node_j;
         let node_i;
         if threaded {
-            edge_idx_sampled = thread_rng().sample(&self.pos_edge_distribution);
+            edge_idx_sampled = rand::rng().sample(&self.pos_edge_distribution);
             node_i = self.edges[edge_idx_sampled].0;
             node_j = self.edges[edge_idx_sampled].1.node;
             y_i = self.get_embedded_data(node_i).read().to_owned();
@@ -1043,7 +1043,7 @@ where
         }
         // end threaded
         else {
-            edge_idx_sampled = thread_rng().sample(&self.pos_edge_distribution);
+            edge_idx_sampled = rand::rng().sample(&self.pos_edge_distribution);
             node_i = self.edges[edge_idx_sampled].0;
             y_i = self.get_embedded_data(node_i).write().to_owned();
             node_j = self.edges[edge_idx_sampled].1.node;
@@ -1098,7 +1098,7 @@ where
         let mut got_nb_neg = 0;
         let mut _nb_failed = 0;
         while got_nb_neg < asked_nb_neg {
-            let neg_node: NodeIdx = thread_rng().gen_range(0..self.embedded_scales.len());
+            let neg_node: NodeIdx = rng().random_range(0..self.embedded_scales.len());
             if neg_node != node_i
                 && neg_node != node_j
                 && self
@@ -1278,8 +1278,8 @@ mod tests {
     #[cfg(test)]
     fn gen_rand_data_f32(nb_elem: usize, dim: usize) -> Vec<Vec<f32>> {
         let mut data = Vec::<Vec<f32>>::with_capacity(nb_elem);
-        let mut rng = thread_rng();
-        let unif = Uniform::<f32>::new(0., 1.);
+        let mut rng = rng();
+        let unif = Uniform::<f32>::new(0., 1.).unwrap();
         for i in 0..nb_elem {
             let val = 2. * i as f32 * rng.sample(unif);
             let v: Vec<f32> = (0..dim).map(|_| val * rng.sample(unif)).collect();

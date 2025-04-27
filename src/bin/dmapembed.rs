@@ -16,13 +16,17 @@
 //!     --knbn    : the number of nodes to use in retrieval requests.  
 //!
 //! - Parameters for Diffusion Maps.  
-//!     The options are optional and give access to some fields of the \[DiffusinMapParams\] structure.  
+//!     The options give access to some fields of the \[DiffusinMapParams\] structure.  
 //!
-//!     --layer    : optional, in case of large data, the embedding is restricted to the data above layer given in arg otherwise all layers are used.
+//!     --knbn     : the number of neighbours to use in graph laplacian. For memory and speed a range between 8 and 16 is recommended.  
+//!                  Defaults to 10.  
+//!     --layer    : optional, in case of large data, the embedding is restricted to the data above layer given in arg otherwise all layers are used.  
 //!     --dim      : optional, dimension of the embedding , default to 2.  
+//!                  In fact there are 20 dimension dumped in the csv file. The julia script visu.jl by default plots the 2 first but
+//!                  provides arguments for plotting various 2d plots.
 //!     --alfa     : default to 1.
 //!     --beta     : default to 0. (corresponds to data sampled uniformly).
-//!                  For highly variable density beta can adjusted between in the range 0. .. -1.  
+//!                  For highly variable density beta can be adjusted between in the range 0. .. -1.  
 //!     --sampling : optional, for large data defines the fraction < 1. of sampled data
 //!
 
