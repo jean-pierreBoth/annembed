@@ -268,7 +268,7 @@ pub fn main() {
                 .action(ArgAction::Set)
                 .value_parser(clap::value_parser!(f32))
                 .default_value("5.0")
-                .help("diffusion time, usually between 0. ad 5."),
+                .help("diffusion time, usually between 0. and 5."),
         )
         .arg(
             Arg::new("hierarchy")

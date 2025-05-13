@@ -12,5 +12,5 @@ readme          = "README.md"
 requires-python = ">=3.9"
 
 [tool.maturin]
-features = ["python","simdeez_f","intel-mkl-static"]
+features = ["python","stdsimd","macos-accelerate"]
 
