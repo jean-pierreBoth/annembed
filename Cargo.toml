@@ -19,8 +19,8 @@ opt-level = 3
 # cargo rustc --lib -- --crate-type dylib [or staticlib] or rlib (default)
 # if we want to avoid specifying in advance crate-type 
 path = "src/lib.rs"
-#crate-type = ["cdylib"]
-
+name = "annembed"     
+crate-type = ["rlib","cdylib"]
 
 [[examples]]
 name = "mnist_digits"
@@ -40,7 +40,7 @@ path = "examples/higgs.rs"
 
 
 [[bin]]
-name = "embed"
+name = "annembed"
 path = "src/bin/annembed.rs"
 
 [[bin]]
@@ -110,8 +110,8 @@ env_logger = { version = "0.11" }
 # no more interaction bug with intel-mkl
 anyhow = { version = "1.0" }
 katexit = { version = "0.1" }
-
-
+pyo3 = { version = "0.24.1", optional = true}
+numpy = { version = "0.24", optional = true}
 [features]
 
 default = []
@@ -119,6 +119,7 @@ default = []
 # simd choice
 stdsimd = ["hnsw_rs/stdsimd"]
 simdeez_f = ["hnsw_rs/simdeez_f"]
+python = ["pyo3/extension-module","numpy"]
 
 # blas choice
 intel-mkl-static = ["ndarray/blas", "lax/intel-mkl-static"]

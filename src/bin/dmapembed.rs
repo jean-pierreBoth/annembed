@@ -59,25 +59,29 @@ pub struct HnswParams {
     knbn: usize,
     /// distance to use in Hnsw. Default is "DistL2". Other choices are "DistL1", "DistCosine", DistJeffreys
     distance: String,
+    //scale_modification factor, must be [0.2, 1]
+    scale_modification : f64,
 } // end of struct HnswParams
 
 impl HnswParams {
     pub fn my_default() -> Self {
         HnswParams {
-            max_conn: 48,
-            ef_c: 400,
+            max_conn: 64,
+            ef_c: 512,
             knbn: 10,
             distance: String::from("DistL2"),
+            scale_modification: 1.0,
         }
     }
 
     #[allow(unused)]
-    pub fn new(max_conn: usize, ef_c: usize, knbn: usize, distance: String) -> Self {
+    pub fn new(max_conn: usize, ef_c: usize, knbn: usize, distance: String, scale_modification: f64) -> Self {
         HnswParams {
             max_conn,
             ef_c,
             knbn,
             distance,
+            scale_modification,
         }
     }
 } // end impl block
@@ -106,7 +110,7 @@ fn parse_hnsw_cmd(matches: &ArgMatches) -> Result<HnswParams, anyhow::Error> {
     hnswparams.max_conn = *matches.get_one::<usize>("nbconn").unwrap();
     hnswparams.ef_c = *matches.get_one::<usize>("ef").unwrap();
     hnswparams.knbn = *matches.get_one::<usize>("knbn").unwrap();
-
+    hnswparams.scale_modification = *matches.get_one::<f64>("scale_modification").unwrap();
     match matches.get_one::<String>("dist") {
         Some(str) => match str.as_str() {
             "DistL2" => {
@@ -171,6 +175,7 @@ pub fn main() {
     let dmapparams: DiffusionParams;
     //
     let hnswcmd = Command::new("hnsw")
+        .about("Build HNSW graph")
         .arg(Arg::new("dist")
             .long("dist")
             .short('d')
@@ -184,6 +189,13 @@ pub fn main() {
             .action(ArgAction::Set)
             .value_parser(clap::value_parser!(usize))
             .help("number of neighbours by layer"))
+        .arg(Arg::new("scale_modification")
+            .long("scale_modify_f")
+            .help("Hierarchy scale modification factor in HNSW/HubNSW or FlatNav, must be in [0.2,1]")
+            .value_name("scale_modify")
+            .default_value("1.0")
+            .action(ArgAction::Set)
+            .value_parser(clap::value_parser!(f64)))
         .arg(Arg::new("knbn")
             .long("knbn")
             .required(true)
@@ -202,7 +214,8 @@ pub fn main() {
     // ===================
     //
     let matches = Command::new("dmapembed")
-        //        .subcommand_required(true)
+        .about("Non-linear Dimension Reduction/Embedding via Approximate Nearest Neighbor Graph, Diffusion Map Initialization")
+        .version("0.2.4")
         .arg_required_else_help(true)
         .arg(
             Arg::new("csvfile")
@@ -255,7 +268,7 @@ pub fn main() {
                 .action(ArgAction::Set)
                 .value_parser(clap::value_parser!(f32))
                 .default_value("5.0")
-                .help("diffusion time, usually between 0. ad 5."),
+                .help("diffusion time, usually between 0. and 5."),
         )
         .arg(
             Arg::new("hierarchy")
@@ -416,13 +429,14 @@ where
     Dist: Distance<f64> + Default + Send + Sync,
 {
     let nb_data = data_with_id.len();
-    let hnsw = Hnsw::<f64, Dist>::new(
+    let mut hnsw = Hnsw::<f64, Dist>::new(
         hnswparams.max_conn,
         nb_data,
         nb_layer,
         hnswparams.ef_c,
         Dist::default(),
     );
+    hnsw.modify_level_scale(hnswparams.scale_modification);
     hnsw.parallel_insert(data_with_id);
     hnsw.dump_layer_info();
     //

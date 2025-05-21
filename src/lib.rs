@@ -12,6 +12,11 @@ pub mod prelude;
 pub mod tools;
 pub mod utils;
 
+
+#[cfg(feature = "python")]
+mod python;
+
+
 lazy_static! {
     static ref LOG: u64 = init_log();
 }

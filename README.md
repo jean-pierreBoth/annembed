@@ -206,6 +206,17 @@ Sources of examples are in corresponding directory.
     embedder = Embedder::new(&kgraph, embed_params);
     let embed_res = embedder.embed();
 ```
+### Usage in Python
+```bash
+pip install annembed_rs
+```
+```python
+import annembed, numpy as np
+arr = annembed.embed("fashion-mnist_data.csv", dim=2)
+print(type(arr), arr.shape)
+arr1 = annembed.dmap_embed("fashion-mnist_data.csv", dim=2)
+print(type(arr1), arr.shape)
+```
 
 ### Randomized SVD
 

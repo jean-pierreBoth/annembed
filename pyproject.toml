@@ -1,0 +1,16 @@
+[build-system]
+requires = ["maturin>=1.4,<2.0"]
+build-backend = "maturin"
+
+[project]
+name            = "annembed_rs"
+version         = "0.1.0"
+description     = "Python bindings for the annembed Rust crate"
+authors         = [{ name = "Jianshu Zhao", email = "jianshuzhao@yahoo.com" }]
+license         = { text = "MIT" }
+readme          = "README.md"
+requires-python = ">=3.9"
+
+[tool.maturin]
+features = ["python","stdsimd","macos-accelerate"]
+
