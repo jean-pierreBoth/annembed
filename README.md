@@ -249,7 +249,7 @@ Two algorithms for range approximation used in approximated SVD are:
 
 ## Contributions
 
-The logo was designed by Jianshu Zhao.
+Jianshu Zhao designed the logo and implemented the Python interface.
 
 ## License
 
