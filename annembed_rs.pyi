@@ -24,7 +24,7 @@ def embed(
     knbn: int = 10,
     scale_modification: float = 1.0,
 ) -> np.ndarray: ...
-    """
+"""
     Embed vectors in *csvfile* using the annembed gradient-descent routine
     initialised by an HNSW k-NN graph.
 
@@ -56,7 +56,7 @@ def dmap_embed(
     knbn: int = 10,
     scale_modification: float = 1.0,
 ) -> np.ndarray: ...
-    """
+"""
     Diffusion-Maps embedding with optional α, β, diffusion time, and
     hierarchical projection layer.
 

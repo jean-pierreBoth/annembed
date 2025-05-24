@@ -57,7 +57,7 @@ pub struct HnswParams {
     /// distance to use in Hnsw. Default is "DistL2". Other choices are "DistL1", "DistCosine", DistJeffreys
     distance: String,
     //scale_modification factor, must be [0.2, 1]
-    scale_modification : f64,
+    scale_modification: f64,
 } // end of struct HnswParams
 
 impl HnswParams {
@@ -72,7 +72,13 @@ impl HnswParams {
     }
 
     #[allow(unused)]
-    pub fn new(max_conn: usize, ef_c: usize, knbn: usize, distance: String, scale_modification: f64) -> Self {
+    pub fn new(
+        max_conn: usize,
+        ef_c: usize,
+        knbn: usize,
+        distance: String,
+        scale_modification: f64,
+    ) -> Self {
         HnswParams {
             max_conn,
             ef_c,
@@ -197,7 +203,7 @@ pub fn main() {
             .help("Build factor ef_construct in HNSW"))
         .arg(Arg::new("scale_modification")
             .long("scale_modify_f")
-            .help("Hierarchy scale modification factor in HNSW/HubNSW or FlatNav, must be in [0.2,1]")
+            .help("Hierarchy scale modification factor in HNSW, must be in [0.2,1]")
             .value_name("scale_modify")
             .default_value("1.0")
             .action(ArgAction::Set)
@@ -259,7 +265,8 @@ pub fn main() {
                 .long("stepg")
                 .action(ArgAction::Set)
                 .value_parser(clap::value_parser!(f64))
-                .help("Number of gradient descent steps"),
+                .default_value("2.")
+                .help("Scale of gradient steps"),
         )
         .arg(
             Arg::new("nbsample")
