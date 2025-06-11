@@ -77,12 +77,10 @@ where
     /// compute for q = 1 it is Shannon entropy
     fn renyi_entropy_1(&self) -> F {
         let zero = F::zero();
-        let entropy = self
-            .p
+        self.p
             .iter()
             .map(|&v| if v > zero { -v * v.ln() } else { zero })
-            .sum();
-        entropy
+            .sum()
     }
 
     /// cmpute for q!= 1.
@@ -115,8 +113,7 @@ where
     // compute relative entropy at q=1
     fn relative_renyi_entropy_1(&self, other: &DiscreteProba<F>) -> F {
         let zero = F::zero();
-        let entropy = self
-            .p
+        self.p
             .iter()
             .zip(other.p.iter())
             .map(|t| {
@@ -126,9 +123,7 @@ where
                     zero
                 }
             })
-            .sum();
-        //        let ent_f64 : f64 = num_traits::cast::cast::<F, f64>(entropy).unwrap();
-        entropy
+            .sum()
     }
 
     //

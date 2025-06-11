@@ -1,3 +1,5 @@
+#![allow(clippy::doc_overindented_list_items)]
+
 //! annembed binary.  
 //!
 //! This module provides just access to floating point data embedding.  
@@ -8,25 +10,25 @@
 //! hnsw is an optional subcommand to change default parameters of the Hnsw structure. See [hnsw_rs](https://crates.io/crates/hnsw_rs).  
 //!
 //! - Parameters for embedding.  
-//!     The options are optional and give access to some fields of the [EmbedderParams] structure.  
+//!   The options are optional and give access to some fields of the [EmbedderParams] structure.  
 //!
-//!     --batch    : optional, a integer giving the number of batch to run. Default to 15.  
-//!     --stepg    : optional, a float value , initial gradient step, default is 2.  
-//!     --scale    : optional, a float value, scale modification factor, default is 1.  
-//!     --nbsample : optional, a number of edge sampling , default is 10   
-//!     --layer    : optional, in case of hierarchical embedding num of the lower layer we consider to run preliminary step.
-//!               default is set to 0 meaning one pass embedding.  
-//!     --dim      : optional, dimension of the embedding , default to 2.  
+//!   --batch    : optional, a integer giving the number of batch to run. Default to 15.  
+//!   --stepg    : optional, a float value , initial gradient step, default is 2.  
+//!   --scale    : optional, a float value, scale modification factor, default is 1.  
+//!   --nbsample : optional, a number of edge sampling , default is 10   
+//!   --layer    : optional, in case of hierarchical embedding num of the lower layer we consider to run preliminary step.
+//!                default is set to 0 meaning one pass embedding.  
+//!   --dim      : optional, dimension of the embedding , default to 2.  
 //!
-//!     --quality  : optional, asks for quality estimation.  
-//!     --sampling : optional, for large data defines the fraction of sampled data as 1./sampling
+//!   --quality  : optional, asks for quality estimation.  
+//!   --sampling : optional, for large data defines the fraction of sampled data as 1./sampling
 //!
 //! - Parameters for the hnsw subcommand. For more details see [hnsw_rs](https://crates.io/crates/hnsw_rs).   
-//!     --nbconn  : defines the number of connections by node in a layer.   Can range from 4 to 64 or more if necessary and enough memory.  
-//!     --dist    : name of distance to use: "DistL1", "DistL2", "DistCosine", "DistJeyffreys".  
-//!     --ef      : controls the with of the search, a good guess is between 24 and 64 or more if necessary.  
-//!     --knbn    : the number of nodes to use in retrieval requests.  
-//!     --scale_modification_f : scale factor to control Hierarchy of HNSW for high dimensional datasets (e.g., d > 32).
+//!   --nbconn  : defines the number of connections by node in a layer.   Can range from 4 to 64 or more if necessary and enough memory.  
+//!   --dist    : name of distance to use: "DistL1", "DistL2", "DistCosine", "DistJeyffreys".  
+//!   --ef      : controls the with of the search, a good guess is between 24 and 64 or more if necessary.  
+//!   --knbn    : the number of nodes to use in retrieval requests.  
+//!   --scale_modification_f : scale factor to control Hierarchy of HNSW for high dimensional datasets (e.g., d > 32).
 //!
 //! The csv file must have one record by vector to embed. The default delimiter is ','.  
 //! The output is a csv file with embedded vectors.  
@@ -42,7 +44,7 @@ use hnsw_rs::prelude::*;
 
 use annembed::fromhnsw::hubness;
 use annembed::fromhnsw::kgproj::KGraphProjection;
-use annembed::fromhnsw::kgraph::{kgraph_from_hnsw_all, KGraph};
+use annembed::fromhnsw::kgraph::{KGraph, kgraph_from_hnsw_all};
 use annembed::prelude::*;
 
 /// Defines parameters to drive ann computations. See the crate [hnsw_rs](https://crates.io/crates/hnsw_rs)
@@ -546,7 +548,7 @@ fn get_kgraph_with_distname(
     nb_layer: usize,
     hubdim: bool,
 ) -> KGraph<f64> {
-    let kgraph = match hnswparams.distance.as_str() {
+    match hnswparams.distance.as_str() {
         "DistL2" => get_kgraph::<DistL2>(data_with_id, hnswparams, nb_layer, hubdim),
         "DistL1" => get_kgraph::<DistL1>(data_with_id, hnswparams, nb_layer, hubdim),
         "DistJeffreys" => get_kgraph::<DistJeffreys>(data_with_id, hnswparams, nb_layer, hubdim),
@@ -558,8 +560,7 @@ fn get_kgraph_with_distname(
             log::error!("unknown distance : {}", hnswparams.distance);
             std::process::exit(1);
         }
-    };
-    kgraph
+    }
 } // end of get_kgraph_with_distname
 
 fn get_kgraphproj_with_distname(
@@ -569,7 +570,7 @@ fn get_kgraphproj_with_distname(
     layer_proj: usize,
 ) -> KGraphProjection<f64> {
     //
-    let kgraph_projection = match hnswparams.distance.as_str() {
+    match hnswparams.distance.as_str() {
         "DistL2" => get_kgraph_projection::<DistL2>(data_with_id, hnswparams, nb_layer, layer_proj),
         "DistL1" => get_kgraph_projection::<DistL1>(data_with_id, hnswparams, nb_layer, layer_proj),
         "DistJeffreys" => {
@@ -583,6 +584,5 @@ fn get_kgraphproj_with_distname(
             log::error!("unknown distance : {}", hnswparams.distance);
             std::process::exit(1);
         }
-    };
-    kgraph_projection
+    }
 } // end of get_kgraphproj_with_distname

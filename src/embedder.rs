@@ -30,7 +30,7 @@ use rayon::prelude::*;
 use std::sync::Arc;
 
 use rand::distr::Uniform;
-use rand::{rng, Rng};
+use rand::{Rng, rng};
 use rand_distr::weighted::WeightedAliasIndex;
 use rand_distr::{Distribution, Normal};
 
@@ -41,8 +41,8 @@ use std::time::{Duration, SystemTime};
 
 use crate::diffmaps::*;
 use crate::embedparams::*;
-use crate::fromhnsw::{kgproj::*, kgraph::kgraph_from_hnsw_all, kgraph::KGraph};
-use crate::tools::{dichotomy::*, kdumap::*, nodeparam::*, clip::clip};
+use crate::fromhnsw::{kgproj::*, kgraph::KGraph, kgraph::kgraph_from_hnsw_all};
+use crate::tools::{clip::clip, dichotomy::*, kdumap::*, nodeparam::*};
 use hnsw_rs::prelude::*;
 
 /// do not consider probabilities under PROBA_MIN, thresolded!!
@@ -210,9 +210,13 @@ where
         // use projection to initialize large graph
         let quant = graph_projection.get_projection_distance_quant();
         if quant.count() > 0 {
-            println!(" projection distance quantile at 0.05 : {:.2e} , 0.5 :  {:.2e}, 0.95 : {:.2e}, 0.99 : {:.2e}", 
-                        quant.query(0.05).unwrap().1, quant.query(0.5).unwrap().1,
-                        quant.query(0.95).unwrap().1, quant.query(0.99).unwrap().1);
+            println!(
+                " projection distance quantile at 0.05 : {:.2e} , 0.5 :  {:.2e}, 0.95 : {:.2e}, 0.99 : {:.2e}",
+                quant.query(0.05).unwrap().1,
+                quant.query(0.5).unwrap().1,
+                quant.query(0.95).unwrap().1,
+                quant.query(0.99).unwrap().1
+            );
         };
         let dim = self.parameters.get_dimension();
         let mut second_step_init = Array2::<F>::zeros((nb_nodes_large, dim));
@@ -288,26 +292,28 @@ where
                 log::info!("using new dmaps");
                 let dtime = 5.;
                 let gnbn = 16;
-                let mut dparams: DiffusionParams = DiffusionParams::new(10, Some(dtime), Some(gnbn));
+                let mut dparams: DiffusionParams =
+                    DiffusionParams::new(10, Some(dtime), Some(gnbn));
                 dparams.set_alfa(1.);
                 dparams.set_beta(-1.);
                 let mut diffusion_map = DiffusionMaps::new(dparams);
-               initial_embedding = diffusion_map.embed_from_kgraph::<F>(graph_to_embed, &dparams).unwrap();
-            }
-            else {
+                initial_embedding = diffusion_map
+                    .embed_from_kgraph::<F>(graph_to_embed, &dparams)
+                    .unwrap();
+            } else {
                 log::info!("using old dmaps");
                 self.initial_space = Some(to_proba_edges(
-                graph_to_embed,
-                self.parameters.scale_rho as f32,
-                self.parameters.beta as f32,
-                ));  
+                    graph_to_embed,
+                    self.parameters.scale_rho as f32,
+                    self.parameters.beta as f32,
+                ));
                 initial_embedding = get_dmap_embedding(
                     self.initial_space.as_ref().unwrap(),
                     self.parameters.get_dimension(),
                     None,
                 );
             }
-            
+
             println!(
                 " dmap initialization sys time(ms) {:.2e} cpu time(ms) {:.2e}",
                 sys_start.elapsed().unwrap().as_millis(),
@@ -583,7 +589,6 @@ where
     /// So 9000 out of 70000 data points have no conserved neighbours, for the others points 5.6 out of 6 neighbours are retrieved.
     /// 75% of neighbourhood is conserved within a radius increased by a factor 0.8.
     // called by external binary (see examples)
-    #[allow(unused)]
     pub fn get_quality_estimate_from_edge_length(&self, nbng: usize) -> Option<f64> {
         //
         let cpu_start = ProcessTime::now();
@@ -600,7 +605,9 @@ where
         // compute max edge length from kgraph constructed from embedded points corresponding to nbng neighbours
         let max_edges_embedded = self.get_max_edge_length_embedded_kgraph(nbng);
         if max_edges_embedded.is_none() {
-            log::error!("get_quality_estimate_from_edge_length : cannot compute mean edge length from embedded data");
+            log::error!(
+                "get_quality_estimate_from_edge_length : cannot compute mean edge length from embedded data"
+            );
             return None;
         }
         let max_edges_embedded = max_edges_embedded.unwrap();
@@ -642,22 +649,41 @@ where
             "  neighbourhood size used in embedding : {}",
             self.get_kgraph_nbng()
         );
-        println!("  nb neighbourhoods without a match : {},  mean number of neighbours conserved when match : {:.3e}", nb_without_match,  mean_nbmatch);
-        println!("  embedded radii quantiles at 0.05 : {:.2e} , 0.25 : {:.2e}, 0.5 :  {:.2e}, 0.75 : {:.2e}, 0.85 : {:.2e}, 0.95 : {:.2e} \n", 
-            embedded_radii.query(0.05).unwrap().1, embedded_radii.query(0.25).unwrap().1, embedded_radii.query(0.5).unwrap().1,
-            embedded_radii.query(0.75).unwrap().1, embedded_radii.query(0.85).unwrap().1, embedded_radii.query(0.95).unwrap().1);
+        println!(
+            "  nb neighbourhoods without a match : {},  mean number of neighbours conserved when match : {:.3e}",
+            nb_without_match, mean_nbmatch
+        );
+        println!(
+            "  embedded radii quantiles at 0.05 : {:.2e} , 0.25 : {:.2e}, 0.5 :  {:.2e}, 0.75 : {:.2e}, 0.85 : {:.2e}, 0.95 : {:.2e} \n",
+            embedded_radii.query(0.05).unwrap().1,
+            embedded_radii.query(0.25).unwrap().1,
+            embedded_radii.query(0.5).unwrap().1,
+            embedded_radii.query(0.75).unwrap().1,
+            embedded_radii.query(0.85).unwrap().1,
+            embedded_radii.query(0.95).unwrap().1
+        );
         //
         // The smaller the better!
         // we give quantiles on ratio : distance of neighbours in origin space / distance of last neighbour in embedded space
         println!("\n statistics on conservation of neighborhood (of size nbng)");
         println!("  neighbourhood size used in target space : {}", nbng);
-        println!("  quantiles on ratio : distance in embedded space of neighbours of origin space / distance of last neighbour in embedded space");
-        println!("  quantiles at 0.05 : {:.2e} , 0.25 : {:.2e}, 0.5 :  {:.2e}, 0.75 : {:.2e}, 0.85 : {:.2e}, 0.95 : {:.2e} \n", 
-            ratio_dist_q.query(0.05).unwrap().1, ratio_dist_q.query(0.25).unwrap().1, ratio_dist_q.query(0.5).unwrap().1,
-            ratio_dist_q.query(0.75).unwrap().1, ratio_dist_q.query(0.85).unwrap().1, ratio_dist_q.query(0.95).unwrap().1);
+        println!(
+            "  quantiles on ratio : distance in embedded space of neighbours of origin space / distance of last neighbour in embedded space"
+        );
+        println!(
+            "  quantiles at 0.05 : {:.2e} , 0.25 : {:.2e}, 0.5 :  {:.2e}, 0.75 : {:.2e}, 0.85 : {:.2e}, 0.95 : {:.2e} \n",
+            ratio_dist_q.query(0.05).unwrap().1,
+            ratio_dist_q.query(0.25).unwrap().1,
+            ratio_dist_q.query(0.5).unwrap().1,
+            ratio_dist_q.query(0.75).unwrap().1,
+            ratio_dist_q.query(0.85).unwrap().1,
+            ratio_dist_q.query(0.95).unwrap().1
+        );
 
         let median_ratio = ratio_dist_q.query(0.5).unwrap().1;
-        println!("\n quality index: ratio of distance to neighbours in origin space / distance to last neighbour in embedded space");
+        println!(
+            "\n quality index: ratio of distance to neighbours in origin space / distance to last neighbour in embedded space"
+        );
         println!(
             "  neighborhood are conserved in radius multiplied by median  : {:.2e}, mean {:.2e} ",
             median_ratio,
@@ -874,9 +900,13 @@ where
         for s in &embedded_scales {
             scales_q.insert(*s);
         }
-        println!("\n\n embedded scales quantiles at 0.05 : {:.2e} , 0.5 :  {:.2e}, 0.95 : {:.2e}, 0.99 : {:.2e}",
-        scales_q.query(0.05).unwrap().1, scales_q.query(0.5).unwrap().1, 
-        scales_q.query(0.95).unwrap().1, scales_q.query(0.99).unwrap().1);
+        println!(
+            "\n\n embedded scales quantiles at 0.05 : {:.2e} , 0.5 :  {:.2e}, 0.95 : {:.2e}, 0.99 : {:.2e}",
+            scales_q.query(0.05).unwrap().1,
+            scales_q.query(0.5).unwrap().1,
+            scales_q.query(0.95).unwrap().1,
+            scales_q.query(0.99).unwrap().1
+        );
         println!();
         //
         EntropyOptim {
@@ -1152,7 +1182,7 @@ where
                 y_i -= &gradient;
             } // end node_neg is accepted
         } // end of loop on neg sampling
-          // final update of node_i
+        // final update of node_i
         *(self.get_embedded_data(node_i).write()) = y_i;
     } // end of ce_optim_from_point
 
@@ -1171,7 +1201,6 @@ where
 } // end of impl EntropyOptim
 
 //===============================================================================================================
-
 
 /// computes the weight of an embedded edge.
 /// scale correspond at density observed at initial point in original graph (hence the asymetry)

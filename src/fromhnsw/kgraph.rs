@@ -5,8 +5,8 @@
 
 use anyhow::anyhow;
 
-use num_traits::cast::FromPrimitive;
 use num_traits::Float;
+use num_traits::cast::FromPrimitive;
 
 // to dump to ripser
 use std::io::Write;
@@ -55,9 +55,8 @@ pub struct KGraphStat<F: Float> {
 impl<F: Float> KGraphStat<F> {
     /// extract a density index on point defined by inverse of max distance of k-th Neighbour
     pub fn get_density_index(&self) -> Vec<F> {
-        let density = self.ranges.iter().map(|x| x.1.recip()).collect();
+        self.ranges.iter().map(|x| x.1.recip()).collect()
         //
-        density
     } // get_density_index
 
     /// return maximum in_degree. Useful to choose between CsMat or dense Array2 representation of graph
@@ -337,9 +336,13 @@ where
         println!("\t max max range : {:.2e} ", max_max_r.to_f32().unwrap());
         println!("\t min min range : {:.2e} ", min_min_r.to_f32().unwrap());
         if quant.count() > 0 {
-            println!("min radius quantile at 0.05 : {:.2e} , 0.5 :  {:.2e}, 0.95 : {:.2e}, 0.99 : {:.2e}", 
-                        quant.query(0.05).unwrap().1, quant.query(0.5).unwrap().1,
-                        quant.query(0.95).unwrap().1, quant.query(0.99).unwrap().1);
+            println!(
+                "min radius quantile at 0.05 : {:.2e} , 0.5 :  {:.2e}, 0.95 : {:.2e}, 0.99 : {:.2e}",
+                quant.query(0.05).unwrap().1,
+                quant.query(0.5).unwrap().1,
+                quant.query(0.95).unwrap().1,
+                quant.query(0.99).unwrap().1
+            );
         }
         //
         KGraphStat {
@@ -375,10 +378,17 @@ where
     let mut mean_nbng = 0u64;
     // We must extract the whole structure , for each point the list of its nearest neighbours and weight<F> of corresponding edge
     let max_nb_conn = hnsw.get_max_nb_connection() as usize; // morally this the k of knn bu we have that for each layer
-                                                             // check consistency between max_nb_conn and nbng
+    // check consistency between max_nb_conn and nbng
     if max_nb_conn < nbng {
-        log::info!("init_from_hnsw_all: number of neighbours asked {} must be less than hnsw max_nb_connection : {} ", nbng, max_nb_conn);
-        println!("init_from_hnsw_all: number of neighbours asked {} must be less than hnsw max_nb_connection : {} ", nbng, max_nb_conn);
+        log::info!(
+            "init_from_hnsw_all: number of neighbours asked {} must be less than hnsw max_nb_connection : {} ",
+            nbng,
+            max_nb_conn
+        );
+        println!(
+            "init_from_hnsw_all: number of neighbours asked {} must be less than hnsw max_nb_connection : {} ",
+            nbng, max_nb_conn
+        );
     } else {
         log::info!(
             "kgraph_from_hnsw_all construction with {} nb_neighbours",
@@ -422,7 +432,7 @@ where
         }
         vec_tmp.sort_unstable_by(|a, b| a.partial_cmp(b).unwrap_or(Ordering::Less));
         assert!(vec_tmp.len() <= 1 || vec_tmp[0].weight <= vec_tmp[1].weight); // temporary , check we did not invert order
-                                                                               // keep only the asked size. Could we keep more ?
+        // keep only the asked size. Could we keep more ?
         if vec_tmp.len() < nbng {
             nb_point_below_nbng += 1;
             mean_deficient_neighbour_size += vec_tmp.len();
@@ -434,9 +444,20 @@ where
             );
             if vec_tmp.is_empty() {
                 let p_id = point.get_point_id();
-                log::error!("kgraph_from_hnsw_all: graph will not be connected, isolated point at layer {}  , pos in layer : {} \n", p_id.0, p_id.1);
-                println!("kgraph_from_hnsw_all: graph will not be connected, isolated point at layer {}  , pos in layer : {} ", p_id.0, p_id.1);
-                return Err(anyhow!("kgraph_from_hnsw_all: graph will not be connected, isolated point at layer {}  , pos in layer : {} ", p_id.0, p_id.1));
+                log::error!(
+                    "kgraph_from_hnsw_all: graph will not be connected, isolated point at layer {}  , pos in layer : {} \n",
+                    p_id.0,
+                    p_id.1
+                );
+                println!(
+                    "kgraph_from_hnsw_all: graph will not be connected, isolated point at layer {}  , pos in layer : {} ",
+                    p_id.0, p_id.1
+                );
+                return Err(anyhow!(
+                    "kgraph_from_hnsw_all: graph will not be connected, isolated point at layer {}  , pos in layer : {} ",
+                    p_id.0,
+                    p_id.1
+                ));
             }
         }
         vec_tmp.truncate(nbng);
@@ -458,8 +479,12 @@ where
         minimum_nbng
     );
     if nb_point_below_nbng > 0 {
-        log::info!("number of points with less than : {} neighbours = {},  mean size for deficient neighbourhhod {:.3e}", nbng, nb_point_below_nbng, 
-                    mean_deficient_neighbour_size as f64/nb_point_below_nbng as f64 );
+        log::info!(
+            "number of points with less than : {} neighbours = {},  mean size for deficient neighbourhhod {:.3e}",
+            nbng,
+            nb_point_below_nbng,
+            mean_deficient_neighbour_size as f64 / nb_point_below_nbng as f64
+        );
     }
     let mean_nbng = mean_nbng as f64 / nb_point as f64;
     if mean_nbng < nbng as f64 {
@@ -562,14 +587,24 @@ where
             } // end of for on m
             vec_tmp.sort_unstable_by(|a, b| a.partial_cmp(b).unwrap_or(Ordering::Less));
             assert!(vec_tmp.len() <= 1 || vec_tmp[0].weight <= vec_tmp[1].weight); // temporary , check we did not invert order
-                                                                                   // keep only the asked size. Could we keep more ?
+            // keep only the asked size. Could we keep more ?
             if vec_tmp.len() < nbng {
                 nb_point_below_nbng += 1;
                 mean_deficient_neighbour_size += vec_tmp.len();
-                log::trace!("neighbours must have {} neighbours, got only {}. layer {}  , pos in layer : {}", nbng, vec_tmp.len(),  p_id.0, p_id.1);
+                log::trace!(
+                    "neighbours must have {} neighbours, got only {}. layer {}  , pos in layer : {}",
+                    nbng,
+                    vec_tmp.len(),
+                    p_id.0,
+                    p_id.1
+                );
                 if vec_tmp.is_empty() {
                     let p_id = point.get_point_id();
-                    log::warn!(" graph will not be connected, isolated point at layer {}  , pos in layer : {} ", p_id.0, p_id.1);
+                    log::warn!(
+                        " graph will not be connected, isolated point at layer {}  , pos in layer : {} ",
+                        p_id.0,
+                        p_id.1
+                    );
                     node_set.swap_remove(&index);
                     continue;
                 }
@@ -594,8 +629,12 @@ where
         minimum_nbng
     );
     if nb_point_below_nbng > 0 {
-        log::info!("number of points with less than : {} neighbours = {},  mean size for deficient neighbourhhod {:.3e}", nbng, 
-                nb_point_below_nbng,  mean_deficient_neighbour_size as f64/nb_point_below_nbng as f64);
+        log::info!(
+            "number of points with less than : {} neighbours = {},  mean size for deficient neighbourhhod {:.3e}",
+            nbng,
+            nb_point_below_nbng,
+            mean_deficient_neighbour_size as f64 / nb_point_below_nbng as f64
+        );
     }
     if mean_nbng < nbng as f64 {
         println!(" mean number of neighbours obtained : {:.3e}", mean_nbng);

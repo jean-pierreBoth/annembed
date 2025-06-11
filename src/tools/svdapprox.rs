@@ -1,3 +1,5 @@
+#![allow(clippy::doc_overindented_list_items)]
+
 //! This module implements a randomized truncated svd of a (m,n) matrix.
 //!
 //! It builds upon the search an orthogonal matrix Q of reduced rank such that
@@ -29,8 +31,8 @@
 // ndarray_linalg::Scalar provides Exp notation + Display + Debug + Serialize and sum on iterators
 
 use rand_distr::{Distribution, StandardNormal};
-use rand_xoshiro::rand_core::SeedableRng;
 use rand_xoshiro::Xoshiro256PlusPlus;
+use rand_xoshiro::rand_core::SeedableRng;
 
 use ndarray::{
     Array, Array1, Array2, ArrayBase, ArrayView, ArrayView1, ArrayView2, ArrayViewMut1, Dim,
@@ -41,7 +43,7 @@ use ndarray::{
 // pub use ndarray_linalg::{layout::MatrixLayout, svddc::JobSvd, Lapack, Scalar, QR};
 
 // use lax::QR_;
-use lax::{layout::MatrixLayout, JobSvd, Lapack};
+use lax::{JobSvd, Lapack, layout::MatrixLayout};
 
 use std::marker::PhantomData;
 
@@ -51,7 +53,7 @@ use num_traits::float::*; // tp get FRAC_1_PI from FloatConst
 use parking_lot::RwLock;
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 
-use sprs::{prod, CsMat, CsMatView, TriMat};
+use sprs::{CsMat, CsMatView, TriMat, prod};
 
 struct RandomGaussianMatrix<F: Float> {
     mat: Array2<F>,
@@ -224,12 +226,11 @@ where
 
     /// return a transposed copy
     pub fn transpose_owned(&self) -> Self {
-        let transposed = match &self.data {
+        match &self.data {
             MatMode::FULL(mat) => MatRepr::<F>::from_array2(mat.t().to_owned()),
             // in CSR mode we must reconvert to csr beccause the transposed view is csc
             MatMode::CSR(csmat) => MatRepr::<F>::from_csrmat(csmat.transpose_view().to_csr()),
-        };
-        transposed
+        }
     } // end of transpose_owned
 
     /// return frobenius norm
@@ -608,7 +609,7 @@ where
 
     // q_mat and y_mat store vector of interest as rows to take care of Rust order.
     let mut q_mat = Vec::<Array1<F>>::new(); // q_mat stores vectors of size m
-                                             // adjust stop_val so that stopping ccriteria provide a relative approximation
+    // adjust stop_val so that stopping ccriteria provide a relative approximation
     let stop_val = epsil / (10. * (2. / f64::FRAC_1_PI()).sqrt());
     log::debug!(" adaptative_range_finder_matrep stop_val : {}", stop_val);
     let proba_failure = 1.0E-3;
@@ -620,7 +621,7 @@ where
     //
     // we store omaga_i vector as row vector as Rust has C order it is easier to extract rows !!
     let mut omega = rng.generate_matrix(Dim([data_shape[1], r])); //  omega is (n, r)
-                                                                  // normalize gaussian so that a each y_i is of norm 1.
+    // normalize gaussian so that a each y_i is of norm 1.
     let coeff_norm = F::from(1. / (data_shape[1] as f64).sqrt()).unwrap();
     omega.mat *= coeff_norm;
     // We could store Y = data * omega as matrix (m,r), but as we use Y column,
@@ -661,7 +662,12 @@ where
         // get norm of current y vector
         let n_j = norm_frobenius_full(&y_vec[j].read().view());
         if n_j < num_traits::Float::sqrt(F::epsilon()) {
-            log::info!("adaptative_range_finder_matrep returning  at nb_iter {} with n_j {:.3e} and rank {:?} ", nb_iter, n_j, q_mat.len());
+            log::info!(
+                "adaptative_range_finder_matrep returning  at nb_iter {} with n_j {:.3e} and rank {:?} ",
+                nb_iter,
+                n_j,
+                q_mat.len()
+            );
             break;
         }
         let q_j = &y_vec[j].write().view_mut() / n_j;
@@ -747,11 +753,8 @@ pub fn check_range_approx_repr<F>(a_mat: &MatRepr<F>, q_mat: &Array2<F>) -> f64
 where
     F: Float + lax::Lapack + ndarray::ScalarOperand + num_traits::MulAdd + sprs::MulAcc,
 {
-    let norm_residue = match &a_mat.data {
-        MatMode::FULL(mat) => {
-            let norm_residue = check_range_approx(&mat.view(), &q_mat.view());
-            norm_residue
-        }
+    match &a_mat.data {
+        MatMode::FULL(mat) => check_range_approx(&mat.view(), &q_mat.view()),
         MatMode::CSR(csr_mat) => {
             let b = transpose_dense_mult_csr(q_mat, csr_mat);
             let residue = csr_mat.to_dense() - &(q_mat.dot(&b));
@@ -759,8 +762,7 @@ where
             let norm_residue = norm_frobenius_full(&residue.view());
             norm_residue.to_f64().unwrap()
         }
-    };
-    norm_residue
+    }
 } // end of check_range_approx_repr
 
 //================================ SVD part ===============================
@@ -875,7 +877,9 @@ where
         };
         let slice_for_svd_opt = b.as_slice_mut();
         if slice_for_svd_opt.is_none() {
-            println!("direct_svd Matrix cannot be transformed into a slice : not contiguous or not in standard order");
+            println!(
+                "direct_svd Matrix cannot be transformed into a slice : not contiguous or not in standard order"
+            );
             return Err(String::from("not contiguous or not in standard order"));
         }
         // use divide conquer (calls lapack gesdd), faster but could use svd (lapack gesvd)
@@ -945,17 +949,10 @@ where
     F: Float + std::iter::Sum + FromPrimitive + ndarray::ScalarOperand + sprs::MulAcc,
 {
     //
-    let norm_l2 = match &mat.data {
-        MatMode::FULL(mat) => {
-            let norm_l2 = norm_frobenius_full(&mat.view());
-            norm_l2
-        }
-        MatMode::CSR(csr_mat) => {
-            let norm_l2 = norm_frobenius_csmat(&csr_mat.view());
-            norm_l2
-        }
-    };
-    norm_l2
+    match &mat.data {
+        MatMode::FULL(mat) => norm_frobenius_full(&mat.view()),
+        MatMode::CSR(csr_mat) => norm_frobenius_csmat(&csr_mat.view()),
+    }
 } // end of norm_frobenius_repr
 
 //                  Some utilities
@@ -1172,8 +1169,8 @@ mod tests {
         let mut values = Vec::<f64>::with_capacity(6);
         // row 0
         for item in mat.indexed_iter() {
-            rows.push(item.0 .0);
-            cols.push(item.0 .1);
+            rows.push(item.0.0);
+            cols.push(item.0.1);
             values.push(*item.1);
         }
         //

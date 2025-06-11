@@ -1,16 +1,18 @@
+#![allow(clippy::doc_overindented_list_items)]
+
 //!  Diffusion maps embedding.
 //!
 //! This module (presently) computes a diffusion embedding for the kernel constructed from nearest neighbours
 //! stored in a Hnsw structure, see in module [embedder](crate::embedder).  
 //!
-//! Bibilography
+//! Bibliography:
 //!   - *Diffusion Maps*. Coifman Lafon Appl. Comput. Harmon. Anal. 21 (2006) 5–30
 //!   - *Self-Tuning Spectral Clustering*  Zelkin-Manor Perrona NIPS 2004
 //!   - *From graph to manifold Laplacian: The convergence rate*. Singer Appl. Comput. Harmon. Anal. 21 (2006)
 //!   - *Variables bandwith diffusion kernels* Berry and Harlim. Appl. Comput. Harmon. Anal. 40 (2016) 68–96
 
-use num_traits::cast::FromPrimitive;
 use num_traits::Float;
+use num_traits::cast::FromPrimitive;
 
 use indexmap::IndexSet;
 use quantiles::ckms::CKMS;
@@ -438,7 +440,7 @@ impl DiffusionMaps {
             let csr_mat: CsMat<f32> = laplacian.to_csr();
             GraphLaplacian::new(MatRepr::from_csrmat(csr_mat), degrees)
         } // end case CsMat
-          //
+        //
     }
 
     // remap node params expressing distance to proba knowing scale to adopt
@@ -705,10 +707,14 @@ impl DiffusionMaps {
         for q in values {
             quant_densities.insert((*q).into());
         }
-        println!("quantiles at 0.01 : {:.2e}, 0.05 : {:.2e} , 0.5 :  {:.2e}, 0.95 : {:.2e}, 0.99 : {:.2e}",
-        quant_densities.query(0.01).unwrap().1,
-        quant_densities.query(0.05).unwrap().1, quant_densities.query(0.5).unwrap().1,
-        quant_densities.query(0.95).unwrap().1, quant_densities.query(0.99).unwrap().1);
+        println!(
+            "quantiles at 0.01 : {:.2e}, 0.05 : {:.2e} , 0.5 :  {:.2e}, 0.95 : {:.2e}, 0.99 : {:.2e}",
+            quant_densities.query(0.01).unwrap().1,
+            quant_densities.query(0.05).unwrap().1,
+            quant_densities.query(0.5).unwrap().1,
+            quant_densities.query(0.95).unwrap().1,
+            quant_densities.query(0.99).unwrap().1
+        );
         println!();
         //
         quant_densities
@@ -741,7 +747,7 @@ impl DiffusionMaps {
             let y_i = neighbour.node; // y_i is a NodeIx = usize
             rho_y_s.push(kgraph.get_neighbours()[y_i][0].weight);
         } // end of for i
-          //
+        //
         rho_y_s.push(rho_x);
         let size = rho_y_s.len();
         rho_y_s.into_iter().sum::<F>() / F::from(size).unwrap()

@@ -1,4 +1,5 @@
-//! annembed binary.  
+#![allow(clippy::doc_overindented_list_items)]
+//! dmapembed binary.  
 //!
 //! This module provides access to diffusion map data embedding via nearest neighbour computed by hnsw.  
 //! Command syntax is:  
@@ -9,25 +10,32 @@
 //! hnsw is an optional subcommand to change default parameters of the Hnsw structure. See [hnsw_rs](https://crates.io/crates/hnsw_rs).  
 //!
 //!
-//! - Parameters for the hnsw subcommand. For more details see [hnsw_rs](https://crates.io/crates/hnsw_rs).   
-//!     --nbconn  : defines the number of connections by node in a layer.   Can range from 4 to 64 or more if necessary and enough memory.  
-//!     --dist    : name of distance to use: "DistL1", "DistL2", "DistCosine", "DistJeyffreys".  
-//!     --ef      : controls the with of the search, a good guess is between 24 and 64 or more if necessary.  
-//!     --knbn    : the number of nodes to use in retrieval requests.  
+//! - Parameters for the hnsw subcommand. For more details see [hnsw_rs](https://crates.io/crates/hnsw_rs).
+//!   
+//!   --nbconn  : defines the number of connections by node in a layer.  Can range from 4 to 64 or more if necessary and enough memory.  
+//!
+//!   --dist    : name of distance to use: "DistL1", "DistL2", "DistCosine", "DistJeyffreys".  
+//!
+//!   --ef      : controls the with of the search, a good guess is between 24 and 64 or more if necessary.
+//!   
+//!   --knbn    : the number of nodes to use in retrieval requests.  
 //!
 //! - Parameters for Diffusion Maps.  
-//!     The options give access to some fields of the \[DiffusinMapParams\] structure.  
+//!   The options give access to some fields of the [DiffusionMapParams](annembed::diffmaps::DiffusionParams) structure.  
 //!
-//!     --knbn     : the number of neighbours to use in graph laplacian. For memory and speed a range between 8 and 16 is recommended.  
-//!                  Defaults to 10.  
-//!     --layer    : optional, in case of large data, the embedding is restricted to the data above layer given in arg otherwise all layers are used.  
-//!     --dim      : optional, dimension of the embedding , default to 2.  
-//!                  In fact there are 20 dimension dumped in the csv file. The julia script visu.jl by default plots the 2 first but
-//!                  provides arguments for plotting various 2d plots.
-//!     --alfa     : default to 1.
-//!     --beta     : default to 0. (corresponds to data sampled uniformly).
-//!                  For highly variable density beta can be adjusted between in the range 0. .. -1.  
-//!     --sampling : optional, for large data defines the fraction < 1. of sampled data
+//!   --knbn     : the number of neighbours to use in graph laplacian. For memory and speed a range between 8 and 16 is recommended.  
+//!     Defaults to 10.
+//!  
+//!   --layer    : optional, in case of large data, the embedding is restricted to the data above layer given in arg otherwise all layers are used.
+//!   
+//!   --dim      : optional, dimension of the embedding , default to 2. In fact there are 20 dimension dumped in the csv file. The julia script visu.jl by default plots the first 2 but provides arguments for plotting various 2d plots.  
+//!
+//!   --alfa     : default to 1.
+//!
+//!   --beta     : default to 0. (corresponds to data sampled uniformly).  
+//!     For highly variable density beta can be adjusted between in the range 0. .. -1.
+//!   
+//!   --sampling : optional, for large data defines the fraction < 1. of sampled data
 //!
 
 //!     
@@ -45,7 +53,7 @@ use clap::{Arg, ArgAction, ArgMatches, Command};
 use hnsw_rs::prelude::*;
 
 use annembed::fromhnsw::kgproj::KGraphProjection;
-use annembed::fromhnsw::kgraph::{kgraph_from_hnsw_all, KGraph};
+use annembed::fromhnsw::kgraph::{KGraph, kgraph_from_hnsw_all};
 use annembed::prelude::*;
 
 /// Defines parameters to drive ann computations. See the crate [hnsw_rs](https://crates.io/crates/hnsw_rs)
@@ -60,7 +68,7 @@ pub struct HnswParams {
     /// distance to use in Hnsw. Default is "DistL2". Other choices are "DistL1", "DistCosine", DistJeffreys
     distance: String,
     //scale_modification factor, must be [0.2, 1]
-    scale_modification : f64,
+    scale_modification: f64,
 } // end of struct HnswParams
 
 impl HnswParams {
@@ -75,7 +83,13 @@ impl HnswParams {
     }
 
     #[allow(unused)]
-    pub fn new(max_conn: usize, ef_c: usize, knbn: usize, distance: String, scale_modification: f64) -> Self {
+    pub fn new(
+        max_conn: usize,
+        ef_c: usize,
+        knbn: usize,
+        distance: String,
+        scale_modification: f64,
+    ) -> Self {
         HnswParams {
             max_conn,
             ef_c,
@@ -488,7 +502,7 @@ fn get_kgraph_with_distname(
     hnswparams: &HnswParams,
     nb_layer: usize,
 ) -> KGraph<f64> {
-    let kgraph = match hnswparams.distance.as_str() {
+    match hnswparams.distance.as_str() {
         "DistL2" => get_kgraph::<DistL2>(data_with_id, hnswparams, nb_layer),
         "DistL1" => get_kgraph::<DistL1>(data_with_id, hnswparams, nb_layer),
         "DistJeffreys" => get_kgraph::<DistJeffreys>(data_with_id, hnswparams, nb_layer),
@@ -498,8 +512,7 @@ fn get_kgraph_with_distname(
             log::error!("unknown distance : {}", hnswparams.distance);
             std::process::exit(1);
         }
-    };
-    kgraph
+    }
 } // end of get_kgraph_with_distname
 
 fn get_kgraphproj_with_distname(
@@ -509,7 +522,7 @@ fn get_kgraphproj_with_distname(
     layer_proj: usize,
 ) -> KGraphProjection<f64> {
     //
-    let kgraph_projection = match hnswparams.distance.as_str() {
+    match hnswparams.distance.as_str() {
         "DistL2" => get_kgraph_projection::<DistL2>(data_with_id, hnswparams, nb_layer, layer_proj),
         "DistL1" => get_kgraph_projection::<DistL1>(data_with_id, hnswparams, nb_layer, layer_proj),
         "DistJeffreys" => {
@@ -523,6 +536,5 @@ fn get_kgraphproj_with_distname(
             log::error!("unknown distance : {}", hnswparams.distance);
             std::process::exit(1);
         }
-    };
-    kgraph_projection
+    }
 } // end of get_kgraphproj_with_distname
