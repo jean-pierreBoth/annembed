@@ -100,7 +100,7 @@ fn union(parents: &mut [usize], ranks: &mut [usize], mut a: usize, mut b: usize)
 pub fn kruskal_indices<C>(
     number_of_nodes: usize,
     edges: &[(usize, usize, C)],
-) -> impl Iterator<Item = (usize, usize, C)>
+) -> impl Iterator<Item = (usize, usize, C)> + use<C>
 where
     C: Clone + PartialOrd,
 {
@@ -124,12 +124,12 @@ where
 /// Find a minimum-spanning-tree. From a collection of
 /// weighted edges, return a vector of edges forming
 /// a minimum-spanning-tree.
-pub fn kruskal<N, C>(edges: &[(N, N, C)]) -> impl Iterator<Item = (N, N, C)>
+pub fn kruskal<'a, N, C>(edges: &'a [(N, N, C)]) -> impl Iterator<Item = (N, N, C)> + use<'a, N, C>
 where
     N: Clone + Hash + Eq,
     C: Clone + PartialOrd,
 {
-    let mut nodes = IndexSet::new();
+    let mut nodes = IndexSet::<N>::new();
     let edges = edges
         .iter()
         .map(|(a, b, w)| {

@@ -8,7 +8,7 @@ license = "MIT/Apache-2.0"
 readme = "README.md"
 keywords = ["algorithms", "ann", "embedding", "dimension-reduction", "umap"]
 documentation = "https://docs.rs/annembed"
-edition = "2021"
+edition = "2024"
 
 
 [profile.release]
@@ -72,13 +72,13 @@ sprs = { version = "0.11" }
 blas-src = { version = "0.11", optional = true, features = ["accelerate"] }
 
 
-indexmap = { version = "2.2" }
+indexmap = { version = "2.9" }
 memory-stats = { version = "1.1", features = ["always_use_statm"] }
 
 # hnsw_rs = { git = "https://gitlab.com/jpboth/hnswlib-rs.git" }
 # hnsw_rs = { git = "https://github.com/jean-pierreBoth/hnswlib-rs" }
-# hnsw_rs = { path = "../hnswlib-rs" }
-hnsw_rs = { version = "0.3" }
+hnsw_rs = { path = "../hnswlib-rs" }
+# hnsw_rs = { version = "0.3" }
 
 
 # rand utilis
