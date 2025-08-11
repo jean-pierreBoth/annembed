@@ -77,7 +77,7 @@ pub(crate) fn get_header_size(filepath: &Path) -> anyhow::Result<usize> {
             "fn get_header_size : could not open file {:?}",
             filepath.as_os_str()
         );
-        println!(
+        log::error!(
             "fn get_header_size : could not open file {:?}",
             filepath.as_os_str()
         );
@@ -132,7 +132,7 @@ where
             "ProcessingState reload_json : reload could not open file {:?}",
             filepath.as_os_str()
         );
-        println!(
+        log::error!(
             "directed_from_csv could not open file {:?}",
             filepath.as_os_str()
         );
@@ -182,7 +182,7 @@ where
             }
         } else {
             if record.len() != nb_fields {
-                println!(
+                log::error!(
                     "non constant number of fields at record {} first record has {}",
                     num_record, nb_fields
                 );

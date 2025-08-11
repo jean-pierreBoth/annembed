@@ -76,7 +76,7 @@ mod tests {
         let f = |x: f32| x * x;
         //
         let beta = dichotomy_solver(true, f, 0., 5., 2.).unwrap();
-        println!("beta : {}", beta);
+        log::debug!("beta : {}", beta);
         assert!((beta - 2.0f32.sqrt()).abs() < 1.0E-4);
     } // test_dichotomy_inc
 
@@ -85,7 +85,7 @@ mod tests {
         let f = |x: f32| 1.0f32 / (x * x);
         //
         let beta = dichotomy_solver(false, f, 0.2, 5., 1. / 2.).unwrap();
-        println!("beta : {}", beta);
+        log::debug!("beta : {}", beta);
         assert!((beta - 2.0f32.sqrt()).abs() < 1.0E-4);
     } // test_dichotomy_dec
 }

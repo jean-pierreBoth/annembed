@@ -151,7 +151,7 @@ pub fn load_mnist_train_data(dname: &str) -> anyhow::Result<MnistData> {
     let image_path = PathBuf::from(image_fname.clone());
     let image_file_res = OpenOptions::new().read(true).open(&image_path);
     if image_file_res.is_err() {
-        println!("could not open image file : {:?}", image_fname);
+        log::error!("could not open image file : {:?}", image_fname);
         return Err(anyhow!("io error"));
     }
 
@@ -160,7 +160,7 @@ pub fn load_mnist_train_data(dname: &str) -> anyhow::Result<MnistData> {
     let label_path = PathBuf::from(label_fname.clone());
     let label_file_res = OpenOptions::new().read(true).open(&label_path);
     if label_file_res.is_err() {
-        println!("could not open label file : {:?}", label_fname);
+        log::error!("could not open label file : {:?}", label_fname);
         return Err(anyhow!("io error"));
     }
     //
@@ -173,7 +173,7 @@ pub fn load_mnist_test_data(dname: &str) -> anyhow::Result<MnistData> {
     let image_path = PathBuf::from(image_fname.clone());
     let image_file_res = OpenOptions::new().read(true).open(&image_path);
     if image_file_res.is_err() {
-        println!("could not open image file : {:?}", image_fname);
+        log::error!("could not open image file : {:?}", image_fname);
         return Err(anyhow!("io error"));
     }
 
@@ -182,7 +182,7 @@ pub fn load_mnist_test_data(dname: &str) -> anyhow::Result<MnistData> {
     let label_path = PathBuf::from(label_fname.clone());
     let label_file_res = OpenOptions::new().read(true).open(&label_path);
     if label_file_res.is_err() {
-        println!("could not open label file : {:?}", label_fname);
+        log::error!("could not open label file : {:?}", label_fname);
         return Err(anyhow!("io error"));
     }
     //

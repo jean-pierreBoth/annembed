@@ -79,7 +79,7 @@ impl GraphLaplacian {
         let svd_res = svdapprox.direct_svd(svdmode);
         log::trace!("exited svd");
         if svd_res.is_err() {
-            println!("svd approximation failed");
+            log::error!("svd approximation failed");
             std::panic!();
         }
         self.check_norms(svd_res.as_ref().unwrap());
@@ -104,7 +104,7 @@ impl GraphLaplacian {
         let (nb_rows, nb_cols) = u.dim();
         for i in 0..nb_cols.min(3) {
             let norm = norm_frobenius_full(&u.column(i));
-            println!(" vector {} norm {:.2e} ", i, norm);
+            log::debug!(" vector {} norm {:.2e} ", i, norm);
         }
         log::trace!("end of check_norms");
     }
@@ -122,14 +122,14 @@ pub(crate) fn svd_f32(b: &mut Array2<f32>) -> Result<SvdResult<f32>, String> {
     };
     let slice_for_svd_opt = b.as_slice_mut();
     if slice_for_svd_opt.is_none() {
-        println!("direct_svd Matrix cannot be transformed into a slice : not contiguous or not in standard order");
+        log::error!("direct_svd Matrix cannot be transformed into a slice : not contiguous or not in standard order");
         return Err(String::from("not contiguous or not in standard order"));
     }
     // use divide conquer (calls lapack gesdd), faster but could use svd (lapack gesvd)
     log::trace!("direct_svd calling svddc driver");
     let res_svd_b = f32::svddc(layout, JobSvd::Some, slice_for_svd_opt.unwrap());
     if res_svd_b.is_err() {
-        println!("direct_svd, svddc failed");
+        log::error!("direct_svd, svddc failed");
     };
     // we have to decode res and fill in SvdApprox fields.
     // lax does encapsulte dgesvd (double) and sgesvd (single)  which returns U and Vt as vectors.

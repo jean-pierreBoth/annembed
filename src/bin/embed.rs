@@ -175,8 +175,8 @@ fn parse_embed_group(
 
 #[allow(clippy::range_zip_with_len)]
 pub fn main() {
-    println!("\n ************** initializing logger *****************\n");
     env_logger::Builder::from_default_env().init();
+    log::info!("\n ************** initializing logger *****************\n");
     log::info!("logger initialized from default environment");
     //
     let hnswparams: HnswParams;
@@ -330,7 +330,7 @@ pub fn main() {
             }
             _ => {
                 log::error!("parsing hnsw command failed");
-                println!("exiting with error {}", res.err().as_ref().unwrap());
+                log::error!("exiting with error {}", res.err().as_ref().unwrap());
                 //  log::error!("exiting with error {}", res.err().unwrap());
                 std::process::exit(1);
             }
@@ -351,7 +351,7 @@ pub fn main() {
         }
         _ => {
             log::error!("parsing embed cmd failed");
-            println!("exiting with error {}", res.err().as_ref().unwrap());
+            log::error!("exiting with error {}", res.err().as_ref().unwrap());
             //  log::error!("exiting with error {}", res.err().unwrap());
             std::process::exit(1);
         }
@@ -403,7 +403,7 @@ pub fn main() {
         let hubdim = true; // to get hubness and intrinsic dimension info
         let kgraph = get_kgraph_with_distname(&data_with_id, &hnswparams, nb_layer, hubdim);
         let cpu_time: Duration = cpu_start.elapsed();
-        println!(
+        log::info!(
             " graph construction sys time(s) {:?} cpu time {:?}",
             sys_now.elapsed().unwrap().as_secs(),
             cpu_time.as_secs()
@@ -482,7 +482,7 @@ where
         let sys_now = SystemTime::now();
         let dim_stat = kgraph.estimate_intrinsic_dim(sampling_size);
         let cpu_time: Duration = cpu_start.elapsed();
-        println!(
+        log::info!(
             "\n dimension estimation sys time(ms) : {:.3e},  cpu time(ms) {:.3e}\n",
             sys_now.elapsed().unwrap().as_millis(),
             cpu_time.as_millis()
@@ -495,7 +495,7 @@ where
                 dim_stat.0,
                 dim_stat.1
             );
-            println!(
+            log::info!(
                 " dimension estimation with nbpoints : {}, dim : {:.3e}, sigma = {:.3e}",
                 sampling_size, dim_stat.0, dim_stat.1
             );
@@ -504,7 +504,7 @@ where
         let hubness = hubness::Hubness::new(&kgraph);
         let s3_hubness = hubness.get_standard3m();
         log::info!("\n graph hubness estimation : {:.3e}", s3_hubness);
-        println!("\n graph hubness estimation : {:.3e} \n", s3_hubness);
+        log::info!("\n graph hubness estimation : {:.3e} \n", s3_hubness);
         let _histo = hubness.get_hubness_histogram();
         let _kgraph_stats = kgraph.get_kraph_stats();
     }

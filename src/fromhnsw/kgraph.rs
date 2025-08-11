@@ -330,13 +330,13 @@ where
             mean_in_degree /= in_degrees.len() as f32;
         }
         //
-        println!("\n minimal graph statistics \n");
-        println!("\t max in degree : {:.2e}", max_in_degree);
-        println!("\t mean in degree : {:.2e}", mean_in_degree);
-        println!("\t max max range : {:.2e} ", max_max_r.to_f32().unwrap());
-        println!("\t min min range : {:.2e} ", min_min_r.to_f32().unwrap());
+        log::info!("\n minimal graph statistics \n");
+        log::info!("\t max in degree : {:.2e}", max_in_degree);
+        log::info!("\t mean in degree : {:.2e}", mean_in_degree);
+        log::info!("\t max max range : {:.2e} ", max_max_r.to_f32().unwrap());
+        log::info!("\t min min range : {:.2e} ", min_min_r.to_f32().unwrap());
         if quant.count() > 0 {
-            println!(
+            log::info!(
                 "min radius quantile at 0.05 : {:.2e} , 0.5 :  {:.2e}, 0.95 : {:.2e}, 0.99 : {:.2e}",
                 quant.query(0.05).unwrap().1,
                 quant.query(0.5).unwrap().1,
@@ -385,7 +385,7 @@ where
             nbng,
             max_nb_conn
         );
-        println!(
+        log::warn!(
             "init_from_hnsw_all: number of neighbours asked {} must be less than hnsw max_nb_connection : {} ",
             nbng, max_nb_conn
         );
@@ -449,7 +449,7 @@ where
                     p_id.0,
                     p_id.1
                 );
-                println!(
+                log::error!(
                     "kgraph_from_hnsw_all: graph will not be connected, isolated point at layer {}  , pos in layer : {} ",
                     p_id.0, p_id.1
                 );
@@ -490,8 +490,8 @@ where
     if mean_nbng < nbng as f64 {
         log::warn!(" mean number of neighbours obtained : {:.3e}", mean_nbng);
         log::warn!(" possibly use hnsw.set_keeping_pruned(true)");
-        println!(" mean number of neighbours obtained : {:.3e}", mean_nbng);
-        println!(" possibly use hnsw.set_keeping_pruned(true)");
+        log::warn!(" mean number of neighbours obtained : {:.3e}", mean_nbng);
+        log::warn!(" possibly use hnsw.set_keeping_pruned(true)");
     }
     //
     Ok(KGraph {
@@ -637,8 +637,8 @@ where
         );
     }
     if mean_nbng < nbng as f64 {
-        println!(" mean number of neighbours obtained : {:.3e}", mean_nbng);
-        println!(" possibly use hnsw.reset_keeping_pruned(true)");
+        log::warn!(" mean number of neighbours obtained : {:.3e}", mean_nbng);
+        log::warn!(" possibly use hnsw.reset_keeping_pruned(true)");
     }
     //
     Ok(KGraph {
@@ -702,7 +702,7 @@ mod tests {
         let knbn = 20;
         //
         log::debug!("test_full_hnsw");
-        println!("\n\n test_serial nb_elem {:?}", nb_elem);
+        log::debug!("\n\n test_serial nb_elem {:?}", nb_elem);
         //
         let data = gen_rand_data_f32(nb_elem, dim);
         let data_with_id: Vec<(&Vec<f32>, usize)> = data
@@ -727,7 +727,7 @@ mod tests {
         // make a test for dimension estimation
         let id = 10;
         let dimension = kgraph.intrinsic_dim_at_data_id(&id).unwrap();
-        println!("dimension around point : {}, dim = {:.3e}", id, dimension);
+        log::debug!("dimension around point : {}, dim = {:.3e}", id, dimension);
         log::info!(
             "\n dimension around point : {}, dim = {:.3e}",
             id,
@@ -742,7 +742,7 @@ mod tests {
             dimension.0,
             dimension.1
         );
-        println!(
+        log::debug!(
             "\n estimation of dimension : {:.3e}, sigma : {:.3e} ",
             dimension.0, dimension.1
         );
@@ -761,7 +761,7 @@ mod tests {
         let dim = 30;
         let knbn = 20;
         //
-        println!("\n\n test_serial nb_elem {:?}", nb_elem);
+        log::debug!("\n\n test_serial nb_elem {:?}", nb_elem);
         //
         let data = gen_rand_data_f32(nb_elem, dim);
         let data_with_id: Vec<(&Vec<f32>, usize)> = data.iter().zip(0..data.len()).collect();

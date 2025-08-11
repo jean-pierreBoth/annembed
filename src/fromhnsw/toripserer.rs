@@ -138,8 +138,8 @@ where
         let graph_projection = KGraphProjection::<f32>::new(self.hnsw, knbn, layer);
         let quant = graph_projection.get_projection_distance_quant();
         if quant.count() > 0 {
-            println!("\n\n projection distance from lower layers to upper layers");
-            println!(
+            log::debug!("\n\n projection distance from lower layers to upper layers");
+            log::debug!(
                 "\n quantile at 0.05 : {:.2e} , 0.5 :  {:.2e}, 0.95 : {:.2e}, 0.99 : {:.2e}",
                 quant.query(0.05).unwrap().1,
                 quant.query(0.5).unwrap().1,

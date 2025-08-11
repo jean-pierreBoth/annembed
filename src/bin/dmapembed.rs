@@ -181,8 +181,8 @@ fn parse_dmap_group(
 
 #[allow(clippy::range_zip_with_len)]
 pub fn main() {
-    println!("initializing default logger from environment ...");
     env_logger::Builder::from_default_env().init();
+    log::info!("initializing default logger from environment ...");
     log::info!("logger initialized from default environment");
     //
     let hnswparams: HnswParams;
@@ -317,7 +317,7 @@ pub fn main() {
             }
             _ => {
                 log::error!("parsing hnsw command failed");
-                println!("exiting with error {}", res.err().as_ref().unwrap());
+                log::error!("exiting with error {}", res.err().as_ref().unwrap());
                 //  log::error!("exiting with error {}", res.err().unwrap());
                 std::process::exit(1);
             }
@@ -338,7 +338,7 @@ pub fn main() {
         }
         _ => {
             log::error!("parsing embed cmd failed");
-            println!("exiting with error {}", res.err().as_ref().unwrap());
+            log::error!("exiting with error {}", res.err().as_ref().unwrap());
             //  log::error!("exiting with error {}", res.err().unwrap());
             std::process::exit(1);
         }
@@ -390,7 +390,7 @@ pub fn main() {
     if dmapparams.get_hlayer() == 0 {
         let kgraph = get_kgraph_with_distname(&data_with_id, &hnswparams, nb_layer);
         let cpu_time: Duration = cpu_start.elapsed();
-        println!(
+        log::info!(
             " graph construction sys time(s) {:?} cpu time {:?}",
             sys_now.elapsed().unwrap().as_secs(),
             cpu_time.as_secs()

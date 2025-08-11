@@ -73,15 +73,15 @@ where
                 node_params[*i] = param.1.clone();
             }
             (i, None) => {
-                println!("to_proba_edges , node rank {}, has no neighbour, use hnsw.set_keeping_pruned(true)", i);
+                log::error!("to_proba_edges , node rank {}, has no neighbour, use hnsw.set_keeping_pruned(true)", i);
                 log::error!("to_proba_edges , node rank {}, has no neighbour, use hnsw.set_keeping_pruned(true)", i);
                 std::process::exit(1);
             }
         };
     }
     // dump info on quantiles
-    println!("\n constructed initial space");
-    println!(
+    log::debug!("\n constructed initial space");
+    log::debug!(
         "\n scales quantile at 0.05 : {:.2e} , 0.5 :  {:.2e}, 0.95 : {:.2e}, 0.99 : {:.2e}",
         scale_q.query(0.05).unwrap().1,
         scale_q.query(0.5).unwrap().1,
@@ -89,7 +89,7 @@ where
         scale_q.query(0.99).unwrap().1
     );
     //
-    println!(
+    log::debug!(
         "\n edge weight quantile at 0.05 : {:.2e} , 0.5 :  {:.2e}, 0.95 : {:.2e}, 0.99 : {:.2e}",
         weight_q.query(0.05).unwrap().1,
         weight_q.query(0.5).unwrap().1,
@@ -97,14 +97,14 @@ where
         weight_q.query(0.99).unwrap().1
     );
     //
-    println!(
+    log::debug!(
         "\n perplexity quantile at 0.05 : {:.2e} , 0.5 :  {:.2e}, 0.95 : {:.2e}, 0.99 : {:.2e}",
         perplexity_q.query(0.05).unwrap().1,
         perplexity_q.query(0.5).unwrap().1,
         perplexity_q.query(0.95).unwrap().1,
         perplexity_q.query(0.99).unwrap().1
     );
-    println!();
+    log::debug!("");
     //
     NodeParams::new(node_params, max_nbng)
 } // end of construction of node params

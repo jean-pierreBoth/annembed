@@ -192,7 +192,7 @@ where
             log::error!("Embedder::h_embed first step failed");
             return res_first;
         }
-        println!(
+        log::info!(
             " first step embedding sys time(ms) {:.2e} cpu time(ms) {:.2e}",
             sys_start.elapsed().unwrap().as_millis(),
             cpu_start.elapsed().as_millis()
@@ -210,7 +210,7 @@ where
         // use projection to initialize large graph
         let quant = graph_projection.get_projection_distance_quant();
         if quant.count() > 0 {
-            println!(
+            log::debug!(
                 " projection distance quantile at 0.05 : {:.2e} , 0.5 :  {:.2e}, 0.95 : {:.2e}, 0.99 : {:.2e}",
                 quant.query(0.05).unwrap().1,
                 quant.query(0.5).unwrap().1,
@@ -252,7 +252,7 @@ where
         let embedding_res =
             self.entropy_optimize(&self.parameters, self.initial_embedding.as_ref().unwrap());
         //
-        println!(
+        log::info!(
             " first + second step embedding sys time(s) {:.2e} cpu time(s) {:.2e}",
             sys_start.elapsed().unwrap().as_secs(),
             cpu_start.elapsed().as_secs()
@@ -314,7 +314,7 @@ where
                 );
             }
 
-            println!(
+            log::info!(
                 " dmap initialization sys time(ms) {:.2e} cpu time(ms) {:.2e}",
                 sys_start.elapsed().unwrap().as_millis(),
                 cpu_start.elapsed().as_millis()
@@ -644,16 +644,16 @@ where
             .fold(0, |acc, x| if *x == 0 { acc + 1 } else { acc });
         let mean_nbmatch: f64 = nodes_match.iter().sum::<usize>() as f64
             / (nodes_match.len() - nb_without_match) as f64;
-        println!("\n\n a guess at quality ");
-        println!(
+        log::info!("\n\n a guess at quality ");
+        log::info!(
             "  neighbourhood size used in embedding : {}",
             self.get_kgraph_nbng()
         );
-        println!(
+        log::info!(
             "  nb neighbourhoods without a match : {},  mean number of neighbours conserved when match : {:.3e}",
             nb_without_match, mean_nbmatch
         );
-        println!(
+        log::info!(
             "  embedded radii quantiles at 0.05 : {:.2e} , 0.25 : {:.2e}, 0.5 :  {:.2e}, 0.75 : {:.2e}, 0.85 : {:.2e}, 0.95 : {:.2e} \n",
             embedded_radii.query(0.05).unwrap().1,
             embedded_radii.query(0.25).unwrap().1,
@@ -665,12 +665,12 @@ where
         //
         // The smaller the better!
         // we give quantiles on ratio : distance of neighbours in origin space / distance of last neighbour in embedded space
-        println!("\n statistics on conservation of neighborhood (of size nbng)");
-        println!("  neighbourhood size used in target space : {}", nbng);
-        println!(
+        log::info!("\n statistics on conservation of neighborhood (of size nbng)");
+        log::info!("  neighbourhood size used in target space : {}", nbng);
+        log::info!(
             "  quantiles on ratio : distance in embedded space of neighbours of origin space / distance of last neighbour in embedded space"
         );
-        println!(
+        log::info!(
             "  quantiles at 0.05 : {:.2e} , 0.25 : {:.2e}, 0.5 :  {:.2e}, 0.75 : {:.2e}, 0.85 : {:.2e}, 0.95 : {:.2e} \n",
             ratio_dist_q.query(0.05).unwrap().1,
             ratio_dist_q.query(0.25).unwrap().1,
@@ -681,15 +681,15 @@ where
         );
 
         let median_ratio = ratio_dist_q.query(0.5).unwrap().1;
-        println!(
+        log::info!(
             "\n quality index: ratio of distance to neighbours in origin space / distance to last neighbour in embedded space"
         );
-        println!(
+        log::info!(
             "  neighborhood are conserved in radius multiplied by median  : {:.2e}, mean {:.2e} ",
             median_ratio,
             mean_ratio.0 / mean_ratio.1 as f64
         );
-        println!();
+        log::info!("");
         //
         let mut csv_dist = Writer::from_path("first_dist.csv").unwrap();
         let _res = write_csv_labeled_array2(
@@ -771,7 +771,7 @@ where
         let start = ProcessTime::now();
         let initial_ce = ce_optimization.ce_compute_threaded();
         let cpu_time: Duration = start.elapsed();
-        println!(
+        log::info!(
             " initial cross entropy value {:.2e},  in time {:?}",
             initial_ce, cpu_time
         );
@@ -802,13 +802,13 @@ where
             //            let cpu_time: Duration = start.elapsed();
             //            log::debug!("ce after grad iteration time(ms) {:.2e} grad iter {:.2e}",  cpu_time.as_millis(), ce_optimization.ce_compute_threaded());
         }
-        println!(
+        log::info!(
             " gradient iterations sys time(s) {:.2e} , cpu_time(s) {:.2e}",
             sys_start.elapsed().unwrap().as_secs(),
             cpu_start.elapsed().as_secs()
         );
         let final_ce = ce_optimization.ce_compute_threaded();
-        println!(" final cross entropy value {:.2e}", final_ce);
+        log::info!(" final cross entropy value {:.2e}", final_ce);
         // return reindexed data (if possible)
         let dim = self.get_asked_dimension();
         let nbrow = self.get_nb_nodes();
@@ -900,14 +900,14 @@ where
         for s in &embedded_scales {
             scales_q.insert(*s);
         }
-        println!(
+        log::debug!(
             "\n\n embedded scales quantiles at 0.05 : {:.2e} , 0.5 :  {:.2e}, 0.95 : {:.2e}, 0.99 : {:.2e}",
             scales_q.query(0.05).unwrap().1,
             scales_q.query(0.5).unwrap().1,
             scales_q.query(0.95).unwrap().1,
             scales_q.query(0.99).unwrap().1
         );
-        println!();
+        log::debug!("");
         //
         EntropyOptim {
             node_params,

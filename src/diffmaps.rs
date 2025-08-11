@@ -89,7 +89,7 @@ impl DiffusionParams {
     /// natural values are 0. , 1/2 and 1.
     pub fn set_alfa(&mut self, alfa: f32) {
         if !(-1.01..=1.).contains(&alfa) {
-            println!("not changing alfa, alfa should be in [-1. , 1.] ");
+            log::warn!("not changing alfa, alfa should be in [-1. , 1.] ");
             return;
         }
         self.alfa = alfa;
@@ -100,7 +100,7 @@ impl DiffusionParams {
         if (-1.01..=0.).contains(&beta) {
             self.beta = beta;
         } else {
-            println!("not changing beta, beta should be in -1,0 Usual values are 0. -0.5 see doc ");
+            log::warn!("not changing beta, beta should be in -1,0 Usual values are 0. -0.5 see doc ");
         }
     }
 
@@ -595,7 +595,7 @@ impl DiffusionMaps {
             .collect();
         // collect scales quantiles
         let scales_q = self.get_quantiles("scales quantiles first pass", &local_scales);
-        println!();
+        log::debug!("");
         // we keep local scale to possible kernel weighting
         //
         // now we have scales we can remap edge length to weights.
@@ -707,7 +707,7 @@ impl DiffusionMaps {
         for q in values {
             quant_densities.insert((*q).into());
         }
-        println!(
+        log::debug!(
             "quantiles at 0.01 : {:.2e}, 0.05 : {:.2e} , 0.5 :  {:.2e}, 0.95 : {:.2e}, 0.99 : {:.2e}",
             quant_densities.query(0.01).unwrap().1,
             quant_densities.query(0.05).unwrap().1,
@@ -715,7 +715,7 @@ impl DiffusionMaps {
             quant_densities.query(0.95).unwrap().1,
             quant_densities.query(0.99).unwrap().1
         );
-        println!();
+        log::debug!("");
         //
         quant_densities
     }
@@ -1212,7 +1212,7 @@ mod tests {
             panic!("dmap_fashion failed");
         };
         //
-        println!(
+        log::info!(
             " dmap embed time {:.2e} s, cpu time : {}",
             sys_now.elapsed().unwrap().as_secs(),
             cpu_start.elapsed().as_secs()
@@ -1288,7 +1288,7 @@ mod tests {
             panic!("dmap_fashion failed");
         };
         //
-        println!(
+        log::info!(
             " dmap embed time {:.2e} s, cpu time : {}",
             sys_now.elapsed().unwrap().as_secs(),
             cpu_start.elapsed().as_secs()
