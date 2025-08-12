@@ -22,19 +22,19 @@ path = "src/lib.rs"
 name = "annembed"     
 crate-type = ["rlib","cdylib"]
 
-[[examples]]
+[[example]]
 name = "mnist_digits"
 path = "examples/mnist_digits.rs"
 
-[[examples]]
+[[example]]
 name = "mnist_fashion"
 path = "examples/mnist_fashion.rs"
 
-[[examples]]
+[[example]]
 name = "toripser"
 path = "examples/toripser.rs"
 
-[[examples]]
+[[example]]
 name = "higgs"
 path = "examples/higgs.rs"
 

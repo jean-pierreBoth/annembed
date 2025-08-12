@@ -25,8 +25,13 @@
 //!  
 //!
 
+mod core_distance;
 mod kruskal;
 mod sl;
+
+// Re-export core types
+pub use self::core_distance::{CoreDistance, mutual_reachability_distance};
+pub use self::sl::SLclustering;
 
 // 1.  We get from the hnsw a list of edges for kruskal algorithm
 // 2.  Run kruskal algorithm ,  we get a MinSpanningTree<G>
