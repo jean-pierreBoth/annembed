@@ -512,7 +512,7 @@ where
             Hnsw::<F, DistL2F>::new(max_nb_connection, nb_nodes, nb_layer, ef_c, DistL2F {});
         hnsw.set_keeping_pruned(true);
         // need to store arrayviews to get a sufficient lifetime to call as_slice later
-        let vectors: Vec<ArrayView1<F>> = (0..nb_nodes).map(|i| (embedding.row(i))).collect();
+        let vectors: Vec<ArrayView1<F>> = (0..nb_nodes).map(|i| embedding.row(i)).collect();
         let mut data_with_id = Vec::<(&[F], usize)>::with_capacity(nb_nodes);
         for (i, v) in vectors.iter().enumerate().take(nb_nodes) {
             data_with_id.push((v.as_slice().unwrap(), i));
@@ -1014,7 +1014,9 @@ where
         log::trace!("\n entering EntropyOptim::ce_compute_threaded");
         //
         let b: f64 = self.params.b;
-        let ce_entropy = self
+        
+        //
+        self
             .edges
             .par_iter()
             .fold(
@@ -1043,9 +1045,7 @@ where
                     }
                 },
             )
-            .sum::<f64>();
-        //
-        ce_entropy
+            .sum::<f64>()
     } // end of ce_compute_threaded
 
     // TODO : pass functions corresponding to edge_weight and grad_edge_weight as arguments to test others weight function

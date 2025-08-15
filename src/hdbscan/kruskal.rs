@@ -28,7 +28,7 @@ where
     fn new(parent: Vec<Ix>) -> Self {
         let rank = vec![1; parent.len()];
         //
-        UnionFind { parent, rank }
+        Self { parent, rank }
     } // end of new
 
     fn find(&mut self, mut node: Ix) -> Ix {

@@ -30,7 +30,7 @@ where
     F: Float + AddAssign + SubAssign + MulAssign + DivAssign + std::iter::Sum,
 {
     pub fn new(q: F, value: F) -> Self {
-        RenyiEntropy {
+        Self {
             kind: EntropyKind::Renyi,
             q,
             value,
@@ -68,7 +68,7 @@ where
             }
         }
         let np = p.iter().map(|&x| x / sum).collect();
-        DiscreteProba {
+        Self {
             p: np,
             entropy: None,
         }
@@ -111,7 +111,7 @@ where
     } // end of entropy_renyi
 
     // compute relative entropy at q=1
-    fn relative_renyi_entropy_1(&self, other: &DiscreteProba<F>) -> F {
+    fn relative_renyi_entropy_1(&self, other: &Self) -> F {
         let zero = F::zero();
         self.p
             .iter()
@@ -127,9 +127,10 @@ where
     }
 
     //
-    fn relative_renyi_entropy_q(&self, other: &DiscreteProba<F>, q: F) -> F {
+    fn relative_renyi_entropy_q(&self, other: &Self, q: F) -> F {
         let zero = F::zero();
-        let entropy = self
+        
+        self
             .p
             .iter()
             .zip(other.p.iter())
@@ -140,8 +141,7 @@ where
                     zero
                 }
             })
-            .sum();
-        entropy
+            .sum()
     }
 
     /// computes mean diversity of other with respect to self.
@@ -150,7 +150,7 @@ where
     /// $$ \sum_{self.p_{i} != 0} self.p_{i} * \phi(\frac{other.p_{i}}{self.p_{i}})$$
     ///
     ///
-    pub fn relative_renyi_entropy(&self, other: &DiscreteProba<F>, q: F) -> F {
+    pub fn relative_renyi_entropy(&self, other: &Self, q: F) -> F {
         if near_to_1(q) {
             self.relative_renyi_entropy_1(other)
         } else {
