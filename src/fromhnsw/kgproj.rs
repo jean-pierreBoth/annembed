@@ -75,7 +75,7 @@ where
                 "KGraphProjection::new, layer argument greater than nb_layer!!, layer : {}",
                 layer
             );
-            println!(
+            log::error!(
                 "KGraphProjection::new, layer argument greater than nb_layer!!, layer : {}",
                 layer
             );
@@ -90,7 +90,6 @@ where
         }
         if nb_point_to_collect == 0 {
             log::error!("!!!!!!!!!!!! KGraphProjection cannot collect points !!!!!!!!!!!!!, check layer argument");
-            println!("!!!!!!!!!!!! KGraphProjection cannot collect points !!!!!!!!!!!!!, check layer argument");
             std::process::exit(1);
         }
         //
@@ -506,7 +505,7 @@ mod tests {
         let dim = 30;
         let knbn = 10;
         //
-        println!("\n\n test_graph_projection nb_elem {:?}", nb_elem);
+        log::debug!("\n\n test_graph_projection nb_elem {:?}", nb_elem);
         //
         let data = gen_rand_data_f32(nb_elem, dim);
         let data_with_id: Vec<(&Vec<f32>, usize)> = data.iter().zip(0..data.len()).collect();

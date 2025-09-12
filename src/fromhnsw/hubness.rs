@@ -122,7 +122,7 @@ where
         }
         // display result
         if nb_out_histo > 0 {
-            println!(
+            log::warn!(
                 "number of too large values : {}, maximum value : {}",
                 nb_out_histo, max_value
             );
@@ -133,11 +133,11 @@ where
             .map(|f| histo.value_at_quantile(*f))
             .collect::<Vec<u64>>();
         //
-        println!("\n hubness quantiles : ");
-        println!("======================");
-        println!("quantiles : {:?}", quantiles);
-        println!("thresholds : {:?}", thresholds);
-        println!("\n");
+        log::info!("\n hubness quantiles : ");
+        log::info!("======================");
+        log::info!("quantiles : {:?}", quantiles);
+        log::info!("thresholds : {:?}", thresholds);
+        log::info!("\n");
         //
         Ok(histo)
     } // end of get_hubness_histogram

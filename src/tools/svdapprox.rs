@@ -877,7 +877,7 @@ where
         };
         let slice_for_svd_opt = b.as_slice_mut();
         if slice_for_svd_opt.is_none() {
-            println!(
+            log::error!(
                 "direct_svd Matrix cannot be transformed into a slice : not contiguous or not in standard order"
             );
             return Err(String::from("not contiguous or not in standard order"));
