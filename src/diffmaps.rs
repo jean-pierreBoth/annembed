@@ -100,7 +100,9 @@ impl DiffusionParams {
         if (-1.01..=0.).contains(&beta) {
             self.beta = beta;
         } else {
-            log::warn!("not changing beta, beta should be in -1,0 Usual values are 0. -0.5 see doc ");
+            log::warn!(
+                "not changing beta, beta should be in -1,0 Usual values are 0. -0.5 see doc "
+            );
         }
     }
 
@@ -485,14 +487,15 @@ impl DiffusionMaps {
             let last_n = neighbours
                 .iter()
                 .rfind(|&n| n.weight.to_f32().unwrap() > 0.);
-            if last_n.is_none() {
-                // means all distances are 0! (encountered in Higgs Boson bench)
-                all_equal = true;
-            } else {
-                let last_e_w = last_n.unwrap().weight;
+            //
+            if let Some(edge) = last_n {
+                let last_e_w = edge.weight;
                 if last_e_w <= neighbours[0].weight {
                     all_equal = true;
                 }
+            } else {
+                // means all distances are 0! (encountered in Higgs Boson bench)
+                all_equal = true;
             }
             // we add each node as a neighbour of itself to enforce ergodicity !!
             let nb_edges = 1 + neighbours.len();

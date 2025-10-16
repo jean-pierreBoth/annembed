@@ -18,10 +18,38 @@ using Statistics
     This function reads an embedding result as a csv file of name fname and dumps corresponding
     scatter plot in fname.png.
     Default columns are the 2 first after labels
-"""
-function plotCsvLabels(fname, col1=2, col2=3, clip=false)
-    data = DataFrame(CSV.File(fname, header=false))
 
+    The function returns as result a Dict associating data lables to colors.
+    
+    The colors used can be seen vizualized in IJulia or in VsCode  :
+        # color extraction
+        colors = collect(values(result))
+        # color display
+        colors
+    
+        Labels in the same order as colors are exracted by
+        # 
+        labels = collect(keys(result))
+"""
+function plotCsvLabels(fname, col1=2, col2=3, clip=false, cvd=false)
+    data = DataFrame(CSV.File(fname, header=false))
+    # We reindex labels to the set [1, nb_labels] for color mapping
+    labeldict = Dict{Int64,Int64}()
+    nb_labels = 0
+    cidx = 1
+    colorsIdx = zeros(Int64, length(data.Column1))
+    for l in data.Column1
+        if !haskey(labeldict, l)
+            nb_labels += 1
+            labeldict[l] = nb_labels
+            colorsIdx[cidx] = nb_labels
+        else
+            val = get(labeldict, l, 0)
+            @assert val > 0
+            colorsIdx[cidx] = val
+        end
+        cidx += 1
+    end
     # get xmin, xmax, ymin, ymax
     xmin = minimum(data[!, col1])
     xmax = maximum(data[!, col1])
@@ -36,16 +64,24 @@ function plotCsvLabels(fname, col1=2, col2=3, clip=false)
     clipyminus = max(ymin / sigmay, -10.0) * sigmay
 
     # colors for cvd people!
-    mycolors = ColorScheme(distinguishable_colors(10, transform=protanopic))
-
+    mycolors = ColorScheme(distinguishable_colors(nb_labels, transform=protanopic))
+    labelscolor = map(l -> mycolors[labeldict[l]], data.Column1)
     # avec makie
     pngname = fname * ".png"
     if clip
-        fig = CairoMakie.scatter(clamp.(data[!, col1], clipxminus, clipxplus), clamp.(data[!, col2], clipyminus, clipyplus), color=mycolors[data.Column1[1:end].+1], markersize=1)
+        fig = CairoMakie.scatter(clamp.(data[!, col1], clipxminus, clipxplus), clamp.(data[!, col2], clipyminus, clipyplus), color=labelscolor, markersize=1)
     else
-        fig = CairoMakie.scatter(data[!, col1], data[!, col2], color=mycolors[data.Column1[1:end].+1], markersize=1)
+        fig = CairoMakie.scatter(data[!, col1], data[!, col2], color=labelscolor, markersize=1)
     end
     CairoMakie.save(pngname, fig)
+    # return Dictionary associating original label to colors
+    originalLabels = collect(keys(labeldict))
+    originalLabelColor = map(l -> mycolors[labeldict[l]], originalLabels)
+    originLabelColorDict = Dict{Int64,RGB{FixedPointNumbers.N0f8}}()
+    for l in keys(labeldict)
+        originLabelColorDict[l] = mycolors[labeldict[l]]
+    end
+    return originLabelColorDict
 end
 
 
@@ -64,7 +100,7 @@ function plotCsvDist(fname)
     #
     # we bin the images in size*size to avoid too many points
     #
-    nbdelta = 2000
+    nbdelta = 1000
     nbpoints = nbdelta + 1
     dist = zeros(nbpoints, nbpoints)
     count = zeros(Int64, nbpoints, nbpoints)
@@ -98,6 +134,66 @@ function plotCsvDist(fname)
     @info "image dumped in : ", pngname
     #
     fig, ax, hm = GLMakie.heatmap(xs, ys, distremap)
+    Colorbar(fig[:, end+1], hm)
+    #
+end
+
+"""
+    This function reads reloads the "continuity_ratio.csv" file. See Rust crate function Embedder::get_quality_estimate_from_edge_length
+    It draws a heatmap of min(log(max(1., continuity_ratio)),2.). 
+    Pixels not corresponding to a data point (giving background) are set -1.
+    The name of the png file (in current working directory) is fname.png
+ 
+"""
+function plotCsvContinuity(fname)
+    data = DataFrame(CSV.File(fname, header=false))
+    # get xmin, xmax, ymin, ymax
+    xmin = minimum(data.Column2)
+    xmax = maximum(data.Column2)
+
+    ymin = minimum(data.Column3)
+    ymax = maximum(data.Column3)
+    #
+    m = median(data[!, 1])
+    s = sqrt(var(data[!, 1]))
+    #
+    # we bin the images in size*size to avoid too many points
+    #
+    nbdelta = 1000
+    nbpoints = nbdelta + 1
+    continuity = -ones(nbpoints, nbpoints)
+    nbrow = size(data)[1]
+    deltax = (xmax - xmin)
+    deltay = (ymax - ymin)
+    xs = range(xmin, xmax, step=deltax / nbdelta)
+    ys = range(ymin, ymax, step=deltay / nbdelta)
+    for i = 1:nbrow
+        x = (data[i, 2] - xmin) / deltax
+        y = (data[i, 3] - ymin) / deltay
+        ix = floor(Int64, 1 + nbdelta * x)
+        iy = floor(Int64, 1 + nbdelta * y)
+        continuity[ix, iy] = data[i, 1]
+    end
+    #   display points with continuity ratio greater 1
+    #   with logarirthmic intensity capped by exp(2) = 7.4
+    f1(x::Float64) =
+        if x > 0.
+            return min(log(max(1., x)), 2.)
+        else
+            return -2.
+        end
+    #
+    graph_continuity = map(f1, continuity)
+    #
+    @info "file reloaded"
+    #
+    pngname = fname * ".png"
+    fig, ax, hm = CairoMakie.heatmap(xs, ys, graph_continuity)
+    Colorbar(fig[:, end+1], hm)
+    CairoMakie.save(pngname, fig)
+    @info "image dumped in : ", pngname
+    #
+    fig, ax, hm = GLMakie.heatmap(xs, ys, graph_continuity)
     Colorbar(fig[:, end+1], hm)
     #
 end

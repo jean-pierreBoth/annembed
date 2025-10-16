@@ -382,7 +382,7 @@ where
 
     /// **return the embedded vector corresponding to original data vector corresponding to data_id**
     /// This methods fails if data_id do not exist. Use KGraph.get_data_id_from_idx to check before if necessary.
-    pub fn get_embedded_by_dataid(&self, data_id: &DataId) -> ArrayView1<F> {
+    pub fn get_embedded_by_dataid(&self, data_id: &DataId) -> ArrayView1<'_, F> {
         // we must get data index as stored in IndexSet
         let kgraph = if self.hkgraph.is_some() {
             self.hkgraph.as_ref().unwrap().get_large_graph()
@@ -394,7 +394,7 @@ where
     } // end of get_data_embedding
 
     /// **get embedding of a given node index after reindexation by the embedding to index in [0..nb_nodes]**
-    pub fn get_embedded_by_nodeid(&self, node: NodeIdx) -> ArrayView1<F> {
+    pub fn get_embedded_by_nodeid(&self, node: NodeIdx) -> ArrayView1<'_, F> {
         self.embedding.as_ref().unwrap().row(node)
     }
 
@@ -446,9 +446,9 @@ where
     } // end of get_random_init
 
     /// For each node we in the orginal kgraph compute the transformed neighbourhood info in the embedded space.
-    /// Precisely: for each node n1 in initial space, for each neighbour n2 of n1, we compute l2dist of
+    /// Precisely: for each node n1 in initial space, for each neighbour n2 of n1, we compute l2 distance of
     /// embedded points corresponding to n1, n2.
-    /// So we have an embedded edgewhich is not always an edge in kgraph computed from embedded data.  
+    /// So we have an embedded edge which is not always an edge in kgraph computed from embedded data.  
     /// The conservation of edges through the embedding is a measure of neighborhood conservation.  
     /// Function returns for each node , increasing sorted distances (L2) in embedded space to its neighbours in original space.
     fn get_transformed_kgraph(&self) -> Option<Vec<(usize, Vec<OutEdge<F>>)>> {
@@ -512,7 +512,7 @@ where
             Hnsw::<F, DistL2F>::new(max_nb_connection, nb_nodes, nb_layer, ef_c, DistL2F {});
         hnsw.set_keeping_pruned(true);
         // need to store arrayviews to get a sufficient lifetime to call as_slice later
-        let vectors: Vec<ArrayView1<F>> = (0..nb_nodes).map(|i| (embedding.row(i))).collect();
+        let vectors: Vec<ArrayView1<F>> = (0..nb_nodes).map(|i| embedding.row(i)).collect();
         let mut data_with_id = Vec::<(&[F], usize)>::with_capacity(nb_nodes);
         for (i, v) in vectors.iter().enumerate().take(nb_nodes) {
             data_with_id.push((v.as_slice().unwrap(), i));
@@ -554,6 +554,10 @@ where
     ///   
     /// It gives a rough idea of the continuity of the embedding. The lesser the ratio the tighter the embedding.
     ///
+    /// Moreover the continuity ratio around each node is computed and dumped in a file name *continuity_ratio.csv".
+    /// This file can be displayed by the function *plotCsvContinuity* in visu.jl. see associated doc.
+    ///
+    ///
     /// For example for the **fashion mnist** in the hierarchical case we get consistently (see examples):
     ///
     /// - With an embedding dimension of 2 and a target neighbourhood of 50:
@@ -591,6 +595,7 @@ where
     // called by external binary (see examples)
     pub fn get_quality_estimate_from_edge_length(&self, nbng: usize) -> Option<f64> {
         //
+        log::info!("doing quality estimation ...");
         let cpu_start = ProcessTime::now();
         let sys_now = SystemTime::now();
         //
@@ -619,6 +624,7 @@ where
         let nb_nodes = max_edges_embedded.len();
         let mut nodes_match = Vec::with_capacity(nb_nodes);
         let mut first_dist = Vec::with_capacity(nb_nodes);
+        let mut ratio_by_node = vec![0.; nb_nodes]; // the lower the better
         let mut mean_ratio = (0., 0usize);
         for i in 0..nb_nodes {
             // check we speak of same node
@@ -628,15 +634,19 @@ where
             embedded_radii.insert(max_edges_embedded[i].1);
             // how many transformed edges are in maximal neighborhood of size nbng?
             let neighbours = &transformed_kgraph[i].1;
+            let mut node_ratio: f64 = 0.;
             for e in neighbours {
                 if e.weight.to_f64().unwrap() <= max_edges_embedded[i].1 {
                     nodes_match[i] += 1;
                 }
                 ratio_dist_q.insert(e.weight.to_f64().unwrap() / max_edges_embedded[i].1);
                 mean_ratio.0 += e.weight.to_f64().unwrap() / max_edges_embedded[i].1;
+                node_ratio += e.weight.to_f64().unwrap() / max_edges_embedded[i].1;
             }
             mean_ratio.1 += neighbours.len();
+            node_ratio /= 1.0.max(neighbours.len() as f64);
             first_dist.push(neighbours[0].weight.to_f64().unwrap());
+            ratio_by_node[i] = node_ratio;
         }
         // some stats
         let nb_without_match = nodes_match
@@ -651,7 +661,8 @@ where
         );
         log::info!(
             "  nb neighbourhoods without a match : {},  mean number of neighbours conserved when match : {:.3e}",
-            nb_without_match, mean_nbmatch
+            nb_without_match,
+            mean_nbmatch
         );
         log::info!(
             "  embedded radii quantiles at 0.05 : {:.2e} , 0.25 : {:.2e}, 0.5 :  {:.2e}, 0.75 : {:.2e}, 0.85 : {:.2e}, 0.95 : {:.2e} \n",
@@ -665,12 +676,12 @@ where
         //
         // The smaller the better!
         // we give quantiles on ratio : distance of neighbours in origin space / distance of last neighbour in embedded space
-        log::info!("\n statistics on conservation of neighborhood (of size nbng)");
-        log::info!("  neighbourhood size used in target space : {}", nbng);
-        log::info!(
+        println!("\n statistics on conservation of neighborhood (of size nbng)");
+        println!("  neighbourhood size used in target space : {}", nbng);
+        println!(
             "  quantiles on ratio : distance in embedded space of neighbours of origin space / distance of last neighbour in embedded space"
         );
-        log::info!(
+        println!(
             "  quantiles at 0.05 : {:.2e} , 0.25 : {:.2e}, 0.5 :  {:.2e}, 0.75 : {:.2e}, 0.85 : {:.2e}, 0.95 : {:.2e} \n",
             ratio_dist_q.query(0.05).unwrap().1,
             ratio_dist_q.query(0.25).unwrap().1,
@@ -681,16 +692,16 @@ where
         );
 
         let median_ratio = ratio_dist_q.query(0.5).unwrap().1;
-        log::info!(
+        println!(
             "\n quality index: ratio of distance to neighbours in origin space / distance to last neighbour in embedded space"
         );
-        log::info!(
+        println!(
             "  neighborhood are conserved in radius multiplied by median  : {:.2e}, mean {:.2e} ",
             median_ratio,
             mean_ratio.0 / mean_ratio.1 as f64
         );
         log::info!("");
-        //
+        // dump first dist
         let mut csv_dist = Writer::from_path("first_dist.csv").unwrap();
         let _res = write_csv_labeled_array2(
             &mut csv_dist,
@@ -698,6 +709,14 @@ where
             &self.get_embedded_reindexed(),
         );
         csv_dist.flush().unwrap();
+        // dump continuity ratio
+        let mut cont_ratio_csv = Writer::from_path("continuity_ratio.csv").unwrap();
+        let _res = write_csv_labeled_array2(
+            &mut cont_ratio_csv,
+            ratio_by_node.as_slice(),
+            &self.get_embedded_reindexed(),
+        );
+        cont_ratio_csv.flush().unwrap();
         //
         let cpu_time: Duration = cpu_start.elapsed();
         log::info!(
@@ -773,7 +792,8 @@ where
         let cpu_time: Duration = start.elapsed();
         log::info!(
             " initial cross entropy value {:.2e},  in time {:?}",
-            initial_ce, cpu_time
+            initial_ce,
+            cpu_time
         );
         // We manage some iterations on gradient computing
         let grad_step_init = params.grad_step;

@@ -25,7 +25,7 @@ use std::time::{Duration, SystemTime};
 
 use annembed::fromhnsw::hubness;
 use annembed::fromhnsw::kgproj::KGraphProjection;
-use annembed::fromhnsw::kgraph::{kgraph_from_hnsw_all, KGraph};
+use annembed::fromhnsw::kgraph::{KGraph, kgraph_from_hnsw_all};
 
 const MNIST_FASHION_DIR: &str = "/home/jpboth/Data/ANN/Fashion-MNIST/";
 

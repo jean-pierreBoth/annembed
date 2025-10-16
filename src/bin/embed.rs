@@ -159,7 +159,7 @@ fn parse_embed_group(
     // for quality
     let quality: Option<QualityParams>;
     if let Some(fraction) = matches.get_one::<f64>("quality") {
-        log::debug!("quality is asked, sampling fraction : {:.2e}", fraction);
+        log::info!("quality is asked, sampling fraction : {:.2e}", fraction);
         let qualityparmas = QualityParams {
             sampling_fraction: *fraction,
         };
@@ -480,15 +480,14 @@ where
         let sampling_size = 10000;
         let cpu_start = ProcessTime::now();
         let sys_now = SystemTime::now();
-        let dim_stat = kgraph.estimate_intrinsic_dim(sampling_size);
+        let dim_stat_res = kgraph.estimate_intrinsic_dim(sampling_size);
         let cpu_time: Duration = cpu_start.elapsed();
         log::info!(
             "\n dimension estimation sys time(ms) : {:.3e},  cpu time(ms) {:.3e}\n",
             sys_now.elapsed().unwrap().as_millis(),
             cpu_time.as_millis()
         );
-        if dim_stat.is_ok() {
-            let dim_stat = dim_stat.unwrap();
+        if let Ok(dim_stat) = dim_stat_res {
             log::info!(
                 "\n dimension estimation with nbpoints : {}, dim : {:.3e}, sigma = {:.3e} \n",
                 sampling_size,
@@ -497,7 +496,9 @@ where
             );
             log::info!(
                 " dimension estimation with nbpoints : {}, dim : {:.3e}, sigma = {:.3e}",
-                sampling_size, dim_stat.0, dim_stat.1
+                sampling_size,
+                dim_stat.0,
+                dim_stat.1
             );
         }
         // hubness estimation
