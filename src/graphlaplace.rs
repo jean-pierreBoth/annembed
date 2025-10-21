@@ -26,7 +26,7 @@ pub(crate) struct GraphLaplacian {
 
 impl GraphLaplacian {
     pub fn new(sym_laplacian: MatRepr<f32>, degrees: Array1<f32>) -> Self {
-        GraphLaplacian {
+        Self {
             sym_laplacian,
             degrees,
             svd_res: None,

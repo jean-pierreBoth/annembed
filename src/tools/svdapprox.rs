@@ -70,7 +70,7 @@ where
         let mat: Array2<F> =
             ArrayBase::from_shape_fn(dims, |_| F::from_f64(stdnormal.sample(&mut rng)).unwrap());
         //
-        RandomGaussianMatrix { mat }
+        Self { mat }
     }
 } // end of impl block for RandomGaussianMatrix
 
@@ -82,7 +82,7 @@ struct RandomGaussianGenerator<F> {
 impl<F: Float + FromPrimitive> RandomGaussianGenerator<F> {
     pub fn new() -> Self {
         let rng = Xoshiro256PlusPlus::seed_from_u64(4664397);
-        RandomGaussianGenerator::<F> {
+        Self {
             rng,
             _ty: PhantomData,
         }
@@ -136,23 +136,23 @@ where
 {
     /// initialize a MatRepr from an Array2
     #[inline]
-    pub fn from_array2(mat: Array2<F>) -> MatRepr<F> {
-        MatRepr {
+    pub fn from_array2(mat: Array2<F>) -> Self {
+        Self {
             data: MatMode::FULL(mat),
         }
     }
 
-    pub fn from_trimat(trimat: TriMat<F>) -> MatRepr<F> {
-        MatRepr {
+    pub fn from_trimat(trimat: TriMat<F>) -> Self {
+        Self {
             data: MatMode::CSR(trimat.to_csr()),
         }
     }
 
     /// initialize a MatRepr from a CsMat
     #[inline]
-    pub fn from_csrmat(mat: CsMat<F>) -> MatRepr<F> {
+    pub fn from_csrmat(mat: CsMat<F>) -> Self {
         assert!(mat.is_csr());
-        MatRepr {
+        Self {
             data: MatMode::CSR(mat),
         }
     }
@@ -227,9 +227,9 @@ where
     /// return a transposed copy
     pub fn transpose_owned(&self) -> Self {
         match &self.data {
-            MatMode::FULL(mat) => MatRepr::<F>::from_array2(mat.t().to_owned()),
+            MatMode::FULL(mat) => Self::from_array2(mat.t().to_owned()),
             // in CSR mode we must reconvert to csr beccause the transposed view is csc
-            MatMode::CSR(csmat) => MatRepr::<F>::from_csrmat(csmat.transpose_view().to_csr()),
+            MatMode::CSR(csmat) => Self::from_csrmat(csmat.transpose_view().to_csr()),
         }
     } // end of transpose_owned
 
@@ -307,7 +307,7 @@ impl RangePrecision {
         } else {
             step_arg
         };
-        RangePrecision {
+        Self {
             epsil,
             step,
             max_rank,
@@ -329,7 +329,7 @@ pub struct RangeRank {
 impl RangeRank {
     /// initializes a RangeRank structure with asked rank and maximum QR decompositions
     pub fn new(rank: usize, nbiter: usize) -> Self {
-        RangeRank { rank, nbiter }
+        Self { rank, nbiter }
     }
 } // end of RangeRank
 

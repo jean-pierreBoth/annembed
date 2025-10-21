@@ -26,7 +26,7 @@ pub struct OutEdge<F> {
 
 impl<F> OutEdge<F> {
     pub fn new(node: NodeIdx, weight: F) -> Self {
-        OutEdge { node, weight }
+        Self { node, weight }
     }
 }
 
@@ -34,7 +34,7 @@ impl<F> PartialEq for OutEdge<F>
 where
     F: Float,
 {
-    fn eq(&self, other: &OutEdge<F>) -> bool {
+    fn eq(&self, other: &Self) -> bool {
         self.weight == other.weight
     } // end eq
 }
@@ -42,7 +42,7 @@ where
 // CAVEAT coud use the PointWithOrder<T> implementation for Ord which panic on Nan.
 /// order points by distance to self.
 impl<F: Float> PartialOrd for OutEdge<F> {
-    fn partial_cmp(&self, other: &OutEdge<F>) -> Option<Ordering> {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         self.weight.partial_cmp(&other.weight)
     } // end cmp
 } // end impl PartialOrd
@@ -53,8 +53,8 @@ where
     F: Float + FromPrimitive,
 {
     //
-    fn from(neighbour: Neighbour) -> OutEdge<F> {
-        OutEdge {
+    fn from(neighbour: Neighbour) -> Self {
+        Self {
             node: neighbour.d_id,
             weight: F::from_f32(neighbour.distance).unwrap(),
         }
@@ -76,7 +76,7 @@ pub struct NodeParam {
 
 impl NodeParam {
     pub fn new(scale: f32, edges: Vec<OutEdge<f32>>) -> Self {
-        NodeParam { scale, edges }
+        Self { scale, edges }
     }
 
     /// for a given node index return corresponding edge if it is in neighbours, None else
@@ -99,7 +99,7 @@ impl NodeParam {
 
 impl Default for NodeParam {
     fn default() -> Self {
-        NodeParam {
+        Self {
             scale: 0f32,
             edges: Vec::<OutEdge<f32>>::new(),
         }
@@ -115,7 +115,7 @@ pub struct NodeParams {
 
 impl NodeParams {
     pub fn new(params: Vec<NodeParam>, max_nbng: usize) -> Self {
-        NodeParams { params, max_nbng }
+        Self { params, max_nbng }
     }
     //
     pub fn get_node_param(&self, node: NodeIdx) -> &NodeParam {

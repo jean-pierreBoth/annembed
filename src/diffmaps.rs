@@ -62,7 +62,7 @@ impl DiffusionParams {
     /// - optional diffusion time
     /// - optional number of neighbours used in laplacian discretisation
     pub fn new(asked_dim: usize, t_opt: Option<f32>, g_opt: Option<usize>) -> Self {
-        DiffusionParams {
+        Self {
             asked_dim,
             alfa: 1.,
             beta: 0.,
@@ -134,7 +134,7 @@ impl DiffusionParams {
 
 impl Default for DiffusionParams {
     fn default() -> Self {
-        DiffusionParams {
+        Self {
             asked_dim: 2,
             alfa: 1.,
             beta: 0.,
@@ -168,7 +168,7 @@ pub struct DiffusionMaps {
 impl DiffusionMaps {
     /// iitialization from NodeParams
     pub fn new(params: DiffusionParams) -> Self {
-        DiffusionMaps {
+        Self {
             params,
             _node_params: None,
             normed_scales: None,

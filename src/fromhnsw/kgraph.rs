@@ -129,7 +129,7 @@ where
     /// allocates a graph with expected size nbnodes and nbng neighbours
     pub fn new() -> Self {
         let neighbours_init = Vec::<Vec<OutEdge<F>>>::new();
-        KGraph {
+        Self {
             max_nbng: 0,
             nbnodes: 0,
             neighbours: neighbours_init,

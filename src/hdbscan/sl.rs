@@ -60,7 +60,7 @@ pub struct Dendrogram<NodeIdx: PrimInt, F: Float> {
 
 impl<NodeIdx: PrimInt, F: Float> Dendrogram<NodeIdx, F> {
     pub fn new(nbstep: usize) -> Self {
-        Dendrogram {
+        Self {
             steps: Vec::<UnionStep<NodeIdx, F>>::with_capacity(nbstep),
         }
     }
@@ -138,7 +138,7 @@ where
         let kgraph = kgraph_from_hnsw_all(hnsw, nbng).unwrap();
         //
         let nbstep = kgraph.get_nb_nodes() - nbcluster;
-        SLclustering {
+        Self {
             kgraph,
             dendrogram: Dendrogram::<NodeIdx, F>::new(nbstep),
             nbcluster,

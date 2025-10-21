@@ -333,7 +333,7 @@ where
         }
         log::trace!("Projection exiting from new");
         //
-        KGraphProjection {
+        Self {
             layer,
             small_graph: upper_graph,
             proj_data,

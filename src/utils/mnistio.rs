@@ -21,7 +21,7 @@ pub struct MnistData {
 }
 
 impl MnistData {
-    pub fn new(image_filename: String, label_filename: String) -> std::io::Result<MnistData> {
+    pub fn new(image_filename: String, label_filename: String) -> std::io::Result<Self> {
         let image_path = PathBuf::from(image_filename.clone());
         let image_file = OpenOptions::new().read(true).open(image_path)?;
         let mut image_io = BufReader::new(image_file);
@@ -31,7 +31,7 @@ impl MnistData {
         let labels_file = OpenOptions::new().read(true).open(label_path)?;
         let mut labels_io = BufReader::new(labels_file);
         let labels = read_label_file(&mut labels_io);
-        Ok(MnistData {
+        Ok(Self {
             _image_filename: image_filename,
             _label_filename: label_filename,
             images,

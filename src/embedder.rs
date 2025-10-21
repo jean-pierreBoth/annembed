@@ -1034,7 +1034,9 @@ where
         log::trace!("\n entering EntropyOptim::ce_compute_threaded");
         //
         let b: f64 = self.params.b;
-        let ce_entropy = self
+        
+        //
+        self
             .edges
             .par_iter()
             .fold(
@@ -1063,9 +1065,7 @@ where
                     }
                 },
             )
-            .sum::<f64>();
-        //
-        ce_entropy
+            .sum::<f64>()
     } // end of ce_compute_threaded
 
     // TODO : pass functions corresponding to edge_weight and grad_edge_weight as arguments to test others weight function

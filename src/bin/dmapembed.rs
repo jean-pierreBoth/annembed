@@ -73,7 +73,7 @@ pub struct HnswParams {
 
 impl HnswParams {
     pub fn my_default() -> Self {
-        HnswParams {
+        Self {
             max_conn: 64,
             ef_c: 512,
             knbn: 10,
@@ -90,7 +90,7 @@ impl HnswParams {
         distance: String,
         scale_modification: f64,
     ) -> Self {
-        HnswParams {
+        Self {
             max_conn,
             ef_c,
             knbn,
@@ -109,7 +109,7 @@ pub struct QualityParams {
 
 impl Default for QualityParams {
     fn default() -> Self {
-        QualityParams {
+        Self {
             sampling_fraction: 1.0,
         }
     }

@@ -111,7 +111,7 @@ impl EmbedderParams {
         let nb_grad_batch = 20;
         let grad_factor: usize = 4;
         let hierarchy_layer = 0;
-        EmbedderParams {
+        Self {
             asked_dim,
             dmap_init,
             beta,
