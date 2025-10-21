@@ -1,6 +1,8 @@
 - version 0.1.6  
-    -- The embedding computes a continuity ratio for each point  
-    -- The plotCsvLabels now dumps a map of continuity ratio enabling quality inspection in a graphical way (see visu.jl)
+    -- The embedding computes a continuity ratio for each point 
+    which can be examined with the Julia function plotCsvContinuity
+    (see visu.jl/plotCsvContinuity)
+    -- The Julia function plotCsvLabels returns a Dict mapping labels into colors making it possible to interpret proximities
 
 - version 0.1.5
   
