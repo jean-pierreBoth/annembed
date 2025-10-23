@@ -8,6 +8,7 @@
 using CSV
 using Colors, ColorSchemes
 using DataFrames
+using ImageCore
 
 
 using CairoMakie
