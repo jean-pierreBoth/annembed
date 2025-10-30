@@ -94,6 +94,7 @@ pub fn main() {
     embed_params.grad_step = 1.;
     embed_params.nb_sampling_by_edge = 10;
     embed_params.dmap_init = true;
+    embed_params.hubness_weighting = true;
     // to check the impact of dimension
     //    embed_params.asked_dim = 15;
 
@@ -175,8 +176,12 @@ pub fn main() {
             sampling_size, dim_stat.0, dim_stat.1
         );
     }
-    // hubness estimation
-    let hubness = hubness::Hubness::new(&kgraph);
+    // hubness estimation. We can get hubness from embedder if we asked for hubness weighting of nodes in embedding
+    //
+    let hubness = match embedder.get_hubness() {
+        Some(hubness) => hubness,
+        None => &hubness::Hubness::new(&kgraph),
+    };
     let _histo = hubness.get_hubness_histogram();
     // get the DataId of the first points largest hubness in deacresing order
     let largest = hubness.get_largest_hubs_by_dataid(20);

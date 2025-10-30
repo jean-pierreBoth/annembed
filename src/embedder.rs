@@ -20,6 +20,7 @@ use ndarray::{Array1, Array2, ArrayView1};
 // use ndarray_linalg::{Lapack, Scalar};
 use lax::Lapack;
 
+use crate::fromhnsw::hubness::Hubness;
 use crate::tools::io::write_csv_labeled_array2;
 use csv::Writer;
 use quantiles::ckms::CKMS; // we could use also greenwald_khanna
@@ -79,6 +80,7 @@ where
 /// The structure corresponding to the embedding process.
 /// It must be initialized by the graph extracted from Hnsw according to the choosen strategy
 /// and the asked dimension for embedding.
+/// We get as a result the embedding and potentially the hubness of the grap if hubness node sampling was asked for in EmbedderParams
 pub struct Embedder<'a, F> {
     /// graph constrcuted with fromhnsw module
     kgraph: Option<&'a KGraph<F>>,
@@ -93,6 +95,8 @@ pub struct Embedder<'a, F> {
     initial_embedding: Option<Array2<F>>,
     /// final embedding
     embedding: Option<Array2<F>>,
+    /// hubness can be an added result if EmbedderParams.hubness_weighting is asked
+    hubness: Option<Hubness<'a, F>>,
 } // end of Embedder
 
 impl<'a, F> Embedder<'a, F>
@@ -108,6 +112,7 @@ where
             initial_space: None,
             initial_embedding: None,
             embedding: None,
+            hubness: None,
         }
     } // end of new
 
@@ -123,6 +128,7 @@ where
             initial_space: None,
             initial_embedding: None,
             embedding: None,
+            hubness: None,
         }
     } // end of from_hkgraph
 
@@ -146,6 +152,15 @@ where
         self.parameters.nb_grad_batch
     }
 
+    /// return hubness if obtained as a by product of entropy optimization
+    pub fn get_hubness(&self) -> Option<&Hubness<'a, F>> {
+        self.hubness.as_ref()
+    }
+
+    /// return the underlying KGraph
+    pub fn get_kgraph(&self) -> Option<&KGraph<F>> {
+        self.kgraph
+    }
     /// get neighbourhood size used in embedding
     pub fn get_kgraph_nbng(&self) -> usize {
         if self.kgraph.is_some() {
@@ -259,8 +274,9 @@ where
         );
         //
         match embedding_res {
-            Ok(embedding) => {
+            Ok((embedding, hubness)) => {
                 self.embedding = Some(embedding);
+                self.hubness = hubness;
                 Ok(1)
             }
             _ => {
@@ -335,8 +351,9 @@ where
         self.initial_embedding = Some(initial_embedding);
         //
         match embedding_res {
-            Ok(embedding) => {
+            Ok((embedding, hubness)) => {
                 self.embedding = Some(embedding);
+                self.hubness = hubness;
                 Ok(1)
             }
             _ => {
@@ -771,7 +788,7 @@ where
         &self,
         params: &EmbedderParams,
         initial_embedding: &Array2<F>,
-    ) -> Result<Array2<F>, String> {
+    ) -> Result<(Array2<F>, Option<Hubness<'a, F>>), String> {
         //
         log::debug!("in Embedder::entropy_optimize");
         //
@@ -781,9 +798,28 @@ where
                 " initial_space not constructed, no NodeParams",
             ));
         }
+        // do we use hubness to sample negative nodes?
+        let hubness_opt: Option<Hubness<'a, F>>;
+        let neg_node_sampler = if params.hubness_weighting {
+            log::debug!("using hubness for node sampling");
+            // compute node hubness from KGraph
+            let hubness = Hubness::new(self.kgraph.unwrap());
+            let counts = hubness.get_counts();
+            let upper_bound = counts.len().isqrt() as f32;
+            let f_counts: Vec<f32> = counts
+                .iter()
+                .map(|n| (*n as f32).max(1.).min(upper_bound))
+                .collect();
+            hubness_opt = Some(hubness);
+            Some(NodeSampler::new(f_counts))
+        } else {
+            hubness_opt = None;
+            None
+        };
         let ce_optimization = EntropyOptim::new(
             self.initial_space.as_ref().unwrap(),
             params,
+            neg_node_sampler,
             initial_embedding,
         );
         // compute initial value of objective function
@@ -843,12 +879,37 @@ where
             }
         }
         //
-        Ok(reindexed)
+
+        Ok((reindexed, hubness_opt))
         //
     } // end of entropy_optimize
 } // end of impl Embedder
 
 //==================================================================================================================
+
+struct NodeSampler {
+    neg_node_distribution: WeightedAliasIndex<f32>,
+    weights: Vec<f32>,
+}
+
+impl NodeSampler {
+    pub(crate) fn new(weight_arg: Vec<f32>) -> Self {
+        let mean: f32 = weight_arg.iter().sum::<f32>() / weight_arg.len() as f32;
+        // normalize so that mesure is normalized to sample size! (better precision)
+        let normalized: Vec<f32> = weight_arg.iter().map(|w| *w / mean).collect();
+        let neg_node_distribution = WeightedAliasIndex::new(normalized.clone()).unwrap();
+        NodeSampler {
+            neg_node_distribution,
+            weights: normalized,
+        }
+    }
+
+    /// returns node sampled and associated proba change (ratio to uniform distribution normalized to sample size)
+    pub(crate) fn sample(&self) -> (usize, f32) {
+        let node = self.neg_node_distribution.sample(&mut rng());
+        (node, self.weights[node])
+    }
+} // end of NodeSampler
 
 /// All we need to optimize entropy discrepancy
 /// A list of edge with its weight, an array of scale for each origin node of an edge, proba (weight) of each edge
@@ -864,6 +925,8 @@ struct EntropyOptim<'a, F> {
     embedded_scales: Vec<f32>,
     /// weighted array for sampling positive edges
     pos_edge_distribution: WeightedAliasIndex<f32>,
+    /// possible use of hubness to samples negative node
+    neg_node_sampler: Option<NodeSampler>,
     /// embedding parameters
     params: &'a EmbedderParams,
 } // end of EntropyOptim
@@ -882,6 +945,7 @@ where
     pub fn new(
         node_params: &'a NodeParams,
         params: &'a EmbedderParams,
+        neg_node_sampler: Option<NodeSampler>,
         initial_embed: &Array2<F>,
     ) -> Self {
         log::debug!("entering EntropyOptim::new");
@@ -935,6 +999,7 @@ where
             embedded,
             embedded_scales,
             pos_edge_distribution: pos_edge_sampler,
+            neg_node_sampler,
             params,
         }
         // construct field embedded
@@ -1028,6 +1093,15 @@ where
         //
         ce_entropy
     } // end of ce_compute
+
+    // use natural sampling or biased sampling, return selection proba to be used in unbiasing
+    fn sample_neg_node(&self) -> (usize, f32) {
+        if let Some(node_sampler) = &self.neg_node_sampler {
+            node_sampler.sample()
+        } else {
+            (rng().random_range(0..self.embedded_scales.len()), 1.)
+        }
+    }
 
     // threaded version for computing cross entropy between initial distribution and embedded distribution with Cauchy law.
     fn ce_compute_threaded(&self) -> f64 {
@@ -1148,7 +1222,7 @@ where
         let mut got_nb_neg = 0;
         let mut _nb_failed = 0;
         while got_nb_neg < asked_nb_neg {
-            let neg_node: NodeIdx = rng().random_range(0..self.embedded_scales.len());
+            let (neg_node, _) = self.sample_neg_node();
             if neg_node != node_i
                 && neg_node != node_j
                 && self
@@ -1199,6 +1273,7 @@ where
                         l2_norm(&gradient.view()).to_f64().unwrap()
                     );
                 }
+                // do not renormalize by proba, we sample according neg_node_sampler law
                 y_i -= &gradient;
             } // end node_neg is accepted
         } // end of loop on neg sampling

@@ -12,11 +12,14 @@
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use std::sync::atomic::{AtomicU32, Ordering};
 
-use num_traits::cast::FromPrimitive;
 use num_traits::Float;
+use num_traits::cast::FromPrimitive;
 
 use hdrhistogram::Histogram;
 use indxvec::{Indices, Vecops};
+
+use cpu_time::ProcessTime;
+use std::time::SystemTime;
 
 use hnsw_rs::hnsw::DataId;
 
@@ -34,6 +37,10 @@ where
     F: FromPrimitive + Float + std::fmt::UpperExp + Sync + Send + std::iter::Sum,
 {
     pub fn new(kgraph: &'a KGraph<F>) -> Self {
+        //
+        log::debug!("doing hubness estimation ...");
+        let cpu_start = ProcessTime::now();
+        let sys_start = SystemTime::now();
         //
         let nb_nodes = kgraph.get_nb_nodes();
         let mut counts_atom = Vec::<AtomicU32>::with_capacity(nb_nodes);
@@ -58,6 +65,12 @@ where
         for atom in &counts_atom {
             counts.push(atom.load(Ordering::Relaxed));
         }
+        //
+        log::debug!(
+            " hubness estimation,  sys time(ms) {:?} cpu time {:?}",
+            sys_start.elapsed().unwrap().as_millis(),
+            cpu_start.elapsed().as_millis()
+        );
         //
         Hubness { kgraph, counts }
     } // end of new
@@ -124,7 +137,8 @@ where
         if nb_out_histo > 0 {
             log::warn!(
                 "number of too large values : {}, maximum value : {}",
-                nb_out_histo, max_value
+                nb_out_histo,
+                max_value
             );
         }
         let quantiles = vec![0.1, 0.25, 0.5, 0.75, 0.9, 0.99, 0.999, 0.9999];

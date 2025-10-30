@@ -387,7 +387,8 @@ where
         );
         log::warn!(
             "init_from_hnsw_all: number of neighbours asked {} must be less than hnsw max_nb_connection : {} ",
-            nbng, max_nb_conn
+            nbng,
+            max_nb_conn
         );
     } else {
         log::info!(
@@ -451,7 +452,8 @@ where
                 );
                 log::error!(
                     "kgraph_from_hnsw_all: graph will not be connected, isolated point at layer {}  , pos in layer : {} ",
-                    p_id.0, p_id.1
+                    p_id.0,
+                    p_id.1
                 );
                 return Err(anyhow!(
                     "kgraph_from_hnsw_all: graph will not be connected, isolated point at layer {}  , pos in layer : {} ",
@@ -744,7 +746,8 @@ mod tests {
         );
         log::debug!(
             "\n estimation of dimension : {:.3e}, sigma : {:.3e} ",
-            dimension.0, dimension.1
+            dimension.0,
+            dimension.1
         );
         // test hubness estimation
         let hubness = self::hubness::Hubness::new(&kgraph);

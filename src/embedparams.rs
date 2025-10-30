@@ -96,6 +96,8 @@ pub struct EmbedderParams {
     pub grad_factor: usize,
     /// if layer > 0 means we have hierarchical initialization
     pub hierarchy_layer: usize,
+    /// if we use hubness weights as importance in negative node sampling
+    pub hubness_weighting: bool,
 } // end of EmbedderParams
 
 impl EmbedderParams {
@@ -111,6 +113,7 @@ impl EmbedderParams {
         let nb_grad_batch = 20;
         let grad_factor: usize = 4;
         let hierarchy_layer = 0;
+        let hubness_weighting = false;
         EmbedderParams {
             asked_dim,
             dmap_init,
@@ -122,6 +125,7 @@ impl EmbedderParams {
             nb_grad_batch,
             grad_factor,
             hierarchy_layer,
+            hubness_weighting,
         }
     }
 
