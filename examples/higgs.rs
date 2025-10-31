@@ -181,7 +181,7 @@ struct HiggsArg {
 fn parse_higgs_matches(argmatches: &ArgMatches) -> HiggsArg {
     let sampling_factor = *argmatches.get_one::<f64>("subsampling").unwrap();
     // for now just that
-    let dmap = argmatches.contains_id("dmap");
+    let dmap = argmatches.get_flag("dmap");
     log::info!("diffusion map asked");
     HiggsArg {
         dmap: dmap,
@@ -203,6 +203,8 @@ fn entropy_embedding(labels: &Vec<u8>, hnsw: &Hnsw<f32, DistL2>, sampling_factor
     embed_params.grad_step = 1.;
     embed_params.nb_sampling_by_edge = 10;
     embed_params.dmap_init = true;
+    embed_params.hubness_weighting = true;
+
     // embed_params.asked_dim = 15;
     //
     // if set to true, we use first layer embedding to initialize the whole embedding
@@ -340,6 +342,7 @@ pub fn main() {
     .arg(Arg::new("dmap")
         .long("dmap")
         .required(false)
+        .default_value("false")
         .action(ArgAction::SetTrue)
         .help("takes no value")).get_matches();
     //
@@ -423,7 +426,7 @@ pub fn main() {
         //
         hnsw = Hnsw::<f32, DistL2>::new(max_nb_connection, nbdata, nb_layer, ef_c, DistL2 {});
         hnsw.set_keeping_pruned(true);
-        hnsw.modify_level_scale(0.5);
+        hnsw.modify_level_scale(0.75);
         // we insert by block of 1_000_000
         let block_size = 1_000_000;
         let mut inserted = 0;
@@ -463,8 +466,10 @@ pub fn main() {
     //
     let dmap = higgsarg.dmap;
     if !dmap {
+        log::info!("doing entropy embedding");
         entropy_embedding(&labels, &hnsw, sampling_factor);
     } else {
+        log::info!("doing diffusion map embedding");
         let mut dmap_params = DiffusionParams::default();
         dmap_params.set_embedding_dimension(5);
         dmap_params.set_alfa(1.);
