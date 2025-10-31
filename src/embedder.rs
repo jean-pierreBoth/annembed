@@ -198,6 +198,7 @@ where
             self.parameters.grad_factor * self.parameters.nb_grad_batch;
         log::info!("nb initial batch : {}", first_step_parameters.nb_grad_batch);
         first_step_parameters.grad_step = 1.;
+        first_step_parameters.hierarchy_layer = 0;
         let mut embedder_first_step =
             Embedder::new(graph_projection.get_small_graph(), first_step_parameters);
         let cpu_start = ProcessTime::now();
@@ -803,9 +804,19 @@ where
         let neg_node_sampler = if params.hubness_weighting {
             log::debug!("using hubness for node sampling");
             // compute node hubness from KGraph
-            let hubness = Hubness::new(self.kgraph.unwrap());
+            let kgraph;
+            if let Some(graph) = self.kgraph {
+                kgraph = graph;
+            } else if let Some(projection) = self.hkgraph {
+                log::debug!("using large graph from projection");
+                kgraph = projection.get_large_graph();
+            } else {
+                log::error!("cannot find kgraph");
+                return Err(String::from("entropy_optimize: cannot find kraph "));
+            }
+            let hubness = Hubness::new(kgraph);
             let counts = hubness.get_counts();
-            let upper_bound = counts.len().isqrt() as f32;
+            let upper_bound = counts.len() as f32;
             let f_counts: Vec<f32> = counts
                 .iter()
                 .map(|n| (*n as f32).max(1.).min(upper_bound))
