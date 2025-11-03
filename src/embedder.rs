@@ -1233,7 +1233,7 @@ where
         let mut got_nb_neg = 0;
         let mut _nb_failed = 0;
         while got_nb_neg < asked_nb_neg {
-            let (neg_node, _) = self.sample_neg_node();
+            let (neg_node, _weight) = self.sample_neg_node();
             if neg_node != node_i
                 && neg_node != node_j
                 && self

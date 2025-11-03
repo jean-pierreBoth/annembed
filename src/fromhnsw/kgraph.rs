@@ -1,4 +1,4 @@
-//! Get a very simple graph from hnsw to be used in kruksal algo and
+//! Get a succint summary graph (without associated data) from hnsw to be used in hubness, intrinsic dimension estimation , and
 //! neighborhood entropy computations
 //!
 //!
@@ -251,6 +251,20 @@ where
         );
         Ok((mean_dim, sigma))
     } // end of estimate_intrinsic_dim
+
+    /// intrinsic dimension estimation according to [Facco](https://www.nature.com/articles/s41598-017-11873-y).
+    /// Estimating the intrinsic dimension of datasets by a minimal neighborhood information
+    /// Elena Facco , Maria d’Errico, Alex Rodriguez & Alessandro Laio
+    pub fn estimate_intrinsic_dim_2nn(
+        &self,
+        sampling_size: usize,
+    ) -> Result<(f64, f64), anyhow::Error> {
+        // sample points
+        // get first 2 neighbours
+        // sort
+        //
+        panic!("not yet implemented");
+    } // end of estimate_intrinsic_dim_2nn
 
     /// As data can come from hnsw with arbitrary data id not on [0..nb_data] we reindex
     /// them for array computation.  

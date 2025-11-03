@@ -94,7 +94,7 @@ pub fn main() {
     embed_params.grad_step = 1.;
     embed_params.nb_sampling_by_edge = 10;
     embed_params.dmap_init = true;
-    embed_params.hubness_weighting = false;
+    embed_params.hubness_weighting = true;
     // to check the impact of dimension
     //    embed_params.asked_dim = 15;
 

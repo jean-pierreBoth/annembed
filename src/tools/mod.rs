@@ -10,3 +10,5 @@ pub mod svdapprox;
 
 // specific functions for initializing umap like embedding
 pub mod kdumap;
+
+pub mod reservoir;
