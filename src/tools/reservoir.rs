@@ -18,7 +18,7 @@ where
 {
     let mut out_terms = Vec::<T>::with_capacity(size_asked.min(in_terms.size_hint().0));
     //
-    for i in 0..size_asked {
+    for _ in 0..size_asked {
         match in_terms.next() {
             Some(item) => out_terms.push(item),
             None => break,
@@ -55,12 +55,19 @@ mod tests {
     use super::*;
     use rand::SeedableRng;
 
+    fn log_init_test() {
+        let _ = env_logger::builder().is_test(true).try_init();
+    }
+
     #[test]
     fn test_reservoir_sampling() {
+        log_init_test();
         let mut rng: Xoshiro256PlusPlus = Xoshiro256PlusPlus::seed_from_u64(4664397);
-        let nb_asked = 100;
+        let nb_asked = 10;
         let in_terms = Vec::<usize>::from_iter::<std::ops::Range<usize>>(0..60000);
         let selected_terms = unweighted_reservoir(nb_asked, in_terms.iter(), &mut rng);
+        let mean = selected_terms.iter().fold(0, |acc, t| acc + *t) as f64 / nb_asked as f64;
+        log::debug!(" mean= {:.3e} ", mean);
         //
         assert_eq!(selected_terms.len(), nb_asked);
         // sort and print

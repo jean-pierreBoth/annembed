@@ -152,6 +152,9 @@ pub fn main() {
     let knbn = 25;
     let kgraph: KGraph<f32> = kgraph_from_hnsw_all(&hnsw, knbn).unwrap();
     log::info!("minimum number of neighbours {}", kgraph.get_max_nbng());
+    //
+    //
+    //
     log::info!("dimension estimation...");
     let sampling_size = 10000;
     let cpu_start = ProcessTime::now();
@@ -176,6 +179,30 @@ pub fn main() {
             sampling_size, dim_stat.0, dim_stat.1
         );
     }
+    //
+    let sampling_size = 10000;
+    let cpu_start = ProcessTime::now();
+    let sys_now = SystemTime::now();
+    let dim_stat = kgraph.estimate_intrinsic_dim_2nn(sampling_size);
+    let cpu_time: Duration = cpu_start.elapsed();
+    println!(
+        "\n dimension estimation sys time(ms) : {:.3e},  cpu time(ms) {:.3e}\n",
+        sys_now.elapsed().unwrap().as_millis(),
+        cpu_time.as_millis()
+    );
+    if dim_stat.is_ok() {
+        let dim_stat = dim_stat.unwrap();
+        log::info!(
+            "\n estimate_intrinsic_dim_2nn dimension estimation with nbpoints : {}, dim : {:.3e} \n",
+            sampling_size,
+            dim_stat,
+        );
+        println!(
+            " estimate_intrinsic_dim_2nn dimension estimation with nbpoints : {}, dim : {:.3e}",
+            sampling_size, dim_stat
+        );
+    }
+    //
     // hubness estimation. We can get hubness from embedder if we asked for hubness weighting of nodes in embedding
     //
     let hubness = match embedder.get_hubness() {

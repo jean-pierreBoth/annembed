@@ -29,8 +29,6 @@ use rand::SeedableRng;
 use rand::distr::Distribution;
 use rand_xoshiro::Xoshiro256PlusPlus;
 
-use crate::tools::reservoir::*;
-
 // morally F should be f32 and f64.
 // The solution from ndArray is F : Float + AddAssign + SubAssign + MulAssign + DivAssign + RemAssign + Display + Debug + LowerExp + UpperExp + (ScalarOperand + LinalgScalar) + Send + Sync.
 // For edge weight we just need  F : FromPrimitive + Float + Display + Debug + LowerExp + UpperExp + Send + Sync
@@ -262,36 +260,60 @@ where
     /// intrinsic dimension estimation according to [Facco](https://www.nature.com/articles/s41598-017-11873-y).
     /// Estimating the intrinsic dimension of datasets by a minimal neighborhood information
     /// Elena Facco , Maria d’Errico, Alex Rodriguez & Alessandro Laio
+    /// Faster than estimate_intrinsic_dim, based on first 2 neighbours of each node so can be used with small number of neighbours in graph
+    /// relies on a uniformity distribution of data on its support space.  
+    /// Returns estimated dimension.
     pub fn estimate_intrinsic_dim_2nn(
         &self,
         sampling_size_arg: usize,
-    ) -> Result<(f64, f64), anyhow::Error> {
+    ) -> Result<f64, anyhow::Error> {
         let neighbours = self.get_neighbours();
         let size = neighbours.len();
         let mut rng: Xoshiro256PlusPlus = Xoshiro256PlusPlus::seed_from_u64(4664397);
         // sample points
         let sampling_size = size.min(sampling_size_arg);
-        let sampled = unweighted_reservoir(sampling_size, 0..size, &mut rng);
+        //        let sampled = unweighted_reservoir(sampling_size, 0..size, &mut rng);
+        let distrib = rand::distr::Uniform::try_from(10..size).unwrap();
+        let sampled: Vec<usize> = (0..sampling_size)
+            .map(|_| distrib.sample(&mut rng))
+            .collect();
         let mut ratios = Vec::<f64>::with_capacity(sampling_size);
         // get first 2 neighbours
-        for n in sampled {
+        sampled.into_iter().for_each(|n| {
             let r1 = neighbours[n][0].weight.to_f64().unwrap();
             let r2 = neighbours[n][1].weight.to_f64().unwrap();
             assert!(r1 <= r2 && r1 > 0.);
             ratios.push(r2 / r1);
-        }
+        });
         // get sorting permutation
         let mut permutation = Permutation::one(sampling_size);
-        permutation.assign_from_sort_by(ratios, |a, b| a.partial_cmp(&b).unwrap());
+        permutation.assign_from_sort_by(&ratios, |a, b| a.partial_cmp(&b).unwrap());
         let direct_permutation = permutation.normalize(false); // we want to apply P
         let mut cumulant: Vec<f64> = vec![0.; sampling_size];
         for i in 0..sampling_size {
             let rank = direct_permutation.apply_idx(i);
             cumulant[rank] = rank as f64 / sampling_size as f64;
+            if i <= 20 {
+                log::debug!(
+                    "i: {}, {:.3e}, rank : {}, cumul : {:.3e}",
+                    i,
+                    ratios[i],
+                    rank,
+                    cumulant[rank]
+                );
+            }
         }
-        //
-        //
-        panic!("not yet implemented");
+        // we fit ratio
+        let mut num: f64 = 0.0;
+        let mut den: f64 = 0.0;
+        for i in 0..sampling_size {
+            let ratio = ratios[i];
+            den += ratio.ln() * ratio.ln();
+            let ipermut = direct_permutation.apply_idx(i);
+            num += -ratio.ln() * (1. - cumulant[ipermut]).ln();
+        }
+        log::debug!("num : {:.3e}, den = {:.3e}", num, den);
+        Ok(num / den)
     } // end of estimate_intrinsic_dim_2nn
 
     /// As data can come from hnsw with arbitrary data id not on [0..nb_data] we reindex

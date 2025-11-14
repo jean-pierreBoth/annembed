@@ -21,7 +21,7 @@ use std::time::{Duration, SystemTime};
 
 use annembed::fromhnsw::hubness;
 use annembed::fromhnsw::kgproj::KGraphProjection;
-use annembed::fromhnsw::kgraph::{kgraph_from_hnsw_all, KGraph};
+use annembed::fromhnsw::kgraph::{KGraph, kgraph_from_hnsw_all};
 
 const MNIST_DIGITS_DIR: &str = "/home/jpboth/Data/ANN/MNIST/";
 
@@ -175,6 +175,29 @@ pub fn main() {
         println!(
             " dimension estimation with nbpoints : {}, dim : {:.3e}, sigma = {:.3e}",
             sampling_size, dim_stat.0, dim_stat.1
+        );
+    }
+    //
+    let sampling_size = 10000;
+    let cpu_start = ProcessTime::now();
+    let sys_now = SystemTime::now();
+    let dim_stat = kgraph.estimate_intrinsic_dim_2nn(sampling_size);
+    let cpu_time: Duration = cpu_start.elapsed();
+    println!(
+        "\n estimate_intrinsic_dim_2nn estimation sys time(ms) : {:.3e},  cpu time(ms) {:.5e}\n",
+        sys_now.elapsed().unwrap().as_micros(),
+        cpu_time.as_micros()
+    );
+    if dim_stat.is_ok() {
+        let dim_stat = dim_stat.unwrap();
+        log::info!(
+            "\n estimate_intrinsic_dim_2nn dimension estimation with nbpoints : {}, dim : {:.3e} \n",
+            sampling_size,
+            dim_stat,
+        );
+        println!(
+            " estimate_intrinsic_dim_2nn dimension estimation with nbpoints : {}, dim : {:.3e}",
+            sampling_size, dim_stat
         );
     }
     //
