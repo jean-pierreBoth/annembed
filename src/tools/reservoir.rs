@@ -47,3 +47,22 @@ where
     } // end while
     out_terms
 }
+
+#[cfg(test)]
+mod tests {
+
+    //    use std::iter::FromIterator;
+    use super::*;
+    use rand::SeedableRng;
+
+    #[test]
+    fn test_reservoir_sampling() {
+        let mut rng: Xoshiro256PlusPlus = Xoshiro256PlusPlus::seed_from_u64(4664397);
+        let nb_asked = 100;
+        let in_terms = Vec::<usize>::from_iter::<std::ops::Range<usize>>(0..60000);
+        let selected_terms = unweighted_reservoir(nb_asked, in_terms.iter(), &mut rng);
+        //
+        assert_eq!(selected_terms.len(), nb_asked);
+        // sort and print
+    }
+} // end of mod tests
