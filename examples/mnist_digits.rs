@@ -185,18 +185,18 @@ pub fn main() {
     let cpu_time: Duration = cpu_start.elapsed();
     println!(
         "\n estimate_intrinsic_dim_2nn estimation sys time(ms) : {:.3e},  cpu time(ms) {:.5e}\n",
-        sys_now.elapsed().unwrap().as_micros(),
-        cpu_time.as_micros()
+        sys_now.elapsed().unwrap().as_millis(),
+        cpu_time.as_millis()
     );
     if dim_stat.is_ok() {
         let dim_stat = dim_stat.unwrap();
         log::info!(
-            "\n estimate_intrinsic_dim_2nn dimension estimation with nbpoints : {}, dim : {:.3e} \n",
+            "\n estimate_intrinsic_dim_2nn dimension estimation with nbpoints : {}, dim : {:.5e} \n",
             sampling_size,
             dim_stat,
         );
         println!(
-            " estimate_intrinsic_dim_2nn dimension estimation with nbpoints : {}, dim : {:.3e}",
+            " estimate_intrinsic_dim_2nn dimension estimation with nbpoints : {}, dim : {:.5e}",
             sampling_size, dim_stat
         );
     }

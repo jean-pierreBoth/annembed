@@ -186,7 +186,7 @@ pub fn main() {
     let dim_stat = kgraph.estimate_intrinsic_dim_2nn(sampling_size);
     let cpu_time: Duration = cpu_start.elapsed();
     println!(
-        "\n dimension estimation sys time(ms) : {:.3e},  cpu time(ms) {:.3e}\n",
+        "\n dimension estimation sys time(ms) : {:.5e},  cpu time(ms) {:.5e}\n",
         sys_now.elapsed().unwrap().as_millis(),
         cpu_time.as_millis()
     );
