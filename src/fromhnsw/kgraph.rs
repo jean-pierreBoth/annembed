@@ -22,7 +22,14 @@ use rayon::prelude::*;
 use hnsw_rs::prelude::*;
 
 use crate::tools::{dimension::*, nodeparam::*};
+
+// 2nn dim estimation
+use permutation::Permutation;
+use rand::SeedableRng;
 use rand::distr::Distribution;
+use rand_xoshiro::Xoshiro256PlusPlus;
+
+use crate::tools::reservoir::*;
 
 // morally F should be f32 and f64.
 // The solution from ndArray is F : Float + AddAssign + SubAssign + MulAssign + DivAssign + RemAssign + Display + Debug + LowerExp + UpperExp + (ScalarOperand + LinalgScalar) + Send + Sync.
@@ -257,11 +264,32 @@ where
     /// Elena Facco , Maria d’Errico, Alex Rodriguez & Alessandro Laio
     pub fn estimate_intrinsic_dim_2nn(
         &self,
-        sampling_size: usize,
+        sampling_size_arg: usize,
     ) -> Result<(f64, f64), anyhow::Error> {
+        let neighbours = self.get_neighbours();
+        let size = neighbours.len();
+        let mut rng: Xoshiro256PlusPlus = Xoshiro256PlusPlus::seed_from_u64(4664397);
         // sample points
+        let sampling_size = size.min(sampling_size_arg);
+        let sampled = unweighted_reservoir(sampling_size, 0..size, &mut rng);
+        let mut ratios = Vec::<f64>::with_capacity(sampling_size);
         // get first 2 neighbours
-        // sort
+        for n in sampled {
+            let r1 = neighbours[n][0].weight.to_f64().unwrap();
+            let r2 = neighbours[n][1].weight.to_f64().unwrap();
+            assert!(r1 <= r2 && r1 > 0.);
+            ratios.push(r2 / r1);
+        }
+        // get sorting permutation
+        let mut permutation = Permutation::one(sampling_size);
+        permutation.assign_from_sort_by(ratios, |a, b| a.partial_cmp(&b).unwrap());
+        let direct_permutation = permutation.normalize(false); // we want to apply P
+        let mut cumulant: Vec<f64> = vec![0.; sampling_size];
+        for i in 0..sampling_size {
+            let rank = direct_permutation.apply_idx(i);
+            cumulant[rank] = rank as f64 / sampling_size as f64;
+        }
+        //
         //
         panic!("not yet implemented");
     } // end of estimate_intrinsic_dim_2nn
