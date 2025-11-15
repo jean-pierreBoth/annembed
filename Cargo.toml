@@ -63,22 +63,22 @@ num_cpus = { version = "1.16" }
 
 cpu-time = { version = "1.0" }
 
-ndarray = { version = "0.16", features = ["rayon", "serde"] }
+ndarray = { version = ">=0.16.0, <0.18", features = ["rayon", "serde"] }
 # ndarray-linalg = { version = "0.16", default-features = false }
-lax = { version = "0.17" }
+lax = { version = "0.18" }
 sprs = { version = "0.11" }
 
 # for macos
-blas-src = { version = "0.11", optional = true, features = ["accelerate"] }
+blas-src = { version = "0.14", optional = true, features = ["accelerate"] }
 
 
 indexmap = { version = "2.9" }
 memory-stats = { version = "1.1", features = ["always_use_statm"] }
 
 # hnsw_rs = { git = "https://gitlab.com/jpboth/hnswlib-rs.git" }
-# hnsw_rs = { git = "https://github.com/jean-pierreBoth/hnswlib-rs" }
+hnsw_rs = { git = "https://github.com/jean-pierreBoth/hnswlib-rs" }
 # hnsw_rs = { path = "../hnswlib-rs" }
-hnsw_rs = { version = "0.3" }
+# hnsw_rs = { version = "0.3" }
 
 
 # rand utilis
