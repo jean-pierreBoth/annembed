@@ -96,7 +96,9 @@ pub struct EmbedderParams {
     pub grad_factor: usize,
     /// if layer > 0 means we have hierarchical initialization
     pub hierarchy_layer: usize,
-    /// if we use hubness weights as importance in negative node sampling
+    /// To do negative sampling of nodes using hubness weights as node distribution, set it to true.  
+    /// Default is false.  
+    /// It improves slightly the quality estimated by [quality estimator](super::embedder::Embedder::get_quality_estimate_from_edge_length())
     pub hubness_weighting: bool,
 } // end of EmbedderParams
 
@@ -143,6 +145,7 @@ impl EmbedderParams {
             self.grad_factor
         );
         log::info!("\t hierarchy layer  : {}", self.hierarchy_layer);
+        log::info!("\t hubness weighting : {}", self.hubness_weighting);
     }
 
     /// set to false if random initialization is preferred

@@ -39,8 +39,9 @@
 //!
 //!
 use annembed::diffmaps::DiffusionParams;
-use anyhow::anyhow;
+use annembed::fromhnsw::hubness::Hubness;
 
+use anyhow::anyhow;
 use clap::{Arg, ArgAction, ArgMatches, Command};
 
 use std::fs::OpenOptions;
@@ -263,6 +264,13 @@ fn entropy_embedding(labels: &Vec<u8>, hnsw: &Hnsw<f32, DistL2>, sampling_factor
     if sampling_factor <= 0.2 {
         log::info!("estimating quality");
         let _quality = embedder.get_quality_estimate_from_edge_length(100);
+        match embedder.get_hubness() {
+            Some(_) => { /* if hubness is computed, info is dumped */ }
+            None => {
+                let hubness = Hubness::new(embedder.get_kgraph().unwrap());
+                let _histo = hubness.get_hubness_histogram();
+            }
+        };
     }
 }
 

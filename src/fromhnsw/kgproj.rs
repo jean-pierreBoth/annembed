@@ -9,8 +9,8 @@
 
 use anyhow::anyhow;
 
-use num_traits::cast::FromPrimitive;
 use num_traits::Float;
+use num_traits::cast::FromPrimitive;
 
 // to dump to ripser
 use std::fs::OpenOptions;
@@ -32,7 +32,6 @@ use crate::tools::nodeparam::*;
 /// Construct a projection Graph from Hnsw data on layers above a given layers.  
 /// Maintain for each point in the Hnsw structure nearest point in projected structure.
 /// Possibly stores matrix of distances between filtered points
-///
 pub struct KGraphProjection<F> {
     /// we consider projection on points on layers above and including this layer
     layer: usize,
@@ -89,7 +88,9 @@ where
             );
         }
         if nb_point_to_collect == 0 {
-            log::error!("!!!!!!!!!!!! KGraphProjection cannot collect points !!!!!!!!!!!!!, check layer argument");
+            log::error!(
+                "!!!!!!!!!!!! KGraphProjection cannot collect points !!!!!!!!!!!!!, check layer argument"
+            );
             std::process::exit(1);
         }
         //
@@ -152,14 +153,24 @@ where
                 } // end of for m
                 vec_tmp.sort_unstable_by(|a, b| a.partial_cmp(b).unwrap_or(Ordering::Less));
                 assert!(vec_tmp.len() <= 1 || vec_tmp[0].weight <= vec_tmp[1].weight); // temporary , check we did not invert order
-                                                                                       // keep only the asked size. Could we keep more ?
+                // keep only the asked size. Could we keep more ?
                 if vec_tmp.len() < nbng {
                     nb_point_below_nbng += 1;
                     mean_deficient_neighbour_size += vec_tmp.len();
-                    log::trace!("neighbours must have {} neighbours, got only {}. layer {}  , pos in layer : {}", nbng, vec_tmp.len(),  p_id.0, p_id.1);
+                    log::trace!(
+                        "neighbours must have {} neighbours, got only {}. layer {}  , pos in layer : {}",
+                        nbng,
+                        vec_tmp.len(),
+                        p_id.0,
+                        p_id.1
+                    );
                     if vec_tmp.is_empty() {
                         let p_id = point.get_point_id();
-                        log::warn!(" graph will not be connected, isolated point at layer {}  , pos in layer : {} ", p_id.0, p_id.1);
+                        log::warn!(
+                            " graph will not be connected, isolated point at layer {}  , pos in layer : {} ",
+                            p_id.0,
+                            p_id.1
+                        );
                         continue;
                     }
                 }
@@ -170,9 +181,9 @@ where
                 // TODO compute distance with preceding points. Fills distances ????????????
             } // end of while
         } // end loop on upper layers
-          // at this step we have upper Graph (and could store distances between points if not too many points)
-          // yet we do not have global projection mapping to NodeId of upper graph
-          // so we need to loop on lower layers
+        // at this step we have upper Graph (and could store distances between points if not too many points)
+        // yet we do not have global projection mapping to NodeId of upper graph
+        // so we need to loop on lower layers
         log::trace!(
             "number of points in upper graph : {} ",
             _nb_point_upper_graph
@@ -304,9 +315,19 @@ where
                     nb_point_below_nbng += 1;
                     mean_deficient_neighbour_size += vec_tmp.len();
                     let p_id = point.get_point_id();
-                    log::trace!("neighbours must have {} neighbours, got only {}. layer {}  , pos in layer : {}", nbng, vec_tmp.len(),  p_id.0, p_id.1);
+                    log::trace!(
+                        "neighbours must have {} neighbours, got only {}. layer {}  , pos in layer : {}",
+                        nbng,
+                        vec_tmp.len(),
+                        p_id.0,
+                        p_id.1
+                    );
                     if vec_tmp.is_empty() {
-                        log::warn!(" graph will not be connected, isolated point at layer {}  , pos in layer : {} ", p_id.0, p_id.1);
+                        log::warn!(
+                            " graph will not be connected, isolated point at layer {}  , pos in layer : {} ",
+                            p_id.0,
+                            p_id.1
+                        );
                         continue;
                     }
                 }
@@ -316,7 +337,7 @@ where
                 graph_neighbours[index] = vec_tmp;
             }
         } // end for on layers
-          // we have both graph and projection
+        // we have both graph and projection
         let whole_graph = KGraph::<F> {
             max_nbng: nbng,
             nbnodes: graph_neighbours.len(),
@@ -328,8 +349,12 @@ where
         let _graph_stats = whole_graph.get_kraph_stats();
         //
         if nb_point_below_nbng > 0 {
-            log::info!("number of points with less than : {} neighbours = {},  mean size for deficient neighbourhhod {:.3e}", nbng, 
-                nb_point_below_nbng, mean_deficient_neighbour_size as f64/nb_point_below_nbng as f64);
+            log::info!(
+                "number of points with less than : {} neighbours = {},  mean size for deficient neighbourhhod {:.3e}",
+                nbng,
+                nb_point_below_nbng,
+                mean_deficient_neighbour_size as f64 / nb_point_below_nbng as f64
+            );
         }
         log::trace!("Projection exiting from new");
         //
@@ -457,7 +482,7 @@ where
             nb_fixed += 1;
         }
     } // end of for on points
-      //
+    //
     log::trace!("fix_points_with_no_projection nb fixed {}", nb_fixed);
     //
     nb_fixed

@@ -802,7 +802,7 @@ where
         // do we use hubness to sample negative nodes?
         let hubness_opt: Option<Hubness<'a, F>>;
         let neg_node_sampler = if params.hubness_weighting {
-            log::debug!("using hubness for node sampling");
+            log::info!("using hubness for negative node sampling");
             // compute node hubness from KGraph
             let kgraph;
             if let Some(graph) = self.kgraph {
@@ -815,6 +815,8 @@ where
                 return Err(String::from("entropy_optimize: cannot find kraph "));
             }
             let hubness = Hubness::new(kgraph);
+            // as we have info we get/dump info!
+            let _ = hubness.get_hubness_histogram();
             let counts = hubness.get_counts();
             let upper_bound = counts.len() as f32;
             let f_counts: Vec<f32> = counts
