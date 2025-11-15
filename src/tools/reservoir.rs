@@ -7,6 +7,7 @@ use rand_xoshiro::Xoshiro256PlusPlus;
 //  2. Kim-Hung Li Reservoir Sampling Algorithms : Comm ACM Vol 20, 4 December 1994
 //  3. https://en.wikipedia.org/wiki/Reservoir_sampling
 
+/// Algorithm L of Kim-Hung Li paper
 #[allow(unused)]
 pub(crate) fn unweighted_reservoir<T, IT>(
     size_asked: usize,
@@ -31,7 +32,7 @@ where
     //
     loop {
         xsi = rand_distr::StandardUniform.sample(rng);
-        s = s + (xsi.ln() / (1. - w).ln()).floor() as usize + 1;
+        s = (xsi.ln() / (1. - w).ln()).floor() as usize;
         match in_terms.nth(s) {
             Some(item) => {
                 // update random index in out_terms
@@ -63,7 +64,7 @@ mod tests {
     fn test_reservoir_sampling() {
         log_init_test();
         let mut rng: Xoshiro256PlusPlus = Xoshiro256PlusPlus::seed_from_u64(4664397);
-        let nb_asked = 10;
+        let nb_asked = 5000;
         let in_terms = Vec::<usize>::from_iter::<std::ops::Range<usize>>(0..60000);
         let selected_terms = unweighted_reservoir(nb_asked, in_terms.iter(), &mut rng);
         let mean = selected_terms.iter().fold(0, |acc, t| acc + *t) as f64 / nb_asked as f64;
