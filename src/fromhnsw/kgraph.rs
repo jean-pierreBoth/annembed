@@ -24,6 +24,7 @@ use hnsw_rs::prelude::*;
 use crate::tools::{dimension::*, nodeparam::*};
 
 // 2nn dim estimation
+use crate::tools::reservoir::unweighted_reservoir;
 use permutation::Permutation;
 use rand::SeedableRng;
 use rand::distr::Distribution;
@@ -272,11 +273,8 @@ where
         let mut rng: Xoshiro256PlusPlus = Xoshiro256PlusPlus::seed_from_u64(4664397);
         // sample points
         let sampling_size = size.min(sampling_size_arg);
-        //        let sampled = unweighted_reservoir(sampling_size, 0..size, &mut rng);
-        let distrib = rand::distr::Uniform::try_from(10..size).unwrap();
-        let sampled: Vec<usize> = (0..sampling_size)
-            .map(|_| distrib.sample(&mut rng))
-            .collect();
+        let sampled = unweighted_reservoir(sampling_size, 0..size, &mut rng);
+
         let mut ratios = Vec::<f64>::with_capacity(sampling_size);
         // get first 2 neighbours
         sampled.into_iter().for_each(|n| {
