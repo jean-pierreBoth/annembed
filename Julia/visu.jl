@@ -67,12 +67,18 @@ function plotCsvLabels(fname, col1=2, col2=3, clip=false, cvd=false)
     # colors for cvd people!
     mycolors = ColorScheme(distinguishable_colors(nb_labels, transform=protanopic))
     labelscolor = map(l -> mycolors[labeldict[l]], data.Column1)
-    # avec makie
+    # avec makie. adapt marker size to number of values
+    nbdata = length(data.Column1)
+    if nbdata > 1000000
+        mvalue = 1
+    else
+        mvalue = 2
+    end
     pngname = fname * ".png"
     if clip
-        fig = CairoMakie.scatter(clamp.(data[!, col1], clipxminus, clipxplus), clamp.(data[!, col2], clipyminus, clipyplus), color=labelscolor, markersize=1)
+        fig = CairoMakie.scatter(clamp.(data[!, col1], clipxminus, clipxplus), clamp.(data[!, col2], clipyminus, clipyplus), color=labelscolor, markersize=mvalue)
     else
-        fig = CairoMakie.scatter(data[!, col1], data[!, col2], color=labelscolor, markersize=1)
+        fig = CairoMakie.scatter(data[!, col1], data[!, col2], color=labelscolor, markersize=mvalue)
     end
     CairoMakie.save(pngname, fig)
     # return Dictionary associating original label to colors
@@ -141,7 +147,7 @@ end
 
 """
     This function reads reloads the "continuity_ratio.csv" file. See Rust crate function Embedder::get_quality_estimate_from_edge_length
-    It draws a heatmap of min(log(max(1., continuity_ratio)),2.). 
+    It draws a heatmap of min(log(max(1., continuity_ratio)),2.) to filter out extreme values 
     Pixels not corresponding to a data point (giving background) are set -1.
     The name of the png file (in current working directory) is fname.png
  
@@ -176,7 +182,7 @@ function plotCsvContinuity(fname)
         continuity[ix, iy] = data[i, 1]
     end
     #   display points with continuity ratio greater 1
-    #   with logarirthmic intensity capped by exp(2) = 7.4
+    #   and with logarirthmic intensity capped by exp(2) = 7.4
     f1(x::Float64) =
         if x > 0.
             return min(log(max(1., x)), 2.)
