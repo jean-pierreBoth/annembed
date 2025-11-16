@@ -157,10 +157,17 @@ where
         self.hubness.as_ref()
     }
 
-    /// return the underlying KGraph
+    /// return the underlying KGraph possibly via the GrapProjection
     pub fn get_kgraph(&self) -> Option<&KGraph<F>> {
-        self.kgraph
+        if self.kgraph.is_some() {
+            self.kgraph
+        } else if self.hkgraph.is_some() {
+            Some(self.hkgraph.as_ref().unwrap().get_large_graph())
+        } else {
+            None
+        }
     }
+
     /// get neighbourhood size used in embedding
     pub fn get_kgraph_nbng(&self) -> usize {
         if self.kgraph.is_some() {
