@@ -38,8 +38,11 @@ The crate provides mainly in the form of a library (*See documentation of the bi
     - An estimation of the data intrinsic dimension as described in:  
             Levina E. and Bickel P.J NIPS 2004.  See [paper](https://www.stat.berkeley.edu/~bickel/mldim.pdf).
 
+    - An estimation of the data intrinsic dimension as described in:  
+            Facco E. and al. Nature Scientific reports 2017.  See [paper](https://www.nature.com/articles/s41598-017-11873-y).
+            
     - An estimation of the hubness of the graph of the Hnsw structure as described in:
-            Radovanovic M., Nanopoulos A. and Ivanovic M. See [paper](https://www.jmlr.org/papers/volume11/radovanovic10a/radovanovic10a.pdf)
+            Radovanovic M., Nanopoulos A. and Ivanovic M. 2010. See [paper](https://www.jmlr.org/papers/volume11/radovanovic10a/radovanovic10a.pdf).
   
     - a Diffusion Maps implementation.
 
