@@ -1282,10 +1282,10 @@ where
                 // we know node_j is not in neighbour, we smooth repulsion for point with dist less than scale/4
                 // the part of repulsion comming from coeff is less than 1/(scale * scale)
                 //
-                let alfa = 1. / 4.;
+                let alfa = 1. / 16.;
                 if d_ik > 0. {
                     let coeff_repulsion = 1. / (d_ik_scaled * d_ik_scaled).max(alfa); // !!
-                    let coeff_ik = (grad_step * coeff * coeff_repulsion).min(1.);
+                    let coeff_ik = (grad_step * coeff * coeff_repulsion).min(2.);
                     gradient = (&y_k - &y_i) * F::from_f64(coeff_ik).unwrap();
                     log::trace!(
                         "norm repulsive  coeff gradient {:.2e} {:.2e}",
