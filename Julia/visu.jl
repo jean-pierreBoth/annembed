@@ -74,6 +74,7 @@ function plotCsvLabels(fname, col1=2, col2=3, clip=false, cvd=false)
     else
         mvalue = 2
     end
+    @info "markersize:" mvalue
     pngname = fname * ".png"
     if clip
         fig = CairoMakie.scatter(clamp.(data[!, col1], clipxminus, clipxplus), clamp.(data[!, col2], clipyminus, clipyplus), color=labelscolor, markersize=mvalue)
@@ -93,8 +94,8 @@ end
 
 
 """
-    This function reads reloads the "first distance" file. See Rust crate function Embedder::get_quality_estimate_from_edge_length
-    It draws a heatmap of exp(distance-mindist) and dumps it in fname.png
+    plotCsvDist(fname)
+    It draws a heatmap of exp-(distance-mindist)/2 * sigma(dist) and dumps it in fname.png
 """
 function plotCsvDist(fname)
     data = DataFrame(CSV.File(fname, header=false))
@@ -126,9 +127,11 @@ function plotCsvDist(fname)
     end
     dist = dist ./ max.(count, 1)
     dmin = minimum(dist)
+    meandist = mean(dist)
+    sigma = sqrt(var(dist))
     # enhance constrast by dmin correction
     distremap = map(x -> if x > 0
-            exp(-(x - dmin))
+            exp(-(x - dmin) / (2. * sigma))
         else
             0
         end, dist)
