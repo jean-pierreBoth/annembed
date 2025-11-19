@@ -97,6 +97,7 @@ pub fn main() {
     embed_params.grad_step = 1.;
     embed_params.nb_sampling_by_edge = 10;
     embed_params.dmap_init = true;
+    embed_params.hubness_weighting = false;
     //
     let mut embedder;
     let hierarchical = false;

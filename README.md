@@ -35,11 +35,9 @@ The crate provides mainly in the form of a library (*See documentation of the bi
 
     - an implementation of range approximation and approximated SVD for dense and/or row compressed matrices as described in the svdapprox module and the paper of Halko-Tropp (Cf. [Tsvd](https://arxiv.org/abs/0909.4061)).
 
-    - An estimation of the data intrinsic dimension as described in:  
-            Levina E. and Bickel P.J NIPS 2004.  See [paper](https://www.stat.berkeley.edu/~bickel/mldim.pdf).
-
-    - An estimation of the data intrinsic dimension as described in:  
-            Facco E. and al. Nature Scientific reports 2017.  See [paper](https://www.nature.com/articles/s41598-017-11873-y).
+    - 2 different algorithms to estimate the intrinsic dimension of data, as described in:  
+        -  Levina E. and Bickel P.J NIPS 2004.  See [paper](https://www.stat.berkeley.edu/~bickel/mldim.pdf).  
+        -  Facco E. and al. Nature Scientific reports 2017.  See [paper](https://www.nature.com/articles/s41598-017-11873-y).
             
     - An estimation of the hubness of the graph of the Hnsw structure as described in:
             Radovanovic M., Nanopoulos A. and Ivanovic M. 2010. See [paper](https://www.jmlr.org/papers/volume11/radovanovic10a/radovanovic10a.pdf).
