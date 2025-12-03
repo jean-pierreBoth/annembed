@@ -88,8 +88,16 @@ impl DiffusionParams {
     /// modify the default alfa See Lafon paper.
     /// natural values are 0. , 1/2 and 1.
     pub fn set_alfa(&mut self, alfa: f32) {
-        if !(-1.01..=1.).contains(&alfa) {
-            log::warn!("not changing alfa, alfa should be in [-1. , 1.] ");
+        let alfa_min = -2.;
+        let alfa_sup = 1.;
+        if !(alfa_min..=alfa_sup).contains(&alfa) {
+            self.alfa = alfa.max(alfa_min).min(alfa_sup);
+            log::warn!(
+                "alfa should be in [{:.3e} , {:.3e}], setting lafa to {:.3e} ",
+                alfa_min,
+                alfa_sup,
+                self.alfa
+            );
             return;
         }
         self.alfa = alfa;
@@ -445,8 +453,15 @@ impl DiffusionMaps {
         //
     }
 
+    // This function is called by Self::compute_dmap_nodeparams and Self::density_to_kernel
+    // It computes a first kernel version depending on initial point.
     // remap node params expressing distance to proba knowing scale to adopt
     // scales must not be normalized by their mean
+    // Args:
+    //  - local_scales is array of l2 ditances to node neighbours
+    //  - scale_ratio : ratio between higher and lower l2 distances. Used as epsil!
+    //  - scale_to_kernel : kernel function
+    //
     // The function returns Nodeparams corresponding to new kernel and associated density (computed as mean transition proba)
     fn scales_to_kernel<F>(
         &self,
@@ -593,7 +608,6 @@ impl DiffusionMaps {
         // compute a scale around each node, mean scale and quantiles on scale
         let local_scales: Vec<F> = neighbour_hood
             .par_iter()
-            //            .map(|edges| self.get_dist_around_node(kgraph, edges, nbgh_size))
             .map(|edges| self.get_dist_l2_from_node(edges, nbgh_size))
             .collect();
         // collect scales quantiles
@@ -621,7 +635,7 @@ impl DiffusionMaps {
         let (_, q_density) = self.scales_to_kernel(kgraph, &local_scales, epsil, &remap_weight);
         self.get_quantiles("density quantiles first pass", &q_density);
         //
-        let (nodeparams, q_density) = self.density_to_kernel(
+        let (nodeparams, q_density) = self.from_density_to_new_scales(
             kgraph,
             nbgh_size,
             &local_scales,
@@ -635,10 +649,10 @@ impl DiffusionMaps {
         (nodeparams, q_density)
     } // end compute_dmap_nodeparams
 
-    // after a first guess for scales get re-estimate scales from q_densities
-    // computed from scales estimated via get_dist_l2_from_node
+    // After a first estimation of density we re-estimate scale as in Harlim-Berry corollary 1
+    // with  scale = density**beta and modify densities estimate accordingly
     // beta parameter described in harlim-berry paper. Should be < 0.
-    fn density_to_kernel<F>(
+    fn from_density_to_new_scales<F>(
         &self,
         kgraph: &KGraph<F>,
         nbng: usize,
@@ -723,10 +737,10 @@ impl DiffusionMaps {
         quant_densities
     }
 
-    // computes scale (mean norm of dist) around a point
+    // computes scale (mean L1 norm of dist) around a point
     // we compute mean of dist to first neighbour around a point given outgoing edges and graph
     #[allow(unused)]
-    pub(crate) fn get_dist_around_node<F>(
+    pub(crate) fn get_dist_l1_node<F>(
         &self,
         kgraph: &KGraph<F>,
         out_edges: &[OutEdge<F>],
@@ -760,7 +774,6 @@ impl DiffusionMaps {
 
     // computes scale (mean norm of dist) around a point
     // we compute L2 mean of distance from a node
-    #[allow(unused)]
     pub(crate) fn get_dist_l2_from_node<F>(&self, out_edges: &[OutEdge<F>], nbng: usize) -> F
     where
         F: Float
@@ -1193,7 +1206,7 @@ mod tests {
         // do dmap embedding, laplacian computation
         let dtime = 1.;
         let gnbn: usize = 16;
-        let mut dparams: DiffusionParams = DiffusionParams::new(4, Some(dtime), Some(gnbn));
+        let mut dparams: DiffusionParams = DiffusionParams::new(2, Some(dtime), Some(gnbn));
         dparams.set_alfa(1.);
         dparams.set_beta(-1.);
         //
