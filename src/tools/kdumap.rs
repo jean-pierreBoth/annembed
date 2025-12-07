@@ -73,8 +73,14 @@ where
                 node_params[*i] = param.1.clone();
             }
             (i, None) => {
-                log::error!("to_proba_edges , node rank {}, has no neighbour, use hnsw.set_keeping_pruned(true)", i);
-                log::error!("to_proba_edges , node rank {}, has no neighbour, use hnsw.set_keeping_pruned(true)", i);
+                log::error!(
+                    "to_proba_edges , node rank {}, has no neighbour, use hnsw.set_keeping_pruned(true)",
+                    i
+                );
+                log::error!(
+                    "to_proba_edges , node rank {}, has no neighbour, use hnsw.set_keeping_pruned(true)",
+                    i
+                );
                 std::process::exit(1);
             }
         };
@@ -144,7 +150,7 @@ where
         let y_i = neighbour.node; // y_i is a NodeIx = usize
         rho_y_s.push(kgraph.get_neighbours()[y_i][0].weight.to_f32().unwrap());
     } // end of for i
-      //
+    //
     rho_y_s.push(rho_x);
     let mean_rho = rho_y_s.iter().sum::<f32>() / (rho_y_s.len() as f32);
     // we set scale so that transition proba do not vary more than PROBA_MIN between first and last neighbour
@@ -183,14 +189,22 @@ where
             //
             let proba_range = probas_edge[probas_edge.len() - 1].weight / probas_edge[0].weight;
             log::trace!(" first dist {:2e} last dist {:2e}", first_dist, last_dist);
-            log::trace!("scale : {:.2e} , first neighbour proba {:2e}, last neighbour proba {:2e} proba gap {:.2e}", scale, probas_edge[0].weight, 
-                            probas_edge[probas_edge.len() - 1].weight,
-                            proba_range);
+            log::trace!(
+                "scale : {:.2e} , first neighbour proba {:2e}, last neighbour proba {:2e} proba gap {:.2e}",
+                scale,
+                probas_edge[0].weight,
+                probas_edge[probas_edge.len() - 1].weight,
+                proba_range
+            );
             if proba_range < PROBA_MIN {
                 log::error!(" first dist {:2e} last dist {:2e}", first_dist, last_dist);
-                log::error!("scale : {:.2e} , first neighbour proba {:2e}, last neighbour proba {:2e} proba gap {:.2e}", scale, probas_edge[0].weight, 
-                                probas_edge[probas_edge.len() - 1].weight,
-                                proba_range);
+                log::error!(
+                    "scale : {:.2e} , first neighbour proba {:2e}, last neighbour proba {:2e} proba gap {:.2e}",
+                    scale,
+                    probas_edge[0].weight,
+                    probas_edge[probas_edge.len() - 1].weight,
+                    proba_range
+                );
             }
             assert!(
                 proba_range >= PROBA_MIN,
@@ -331,5 +345,5 @@ pub(crate) fn get_laplacian(initial_space: &NodeParams) -> GraphLaplacian {
         let csr_mat: CsMat<f32> = laplacian.to_csr();
         GraphLaplacian::new(MatRepr::from_csrmat(csr_mat), diagonal)
     } // end case CsMat
-      //
+    //
 } // end of get_laplacian
