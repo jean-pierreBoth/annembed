@@ -35,8 +35,8 @@ use rand_xoshiro::Xoshiro256PlusPlus;
 use rand_xoshiro::rand_core::SeedableRng;
 
 use ndarray::{
-    Array, Array1, Array2, ArrayBase, ArrayView, ArrayView1, ArrayView2, ArrayViewMut1, Dim,
-    Dimension, Ix1, Ix2,
+    Array, Array1, Array2, ArrayBase, ArrayView, ArrayView2, ArrayViewMut1, Dim, Dimension, Ix1,
+    Ix2,
 };
 
 // pub to avoid to re-import everywhere explicitly
@@ -53,7 +53,9 @@ use num_traits::float::*; // tp get FRAC_1_PI from FloatConst
 use parking_lot::RwLock;
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 
-use sprs::{CsMat, CsMatView, TriMat, prod};
+use sprs::{CsMat, CsMatView, prod};
+
+use super::matrepr::*;
 
 struct RandomGaussianMatrix<F: Float> {
     mat: Array2<F>,
@@ -103,144 +105,6 @@ impl<F: Float + FromPrimitive> RandomGaussianGenerator<F> {
 } // end of impl RandomGaussianGenerator
 
 //==================================================================================================
-
-/// an enum coding for the type of representation
-pub enum MatType {
-    FULL,
-    CSR,
-}
-
-// We can do range approximation on both dense Array2 and CsMat representation of matrices.
-/// enum storing the matrix for our 2 types of matrix representation
-#[derive(Clone)]
-pub enum MatMode<F> {
-    FULL(Array2<F>),
-    CSR(CsMat<F>),
-}
-
-/// We need a minimal Matrix structure to factor the 2 linear algebra operations we need to do an approximated svd
-#[derive(Clone)]
-pub struct MatRepr<F> {
-    data: MatMode<F>,
-} // end of struct MatRepr
-
-impl<F> MatRepr<F>
-where
-    F: Float
-        + Lapack
-        + ndarray::ScalarOperand
-        + sprs::MulAcc
-        + for<'r> std::ops::MulAssign<&'r F>
-        + Default
-        + std::marker::Sync,
-{
-    /// initialize a MatRepr from an Array2
-    #[inline]
-    pub fn from_array2(mat: Array2<F>) -> MatRepr<F> {
-        MatRepr {
-            data: MatMode::FULL(mat),
-        }
-    }
-
-    pub fn from_trimat(trimat: TriMat<F>) -> MatRepr<F> {
-        MatRepr {
-            data: MatMode::CSR(trimat.to_csr()),
-        }
-    }
-
-    /// initialize a MatRepr from a CsMat
-    #[inline]
-    pub fn from_csrmat(mat: CsMat<F>) -> MatRepr<F> {
-        assert!(mat.is_csr());
-        MatRepr {
-            data: MatMode::CSR(mat),
-        }
-    }
-
-    /// a common interface to get matrix dimension. returns [nbrow, nbcolumn]
-    pub fn shape(&self) -> [usize; 2] {
-        match &self.data {
-            MatMode::FULL(mat) => [mat.shape()[0], mat.shape()[1]],
-            MatMode::CSR(csmat) => [csmat.shape().0, csmat.shape().1],
-        }
-    } // end of shape
-
-    /// returns true if we have a row compressed representation
-    pub fn is_csr(&self) -> bool {
-        match &self.data {
-            MatMode::FULL(_) => false,
-            MatMode::CSR(_) => true,
-        }
-    } // end of is_csr
-
-    /// returns a mutable reference to full matrice if data is given as full matrix, an Error otherwise
-    pub fn get_full_mut(&mut self) -> Result<&mut Array2<F>, usize> {
-        match &mut self.data {
-            MatMode::FULL(mat) => Ok(mat),
-            _ => Err(1),
-        }
-    } // end of get_full_mut
-
-    pub fn get_csr(&self) -> Result<&CsMat<F>, usize> {
-        match &self.data {
-            MatMode::CSR(mat) => Ok(mat),
-            _ => Err(1),
-        }
-    } // end of get_csr
-
-    /// get a reference to matrix representation
-    pub fn get_data(&self) -> &MatMode<F> {
-        &self.data
-    } // enf of get_data
-
-    /// get a mutable reference to matrix representation
-    pub fn get_data_mut(&mut self) -> &mut MatMode<F> {
-        &mut self.data
-    } // end of get_data_mut
-
-    /// Matrix Vector multiplication. We use raw interface to get Blas.
-    pub fn mat_dot_vector(&self, vec: &ArrayView1<F>) -> Array1<F> {
-        match &self.data {
-            MatMode::FULL(mat) => mat.dot(vec),
-            MatMode::CSR(csmat) => {
-                // allocate result
-                let mut vres = Array1::<F>::zeros(csmat.rows());
-                let vec_slice = vec.as_slice().unwrap();
-                prod::mul_acc_mat_vec_csr(csmat.view(), vec_slice, vres.as_slice_mut().unwrap());
-                vres
-            }
-        }
-    } // end of matDotVector
-
-    /// just multiplication by beta in a unified way
-    pub fn scale(&mut self, beta: F) {
-        match &mut self.data {
-            MatMode::FULL(mat) => {
-                *mat *= beta;
-            }
-            MatMode::CSR(csmat) => {
-                csmat.scale(beta);
-            }
-        };
-    } // end of scale
-
-    /// return a transposed copy
-    pub fn transpose_owned(&self) -> Self {
-        match &self.data {
-            MatMode::FULL(mat) => MatRepr::<F>::from_array2(mat.t().to_owned()),
-            // in CSR mode we must reconvert to csr beccause the transposed view is csc
-            MatMode::CSR(csmat) => MatRepr::<F>::from_csrmat(csmat.transpose_view().to_csr()),
-        }
-    } // end of transpose_owned
-
-    /// return frobenius norm
-    pub fn norm_frobenius(&self) -> F {
-        match &self.data {
-            MatMode::FULL(mat) => norm_frobenius_full(&mat.view()),
-            MatMode::CSR(csmat) => norm_frobenius_csmat(&csmat.view()),
-        }
-    } // end of norm_frobenius
-} // end of impl block for MatRepr
 
 // I need a function to compute (once and only once in svd) a product B  = tQ*CSR for Q = (m,r) with r small (<=5) and CSR(m,n)
 // The matrix Q comes from range_approx so its rank (columns number) will really be small as recommended in csc_mulacc_dense_colmaj doc
@@ -382,7 +246,7 @@ where
                 precision.max_rank,
             ),
             RangeApproxMode::RANK(rank) => {
-                match &self.mat.data {
+                match self.mat.get_data() {
                     MatMode::FULL(array) => subspace_iteration_full(array, rank.rank, rank.nbiter),
 
                     MatMode::CSR(csr_mat) => {
@@ -751,9 +615,16 @@ where
 /// a_mat is the original matrix, q_mat is the matrix return by the approximator (SvdApprox::get_approximator)
 pub fn check_range_approx_repr<F>(a_mat: &MatRepr<F>, q_mat: &Array2<F>) -> f64
 where
-    F: Float + lax::Lapack + ndarray::ScalarOperand + num_traits::MulAdd + sprs::MulAcc,
+    F: Default
+        + Sync
+        + Float
+        + lax::Lapack
+        + ndarray::ScalarOperand
+        + num_traits::MulAdd
+        + sprs::MulAcc
+        + for<'a> std::ops::MulAssign<&'a F>,
 {
-    match &a_mat.data {
+    match a_mat.get_data() {
         MatMode::FULL(mat) => check_range_approx(&mat.view(), &q_mat.view()),
         MatMode::CSR(csr_mat) => {
             let b = transpose_dense_mult_csr(q_mat, csr_mat);
@@ -774,14 +645,14 @@ where
 ///
 /// Returns s, U and Vt such that $$  A = U \cdot S \cdot Vt $$ with :
 ///
-/// -s Array of size r containing singular values (corresponding to approximation up to rank r)
+/// -s Array of size r containing singular values in decreasing order as in lapack sgedd (corresponding to approximation up to rank r)
 /// -U  array (m,r). Each row is a projection of data on a space of rank r.
 /// -Vt array (r,n) with eigenvectors stored in column, so projected data are accessed by rows so that
 /// $$  A = U \cdot S \cdot Vt   $$
 ///
 #[derive(Clone)]
 pub struct SvdResult<F> {
-    /// eigenvalues
+    /// eigenvalues sorted in decreasing order as in Lapack sgedd
     pub s: Option<Array1<F>>,
     /// left eigenvectors. (m,r) matrix where r is rank asked for and m the number of data.
     pub u: Option<Array2<F>>,
@@ -863,7 +734,7 @@ where
             return Err(String::from("range approximation failed"));
         }
         //
-        let mut b = match &self.data.data {
+        let mut b = match &self.data.get_data() {
             MatMode::FULL(mat) => q.t().dot(mat),
             MatMode::CSR(mat) => {
                 log::trace!("direct_svd got csr matrix");
@@ -946,10 +817,18 @@ pub fn norm_frobenius_csmat<F: Float + std::iter::Sum>(m: &CsMatView<F>) -> F {
 /// estimate the first singular_value of mat given as a MatRepr
 pub fn norm_frobenius_repr<F>(mat: &MatRepr<F>) -> F
 where
-    F: Float + std::iter::Sum + FromPrimitive + ndarray::ScalarOperand + sprs::MulAcc,
+    F: Default
+        + Sync
+        + Float
+        + Lapack
+        + std::iter::Sum
+        + FromPrimitive
+        + ndarray::ScalarOperand
+        + sprs::MulAcc
+        + for<'a> std::ops::MulAssign<&'a F>,
 {
     //
-    match &mat.data {
+    match mat.get_data() {
         MatMode::FULL(mat) => norm_frobenius_full(&mat.view()),
         MatMode::CSR(csr_mat) => norm_frobenius_csmat(&csr_mat.view()),
     }
@@ -1069,16 +948,23 @@ where
 /// estimate the first singular_value of mat given as a MatRepr
 pub fn estimate_first_singular_value_repr<F>(mat: &MatRepr<F>) -> f64
 where
-    F: Float + FromPrimitive + ndarray::ScalarOperand + lax::Lapack + sprs::MulAcc,
+    F: Default
+        + Sync
+        + Float
+        + FromPrimitive
+        + ndarray::ScalarOperand
+        + lax::Lapack
+        + sprs::MulAcc
+        + for<'a> std::ops::MulAssign<&'a F>,
 {
     //
-    let norm_l2 = match &mat.data {
+    let norm_l2 = match mat.get_data() {
         MatMode::FULL(mat) => {
             let norm_l2 = estimate_first_singular_value_fullmat(&mat.view());
             norm_l2
         }
         MatMode::CSR(csr_mat) => {
-            let norm_l2 = estimate_first_singular_value_csmat(csr_mat);
+            let norm_l2 = estimate_first_singular_value_csmat(&csr_mat);
             norm_l2
         }
     };

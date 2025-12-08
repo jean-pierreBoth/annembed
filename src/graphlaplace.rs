@@ -2,9 +2,10 @@
 
 use ndarray::{Array, Array1, Array2};
 
-use lax::{layout::MatrixLayout, JobSvd, Lapack};
+use lax::{JobSvd, Lapack, layout::MatrixLayout};
 // use ndarray_linalg::SVDDC;
 
+use crate::tools::matrepr::*;
 use crate::tools::svdapprox::*;
 
 pub(crate) const FULL_MAT_REPR: usize = 5000;
@@ -122,7 +123,9 @@ pub(crate) fn svd_f32(b: &mut Array2<f32>) -> Result<SvdResult<f32>, String> {
     };
     let slice_for_svd_opt = b.as_slice_mut();
     if slice_for_svd_opt.is_none() {
-        log::error!("direct_svd Matrix cannot be transformed into a slice : not contiguous or not in standard order");
+        log::error!(
+            "direct_svd Matrix cannot be transformed into a slice : not contiguous or not in standard order"
+        );
         return Err(String::from("not contiguous or not in standard order"));
     }
     // use divide conquer (calls lapack gesdd), faster but could use svd (lapack gesvd)

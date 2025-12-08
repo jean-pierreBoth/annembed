@@ -5,6 +5,7 @@ pub mod dichotomy;
 pub mod dimension;
 pub mod entropy;
 pub mod io;
+pub mod matrepr;
 pub mod nodeparam;
 pub mod svdapprox;
 

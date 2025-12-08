@@ -21,7 +21,7 @@ use rand::Rng;
 use crate::fromhnsw::kgraph::KGraph;
 use crate::graphlaplace::*;
 use crate::prelude::PROBA_MIN;
-use crate::tools::{nodeparam::*, svdapprox::*};
+use crate::tools::{matrepr::*, nodeparam::*};
 
 pub(crate) fn to_proba_edges<F>(kgraph: &KGraph<F>, scale_rho: f32, beta: f32) -> NodeParams
 where
