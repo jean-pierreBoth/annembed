@@ -129,8 +129,7 @@ where
     //
     fn relative_renyi_entropy_q(&self, other: &DiscreteProba<F>, q: F) -> F {
         let zero = F::zero();
-        let entropy = self
-            .p
+        self.p
             .iter()
             .zip(other.p.iter())
             .map(|t| {
@@ -140,8 +139,7 @@ where
                     zero
                 }
             })
-            .sum();
-        entropy
+            .sum()
     }
 
     /// computes mean diversity of other with respect to self.

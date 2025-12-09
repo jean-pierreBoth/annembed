@@ -41,7 +41,7 @@ where
                 out_terms[idx] = item;
                 // update w
                 xsi = rand_distr::StandardUniform.sample(rng);
-                w = w * (xsi.ln() / (size_asked as f64)).exp();
+                w *= (xsi.ln() / (size_asked as f64)).exp();
             }
             None => break,
         }

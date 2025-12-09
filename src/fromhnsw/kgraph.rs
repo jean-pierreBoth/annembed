@@ -285,17 +285,17 @@ where
         });
         // get sorting permutation
         let mut permutation = Permutation::one(sampling_size);
-        permutation.assign_from_sort_by(&ratios, |a, b| a.partial_cmp(&b).unwrap());
+        permutation.assign_from_sort_by(&ratios, |a, b| a.partial_cmp(b).unwrap());
         let direct_permutation = permutation.normalize(false); // we want to apply P
         let mut cumulant: Vec<f64> = vec![0.; sampling_size];
-        for i in 0..sampling_size {
+        for (i, ratio) in ratios.iter().enumerate().take(sampling_size) {
             let rank = direct_permutation.apply_idx(i);
             cumulant[rank] = rank as f64 / sampling_size as f64;
             if i <= 20 {
                 log::debug!(
                     "i: {}, {:.3e}, rank : {}, cumul : {:.3e}",
                     i,
-                    ratios[i],
+                    ratio,
                     rank,
                     cumulant[rank]
                 );

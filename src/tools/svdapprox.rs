@@ -964,7 +964,7 @@ where
             norm_l2
         }
         MatMode::CSR(csr_mat) => {
-            let norm_l2 = estimate_first_singular_value_csmat(&csr_mat);
+            let norm_l2 = estimate_first_singular_value_csmat(csr_mat);
             norm_l2
         }
     };

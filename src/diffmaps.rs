@@ -165,7 +165,7 @@ pub struct DiffusionMaps {
     normed_scales: Option<Array1<f32>>,
     // mean scale
     mean_scale: f32,
-    //
+    // scales deduced from density and beta arg (beta < 0)
     beta_scales: Option<Array1<f32>>,
     //
     q_density: Option<Vec<f32>>,
@@ -548,8 +548,7 @@ impl DiffusionMaps {
                     edges.push(edge);
                 }
                 // TODO: we adjust self_edge
-                //                edges[0].weight = edges[1].weight / 2.;
-                edges[0].weight = 1. / 2.;
+                edges[0].weight = 1. / nb_edges as f32;
             }
             // allocate a NodeParam and keep track of real scale of node
             let nodep = NodeParam::new(local_scales[i].to_f32().unwrap(), edges);
@@ -645,7 +644,7 @@ impl DiffusionMaps {
         let beta = self.params.get_beta();
         if beta < 0. {
             log::info!("using beta : {:.3e}", beta);
-            let beta_scales = self.from_kernel0_to_density(beta, &nodeparams);
+            let beta_scales = self.kernel0_to_density(beta, &nodeparams);
             let beta_scales_f: Vec<F> = beta_scales.iter().map(|s| F::from(*s).unwrap()).collect();
             let nodeparams = self.scales_to_nodeparams(kgraph, &beta_scales_f, &remap_weight);
             self.beta_scales = Some(beta_scales);
@@ -659,7 +658,7 @@ impl DiffusionMaps {
     // from nodeparams we can estimate density and reset scales depending upon beta.
     //
     // stores estimated density in field q_density and return new scales
-    fn from_kernel0_to_density(&mut self, beta: f32, initial_space: &NodeParams) -> Array1<f32> {
+    fn kernel0_to_density(&mut self, beta: f32, initial_space: &NodeParams) -> Array1<f32> {
         //
         log::info!("using beta : {:.3e}", beta);
         //
@@ -1325,11 +1324,11 @@ mod tests {
         }
         //
         // do dmap embedding, laplacian computation
-        let dtime = 1.;
+        let dtime = 5.;
         let gnbn = 16;
         let mut dparams: DiffusionParams = DiffusionParams::new(20, Some(dtime), Some(gnbn));
         dparams.set_alfa(1.);
-        dparams.set_beta(0.);
+        dparams.set_beta(-0.1);
         //
         let cpu_start = ProcessTime::now();
         let sys_now = SystemTime::now();

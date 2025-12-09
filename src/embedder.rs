@@ -1124,6 +1124,7 @@ where
     }
 
     // threaded version for computing cross entropy between initial distribution and embedded distribution with Cauchy law.
+    #[allow(clippy::let_and_return)]
     fn ce_compute_threaded(&self) -> f64 {
         log::trace!("\n entering EntropyOptim::ce_compute_threaded");
         //
