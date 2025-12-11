@@ -17,37 +17,51 @@ pub(crate) const FULL_SVD_SIZE_LIMIT: usize = 5000;
 /// of degrees (rown L1 norms) used in D^{-1/2} * G * D^{-1/2} renormalization
 #[derive(Clone)]
 pub(crate) struct GraphLaplacian {
-    // symetrized graph. Exactly D^{-1/2} * G * D^{-1/2}
-    sym_laplacian: MatRepr<f32>,
+    // symetrized kernel. Exactly D^{-1/2} * G * D^{-1/2}
+    sym_kernel: MatRepr<f32>,
     // the vector giving D of the symtrized graph
     pub(crate) degrees: Array1<f32>,
     //
     pub(crate) svd_res: Option<SvdResult<f32>>,
+    // The laplacian used to get Carre Du Champ
+    pub(crate) laplacian: Option<MatRepr<f32>>,
 }
 
 impl GraphLaplacian {
-    pub fn new(sym_laplacian: MatRepr<f32>, degrees: Array1<f32>) -> Self {
+    pub fn new(sym_kernel: MatRepr<f32>, degrees: Array1<f32>) -> Self {
         GraphLaplacian {
-            sym_laplacian,
+            sym_kernel,
             degrees,
             svd_res: None,
+            laplacian: None,
         }
     } // end of new for GraphLaplacian
 
     #[inline]
     fn is_csr(&self) -> bool {
-        self.sym_laplacian.is_csr()
+        self.sym_kernel.is_csr()
     } // end is_csr
 
     fn get_nbrow(&self) -> usize {
         self.degrees.len()
     }
 
+    #[allow(unused)]
+    pub fn get_laplacian(&self) -> Option<&MatRepr<f32>> {
+        log::error!("not yet implemented");
+        self.laplacian.as_ref()
+    }
+
+    #[allow(unused)]
+    pub fn get_kernel(&self) -> &MatRepr<f32> {
+        &self.sym_kernel
+    }
+
     fn do_full_svd(&mut self) -> Result<SvdResult<f32>, String> {
         //
         log::info!("GraphLaplacian doing full svd");
         log::debug!("memory  : {:?}", memory_stats::memory_stats().unwrap());
-        let b = self.sym_laplacian.get_full_mut().unwrap();
+        let b = self.sym_kernel.get_full_mut().unwrap();
         log::trace!(
             "GraphLaplacian ... size nbrow {} nbcol {} ",
             b.shape()[0],
@@ -68,7 +82,7 @@ impl GraphLaplacian {
             "got laplacian, going to approximated svd ... asked_dim :  {}",
             asked_dim
         );
-        let mut svdapprox = SvdApprox::new(&self.sym_laplacian);
+        let mut svdapprox = SvdApprox::new(&self.sym_kernel);
         // TODO adjust epsil ?
         // we need one dim more beccause we get rid of first eigen vector as in dmap, and for slowly decreasing spectrum RANK approx is
         // better see Halko-Tropp

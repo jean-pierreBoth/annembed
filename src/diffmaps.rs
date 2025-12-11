@@ -30,15 +30,26 @@ use crate::tools::{clip, kdumap::*, matrepr::*, nodeparam::*, svdapprox::*};
 use anyhow::Result;
 use hnsw_rs::prelude::*;
 
-// TODO: katex doc
+#[cfg_attr(doc, katexit::katexit)]
+///
 /// The parameters are:
 ///  - the dimension of the embedding.
 ///  - the time of the embedding. By default it is computed using the decay of eigenvalues of the laplacian
-///  - the number of neighbours to use in the comoputation of the laplacian.  
+///  - the number of neighbours to used in the comoputation of the laplacian.  
 ///     By default it is deduced by the number neighbours used in hnsw
 ///     with a limitation up to 16 (as the hnsw can require a large number of connection). To limit the cpu time it is possible to reduce it.
 ///     A good range is between 8 and 12.
+///
+///   The kernel uses variable bandwith of the form:
+///     $$ K_{\epsilon}(x,y)  = h( \frac{\| x - y \|^{2}}{\epsilon \rho(x) \rho(y))} )  $$
+///     with $\rho$ a scale function computed as mean square distance of a node to its neigbour
+///
+///   The laplacian computed as
+///      $$ L f = \Delta f + (2 - 2 \alpha) \nabla f . \frac{\nabla  q}{q} $$
+///      with $q$ being the sampling density
+///
 ///  - alfa
+///         So setting alfa = 1. cancels the effect of potential data sampling density variation
 ///  - beta
 #[derive(Copy, Clone)]
 pub struct DiffusionParams {
@@ -138,8 +149,21 @@ impl DiffusionParams {
     pub fn set_embedding_dimension(&mut self, asked_dim: usize) {
         self.asked_dim = asked_dim;
     }
+
+    /// build variable density default parameters
+    pub fn build_with_variable_density() -> Self {
+        DiffusionParams {
+            asked_dim: 2,
+            alfa: 1.,
+            beta: -1.2,
+            t: Some(5.),
+            gnbn_opt: Some(8),
+            h_layer: None,
+        }
+    }
 } // end of DiffusionParams
 
+/// build with
 impl Default for DiffusionParams {
     fn default() -> Self {
         DiffusionParams {
@@ -152,6 +176,7 @@ impl Default for DiffusionParams {
         }
     }
 }
+
 /// The algorithm implements:
 ///  *Variables bandwith diffusion kernels* Berry and Harlim. Appl. Comput. Harmon. Anal. 40 (2016) 68–96.
 ///
@@ -548,7 +573,12 @@ impl DiffusionMaps {
                     edges.push(edge);
                 }
                 // TODO: we adjust self_edge
-                edges[0].weight = 1. / nb_edges as f32;
+                //                edges[0].weight = 1. / nb_edges as f32;
+                if nb_edges > 1 {
+                    edges[0].weight = edges[1].weight;
+                } else {
+                    edges[0].weight = 1. / 2.;
+                }
             }
             // allocate a NodeParam and keep track of real scale of node
             let nodep = NodeParam::new(local_scales[i].to_f32().unwrap(), edges);
