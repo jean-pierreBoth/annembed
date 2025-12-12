@@ -125,7 +125,7 @@ impl GraphLaplacian {
 
     /// computes laplacian from kernel and scales
     pub fn compute_laplacian(&mut self) {
-        // we have laplacian = Kernel(i,j) - 1/(scale[i] * scale[j]
+        // we have laplacian = Kernel - Identity/(scale[i] * scale[i]
         if self.get_kernel().is_csr() {
             log::error!("not yet implemented");
             panic!("not yet implemented");
@@ -134,10 +134,9 @@ impl GraphLaplacian {
             let kernel = self.get_kernel().get_full().unwrap();
             let mut laplacian = kernel.clone();
             let scales = self.normed_scales.as_ref().unwrap();
+            assert_eq!(laplacian.shape()[0], laplacian.shape()[1]);
             for i in 0..laplacian.shape()[0] {
-                for j in 0..laplacian.shape()[1] {
-                    laplacian[[i, j]] -= scales[i] * scales[j];
-                }
+                laplacian[[i, i]] -= scales[i] * scales[i];
             }
             self.laplacian = Some(MatRepr::from_array2(laplacian));
         }
