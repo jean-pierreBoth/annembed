@@ -10,6 +10,8 @@
 //!   - *Self-Tuning Spectral Clustering*  Zelkin-Manor Perrona NIPS 2004
 //!   - *From graph to manifold Laplacian: The convergence rate*. Singer Appl. Comput. Harmon. Anal. 21 (2006)
 //!   - *Variables bandwith diffusion kernels* Berry and Harlim. Appl. Comput. Harmon. Anal. 40 (2016) 68–96
+//!
+//!  Details are discussed in [params](DiffusionParams)
 
 use num_traits::Float;
 use num_traits::cast::FromPrimitive;
@@ -32,7 +34,7 @@ use hnsw_rs::prelude::*;
 
 #[cfg_attr(doc, katexit::katexit)]
 ///
-/// The parameters are:
+/// The main parameters to initialize the structure are:
 ///  - the dimension of the embedding.
 ///  - the time of the embedding. By default it is computed using the decay of eigenvalues of the laplacian
 ///  - the number of neighbours to used in the comoputation of the laplacian.  
@@ -41,16 +43,25 @@ use hnsw_rs::prelude::*;
 ///     A good range is between 8 and 12.
 ///
 ///   The kernel uses variable bandwith of the form:
-///     $$ K_{\epsilon}(x,y)  = h( \frac{\| x - y \|^{2}}{\epsilon \rho(x) \rho(y))} )  $$
-///     with $\rho$ a scale function computed as mean square distance of a node to its neigbour
+///     $$ K_{\epsilon}(x,y)  = h \left( \frac{\| x - y \|^{2}}{\epsilon \rho(x) \rho(y)} \right)  $$
+///     with $\rho$ a scale function computed as mean L2 distance of a node to its neigbours. $h$ is taken to be the $exp(-x^{2}) $ function
 ///
-///   The laplacian computed as
+///   If the scales were constant the corresponding laplacian is
 ///      $$ L f = \Delta f + (2 - 2 \alpha) \nabla f . \frac{\nabla  q}{q} $$
-///      with $q$ being the sampling density
+///      with $q$ being the sampling density. (See Coifman Lafon)
 ///
-///  - alfa
-///         So setting alfa = 1. cancels the effect of potential data sampling density variation
-///  - beta
+///  - alfa  
+///      So setting alfa = 1. cancels the  data potential effect of data sampling density variation.
+///
+///  - beta is useful when the scale is not constant we get from Berry-Harlim paper corollary 1  
+///
+///    If d is the "intrinsic" dimension of the data the Laplacian we get is:
+///    $$ L f = \Delta f + (2 - 2 \alpha) \nabla f . \frac{\nabla  q}{q} + (d+2) \  \nabla f . \frac{\nabla  \rho}{\rho} $$
+///     We can estimate density $ q$ and then postulate  scale  from the relation  $$ \rho = q^{\beta} $$ with  $ \beta \lt 0 $.
+///     We then get :
+///    $$ L f = \Delta f + c_{1} \nabla f . \frac{\nabla  q}{q} $$ with $ c_{1} = 2 - 2 \alpha + \beta ( 2 + d) $
+///
+///    As we need to keep $ c_{1} \ge 0 $ and  we have $ \beta \lt 0 $ we must choose $  \alpha \lt 0 $.
 #[derive(Copy, Clone)]
 pub struct DiffusionParams {
     /// dimension of embedding
@@ -61,7 +72,7 @@ pub struct DiffusionParams {
     beta: f32,
     /// embedding time
     t: Option<f32>,
-    /// number of neighbour used in the laplacian graph.
+    /// number of neighbour used in the laplacian graph. Useful if we want to keep less neighbours than hnsw has.
     gnbn_opt: Option<usize>,
     //
     h_layer: Option<usize>,
@@ -72,11 +83,12 @@ impl DiffusionParams {
     /// - embedding dimension
     /// - optional diffusion time
     /// - optional number of neighbours used in laplacian discretisation
+    /// - alfa is set to 0 and beta to 1.
     pub fn new(asked_dim: usize, t_opt: Option<f32>, g_opt: Option<usize>) -> Self {
         DiffusionParams {
             asked_dim,
-            alfa: 1.,
-            beta: 0.,
+            alfa: -1.,
+            beta: -0.5,
             t: t_opt,
             gnbn_opt: g_opt,
             h_layer: None,
@@ -151,11 +163,12 @@ impl DiffusionParams {
     }
 
     /// build variable density default parameters
+    /// beta is set to - 0.5
     pub fn build_with_variable_density() -> Self {
         DiffusionParams {
             asked_dim: 2,
-            alfa: 1.,
-            beta: -1.2,
+            alfa: -1.,
+            beta: -0.5,
             t: Some(5.),
             gnbn_opt: Some(8),
             h_layer: None,
@@ -171,7 +184,7 @@ impl Default for DiffusionParams {
             alfa: 1.,
             beta: 0.,
             t: Some(5.),
-            gnbn_opt: Some(8),
+            gnbn_opt: Some(16),
             h_layer: None,
         }
     }
@@ -1280,9 +1293,9 @@ mod tests {
         //
         // do dmap embedding, laplacian computation
         let dtime = 5.;
-        let gnbn: usize = 16;
-        let mut dparams: DiffusionParams = DiffusionParams::new(2, Some(dtime), Some(gnbn));
-        dparams.set_alfa(1.);
+        let gnbn: Option<usize> = None;
+        let mut dparams: DiffusionParams = DiffusionParams::new(2, Some(dtime), gnbn);
+        dparams.set_alfa(-1.);
         dparams.set_beta(-0.5);
         //
         let cpu_start = ProcessTime::now();
@@ -1356,9 +1369,9 @@ mod tests {
         // do dmap embedding, laplacian computation
         let dtime = 5.;
         let gnbn = 16;
-        let mut dparams: DiffusionParams = DiffusionParams::new(20, Some(dtime), Some(gnbn));
-        dparams.set_alfa(1.);
-        dparams.set_beta(-0.1);
+        let mut dparams: DiffusionParams = DiffusionParams::new(2, Some(dtime), Some(gnbn));
+        dparams.set_alfa(-1.);
+        dparams.set_beta(-0.5);
         //
         let cpu_start = ProcessTime::now();
         let sys_now = SystemTime::now();

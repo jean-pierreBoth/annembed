@@ -316,10 +316,9 @@ where
                 log::info!("using new dmaps");
                 let dtime = 5.;
                 let gnbn = 16;
-                let mut dparams: DiffusionParams =
-                    DiffusionParams::new(10, Some(dtime), Some(gnbn));
-                dparams.set_alfa(1.);
-                dparams.set_beta(-1.);
+                let mut dparams: DiffusionParams = DiffusionParams::new(2, Some(dtime), Some(gnbn));
+                dparams.set_alfa(-1.);
+                dparams.set_beta(-0.5);
                 let mut diffusion_map = DiffusionMaps::new(dparams);
                 initial_embedding = diffusion_map
                     .embed_from_kgraph::<F>(graph_to_embed, &dparams)
