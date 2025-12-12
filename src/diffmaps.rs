@@ -417,7 +417,11 @@ impl DiffusionMaps {
             let symetrization_weights = local_scale * degrees.sqrt();
             //
             log::trace!("\n allocating full matrix laplacian");
-            GraphLaplacian::new(MatRepr::from_array2(symgraph), symetrization_weights)
+            GraphLaplacian::new(
+                MatRepr::from_array2(symgraph),
+                symetrization_weights,
+                Some(local_scale.clone()),
+            )
         } else {
             log::debug!("Embedder using csr matrix");
             // now we must construct a CsrMat to store the symetrized graph transition probablity to go svd.
@@ -490,7 +494,11 @@ impl DiffusionMaps {
                 values,
             );
             let csr_mat: CsMat<f32> = laplacian.to_csr();
-            GraphLaplacian::new(MatRepr::from_csrmat(csr_mat), degrees)
+            GraphLaplacian::new(
+                MatRepr::from_csrmat(csr_mat),
+                degrees,
+                Some(local_scale.clone()),
+            )
         } // end case CsMat
         //
     }

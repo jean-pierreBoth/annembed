@@ -88,6 +88,14 @@ where
         }
     } // end of get_full_mut
 
+    /// returns a reference to full matrix if data is given as full matrix, an Error otherwise
+    pub fn get_full(&self) -> Result<&Array2<F>, usize> {
+        match &self.data {
+            MatMode::FULL(mat) => Ok(mat),
+            _ => Err(1),
+        }
+    } // end of get_full  
+
     pub fn get_csr(&self) -> Result<&CsMat<F>, usize> {
         match &self.data {
             MatMode::CSR(mat) => Ok(mat),

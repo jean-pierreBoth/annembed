@@ -288,7 +288,7 @@ pub(crate) fn get_laplacian(initial_space: &NodeParams) -> GraphLaplacian {
         }
         //
         log::trace!("\n allocating full matrix laplacian");
-        GraphLaplacian::new(MatRepr::from_array2(symgraph), diag)
+        GraphLaplacian::new(MatRepr::from_array2(symgraph), diag, None)
     } else {
         log::debug!("Embedder using csr matrix");
         // now we must construct a CsrMat to store the symetrized graph transition probablity to go svd.
@@ -343,7 +343,7 @@ pub(crate) fn get_laplacian(initial_space: &NodeParams) -> GraphLaplacian {
             values,
         );
         let csr_mat: CsMat<f32> = laplacian.to_csr();
-        GraphLaplacian::new(MatRepr::from_csrmat(csr_mat), diagonal)
+        GraphLaplacian::new(MatRepr::from_csrmat(csr_mat), diagonal, None)
     } // end case CsMat
     //
 } // end of get_laplacian

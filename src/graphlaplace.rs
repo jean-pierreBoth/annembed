@@ -23,16 +23,23 @@ pub(crate) struct GraphLaplacian {
     pub(crate) degrees: Array1<f32>,
     //
     pub(crate) svd_res: Option<SvdResult<f32>>,
+    // normed scales if not constant (constant means 1. everywhere)
+    normed_scales: Option<Array1<f32>>,
     // The laplacian used to get Carre Du Champ
     pub(crate) laplacian: Option<MatRepr<f32>>,
 }
 
 impl GraphLaplacian {
-    pub fn new(sym_kernel: MatRepr<f32>, degrees: Array1<f32>) -> Self {
+    pub fn new(
+        sym_kernel: MatRepr<f32>,
+        degrees: Array1<f32>,
+        scales: Option<Array1<f32>>,
+    ) -> Self {
         GraphLaplacian {
             sym_kernel,
             degrees,
             svd_res: None,
+            normed_scales: scales,
             laplacian: None,
         }
     } // end of new for GraphLaplacian
@@ -44,6 +51,12 @@ impl GraphLaplacian {
 
     fn get_nbrow(&self) -> usize {
         self.degrees.len()
+    }
+
+    // returns scales if any
+    #[allow(unused)]
+    fn get_scales(&self) -> Option<&Array1<f32>> {
+        self.normed_scales.as_ref()
     }
 
     #[allow(unused)]
@@ -109,6 +122,28 @@ impl GraphLaplacian {
             self.do_approx_svd(asked_dim)
         }
     } // end of init_from_sv_approx
+
+    /// computes laplacian from kernel and scales
+    pub fn compute_laplacian(&mut self) {
+        // we have laplacian = Kernel(i,j) - 1/(scale[i] * scale[j]
+        if self.get_kernel().is_csr() {
+            log::error!("not yet implemented");
+            panic!("not yet implemented");
+        } else {
+            // full matrix
+            let kernel = self.get_kernel().get_full().unwrap();
+            let mut laplacian = kernel.clone();
+            let scales = self.normed_scales.as_ref().unwrap();
+            for i in 0..laplacian.shape()[0] {
+                for j in 0..laplacian.shape()[1] {
+                    laplacian[[i, j]] -= scales[i] * scales[j];
+                }
+            }
+            self.laplacian = Some(MatRepr::from_array2(laplacian));
+        }
+
+        panic!("not yet implemented");
+    }
 
     #[allow(unused)]
     pub(crate) fn check_norms(&self, svd_res: &SvdResult<f32>) {
