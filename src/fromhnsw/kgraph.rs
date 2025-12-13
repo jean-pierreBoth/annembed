@@ -304,11 +304,10 @@ where
         // we fit ratio
         let mut num: f64 = 0.0;
         let mut den: f64 = 0.0;
-        for i in 0..sampling_size {
-            let ratio = ratios[i];
-            den += ratio.ln() * ratio.ln();
+        for (i, r) in ratios.iter().enumerate().take(sampling_size) {
+            den += r.ln() * r.ln();
             let ipermut = direct_permutation.apply_idx(i);
-            num += -ratio.ln() * (1. - cumulant[ipermut]).ln();
+            num += -r.ln() * (1. - cumulant[ipermut]).ln();
         }
         log::debug!("num : {:.3e}, den = {:.3e}", num, den);
         Ok(num / den)

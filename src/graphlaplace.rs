@@ -14,16 +14,17 @@ pub(crate) const FULL_SVD_SIZE_LIMIT: usize = 5000;
 
 /// We use a normalized symetric laplacian to go to the svd.
 /// But we want the left eigenvectors of the normalized R(andom)W(alk) laplacian so we must keep track
-/// of degrees (rown L1 norms) used in D^{-1/2} * G * D^{-1/2} renormalization
+/// of normalizer (rown L1 norms) used in D^{-1/2} * G * D^{-1/2} renormalization
 #[derive(Clone)]
 pub(crate) struct GraphLaplacian {
     // symetrized kernel. Exactly D^{-1/2} * G * D^{-1/2}
     sym_kernel: MatRepr<f32>,
-    // the vector giving D of the symtrized graph
-    pub(crate) degrees: Array1<f32>,
+    // the vector giving D of the symetrized graph (it is normed_scales * sqrt(kernel row))
+    // kernel row is q_{\alpha, \epsil} in Berry-Harlim
+    pub(crate) normalizer: Array1<f32>,
     //
     pub(crate) svd_res: Option<SvdResult<f32>>,
-    // normed scales if not constant (constant means 1. everywhere)
+    // normed scales if not constant (constant means 1. everywhere).
     normed_scales: Option<Array1<f32>>,
     // The laplacian used to get Carre Du Champ
     pub(crate) laplacian: Option<MatRepr<f32>>,
@@ -32,12 +33,12 @@ pub(crate) struct GraphLaplacian {
 impl GraphLaplacian {
     pub fn new(
         sym_kernel: MatRepr<f32>,
-        degrees: Array1<f32>,
+        normalizer: Array1<f32>,
         scales: Option<Array1<f32>>,
     ) -> Self {
         GraphLaplacian {
             sym_kernel,
-            degrees,
+            normalizer,
             svd_res: None,
             normed_scales: scales,
             laplacian: None,
@@ -50,7 +51,7 @@ impl GraphLaplacian {
     } // end is_csr
 
     fn get_nbrow(&self) -> usize {
-        self.degrees.len()
+        self.normalizer.len()
     }
 
     // returns scales if any
@@ -125,23 +126,44 @@ impl GraphLaplacian {
 
     /// computes laplacian from kernel and scales
     pub fn compute_laplacian(&mut self) {
-        // we have laplacian = Kernel - Identity/(scale[i] * scale[i]
+        // we must provide laplacian = Kernel - Identity/(scale[i] * scale[i]
+        // and we have a symetrized Kernel by normalizer = scale * q.sqrt()
         if self.get_kernel().is_csr() {
-            log::error!("not yet implemented");
-            panic!("not yet implemented");
+            let kernel = self.get_kernel().get_csr().unwrap();
+            let mut laplacian = kernel.clone();
+            assert_eq!(laplacian.shape().0, laplacian.shape().1);
+            let scales = self.normed_scales.as_ref().unwrap();
+            let outer_iter = laplacian.outer_iterator_mut();
+            // we de-symerize, see comments in the Full case
+            for (row, mut row_vec) in outer_iter.enumerate() {
+                for (col, val) in row_vec.iter_mut() {
+                    *val *=
+                        (scales[row] * self.normalizer[col]) / (scales[col] * self.normalizer[row]);
+
+                    if row == col {
+                        *val -= scales[row] * scales[row]; // diagnal term
+                    }
+                }
+            }
+            self.laplacian = Some(MatRepr::from_csrmat(laplacian));
         } else {
             // full matrix
             let kernel = self.get_kernel().get_full().unwrap();
             let mut laplacian = kernel.clone();
             let scales = self.normed_scales.as_ref().unwrap();
             assert_eq!(laplacian.shape()[0], laplacian.shape()[1]);
+            // recall our normalizer is scale * sqrt(q) in Berry-Harlim notations
+            // we must correct by qj.sqrt() / qi.sqrt() and q.sqrt() = normalizer / scale
             for i in 0..laplacian.shape()[0] {
-                laplacian[[i, i]] -= scales[i] * scales[i];
+                for j in 0..laplacian.shape()[1] {
+                    laplacian[[i, j]] *=
+                        (scales[i] * self.normalizer[j]) / (scales[j] * self.normalizer[i]);
+                }
+                laplacian[[i, i]] -= scales[i] * scales[i]; // diagnal term
             }
             self.laplacian = Some(MatRepr::from_array2(laplacian));
         }
-
-        panic!("not yet implemented");
+        //
     }
 
     #[allow(unused)]

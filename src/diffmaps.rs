@@ -404,7 +404,7 @@ impl DiffusionMaps {
                 }
                 degrees[[i]] = row.sum();
             }
-            // now we normalize rows according to D^-1/2 * G * D^-1/2
+            // now we normalize rows according to D^-1/2 * G * D^-1/2. See Berry-Harlim P 82
             for i in 0..nbnodes {
                 let mut row = symgraph.row_mut(i);
                 for j in 0..nbnodes {
@@ -1068,11 +1068,11 @@ impl DiffusionMaps {
             time
         );
         // we must renormalize by
-        let sum_diag = laplacian.degrees.iter().sum::<f32>();
+        let sum_diag = laplacian.normalizer.iter().sum::<f32>();
         let scales = self.normed_scales.as_ref().unwrap();
         for i in 0..u.nrows() {
             let row_i = u.row(i);
-            let weight_i = scales[i] * (laplacian.degrees[i] / sum_diag).sqrt();
+            let weight_i = scales[i] * (laplacian.normalizer[i] / sum_diag).sqrt();
             for j in 0..real_dim {
                 // divide j value by diagonal and convert to F. take l_{i}^{t} as in dmap
                 embedded[[i, j]] =
@@ -1179,10 +1179,10 @@ where
         _ => 5.0f32.min(0.9f32.ln() / (normalized_lambdas[2] / normalized_lambdas[1]).ln()),
     };
     log::info!("get_dmap_initial_embedding applying dmap time {:.2e}", time);
-    let sum_diag = laplacian.degrees.iter().sum::<f32>();
+    let sum_diag = laplacian.normalizer.iter().sum::<f32>();
     for i in 0..u.nrows() {
         let row_i = u.row(i);
-        let weight_i = (laplacian.degrees[i] / sum_diag).sqrt();
+        let weight_i = (laplacian.normalizer[i] / sum_diag).sqrt();
         for j in 0..real_dim {
             // divide j value by diagonal and convert to F. take l_{i}^{t} as in dmap
             embedded[[i, j]] =
