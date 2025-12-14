@@ -1,15 +1,16 @@
 #![allow(clippy::doc_overindented_list_items)]
 
-//!  Diffusion maps embedding.
+//!  Variable bandwidth diffusion maps embedding.
 //!
 //! This module (presently) computes a diffusion embedding for the kernel constructed from nearest neighbours
 //! stored in a Hnsw structure, see in module [embedder](crate::embedder).  
+//! The scale used in the kernel is dependant on points as described in Berry and Harlim paper
 //!
 //! Bibliography:
-//!   - *Diffusion Maps*. Coifman Lafon Appl. Comput. Harmon. Anal. 21 (2006) 5–30
-//!   - *Self-Tuning Spectral Clustering*  Zelkin-Manor Perrona NIPS 2004
-//!   - *From graph to manifold Laplacian: The convergence rate*. Singer Appl. Comput. Harmon. Anal. 21 (2006)
-//!   - *Variables bandwith diffusion kernels* Berry and Harlim. Appl. Comput. Harmon. Anal. 40 (2016) 68–96
+//! - *Diffusion Maps*. Coifman Lafon Appl. Comput. Harmon. Anal. 21 (2006) 5–30
+//! - *Self-Tuning Spectral Clustering*  Zelkin-Manor Perrona NIPS 2004
+//! - *From graph to manifold Laplacian: The convergence rate*. Singer Appl. Comput. Harmon. Anal. 21 (2006)
+//! - *Variables bandwith diffusion kernels* Berry and Harlim. Appl. Comput. Harmon. Anal. 40 (2016) 68–96
 //!
 //!  Details are discussed in [params](DiffusionParams)
 
@@ -548,6 +549,12 @@ impl DiffusionMaps {
         // now we loop on all nodes
         for i in 0..nb_nodes {
             let neighbours = &neighbour_hood[i];
+            // no isolated points !
+            if neighbours.len() == 0 {
+                log::error!("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
+                log::error!("encountered an isolated point, exiting ");
+                std::process::exit(1);
+            }
             // get rid of case where all neighbours have dist 0 to current node (It happens in Higgs.data!!!)
             let mut all_equal = false;
             let last_n = neighbours
@@ -567,7 +574,12 @@ impl DiffusionMaps {
             let nb_edges = 1 + neighbours.len();
             let mut edges = Vec::<OutEdge<f32>>::with_capacity(nb_edges);
             if all_equal {
-                log::warn!("all equal for node {}", i);
+                log::warn!(
+                    "all equal for node {}, weight {:.3e}, nb_neighbours {}",
+                    i,
+                    neighbours[0].weight.into(),
+                    neighbours.len()
+                );
                 // all neighbours will have
                 let proba: f32 = 1. / (nb_edges as f32);
                 let self_edge = OutEdge::new(i, proba);
@@ -580,7 +592,7 @@ impl DiffusionMaps {
                 edges.push(self_edge);
                 let _shift = neighbours[0].weight.to_f32().unwrap();
                 let from_scale = local_scales[i];
-                // TODO: no shift but could add drift with respect to local_scales variations
+                // Recall no shift but could add drift with respect to local_scales variations
                 for n in neighbours {
                     let to_scale = local_scales[n.node];
                     let local_scale = (to_scale * from_scale).sqrt();
@@ -661,12 +673,10 @@ impl DiffusionMaps {
             .collect();
         // collect scales quantiles
         let scales_q = self.get_quantiles("scales quantiles first pass", &local_scales);
-        log::debug!("");
         // we keep local scale to possible kernel weighting
         //
         // now we have scales we can remap edge length to weights.
         // we choose epsil to put weight on at least 5 neighbours when no shift
-        // TODO: depend on absence of shift
         let exponent = 2.0f32;
         let scale_width =
             (scales_q.query(0.99).unwrap().1 / scales_q.query(0.01).unwrap().1) as f32;
@@ -680,9 +690,16 @@ impl DiffusionMaps {
         //
         let mut scales_f: Array1<f32> =
             Array1::<f32>::from_iter(local_scales.iter().map(|s| (*s).to_f32().unwrap()));
+        let sum = scales_f.sum();
+        assert!(!sum.is_nan());
         let mean_scale = scales_f.sum() / scales_f.len() as f32;
+        assert!(mean_scale > 0.);
         scales_f /= mean_scale;
         self.mean_scale = mean_scale;
+        let _ = self.get_quantiles(
+            "normalized scales quantiles from first pass",
+            &scales_f.as_slice().unwrap(),
+        );
         self.normed_scales = Some(scales_f);
         //  TODO: someting for which the square is beteen 0.5 and 2
         let epsil = 2.0f32.sqrt();
@@ -708,7 +725,7 @@ impl DiffusionMaps {
     // Can be called by compute_dmap_nodeparams if we require restimation of scale in function of density (beta w 0.)
     // from nodeparams we can estimate density and reset scales depending upon beta.
     //
-    // stores estimated density in field q_density and return new scales
+    // stores estimated density in field q_density and return new scales adjusted to previous mean scale
     fn kernel0_to_density(&mut self, beta: f32, initial_space: &NodeParams) -> Array1<f32> {
         //
         log::info!("using beta : {:.3e}", beta);
@@ -820,7 +837,7 @@ impl DiffusionMaps {
         for q in values {
             quant_densities.insert((*q).into());
         }
-        log::debug!(
+        log::info!(
             "quantiles at 0.01 : {:.2e}, 0.05 : {:.2e} , 0.5 :  {:.2e}, 0.95 : {:.2e}, 0.99 : {:.2e}",
             quant_densities.query(0.01).unwrap().1,
             quant_densities.query(0.05).unwrap().1,
@@ -863,7 +880,11 @@ impl DiffusionMaps {
         //
         rho_y_s.push(rho_x);
         let size = rho_y_s.len();
-        rho_y_s.into_iter().sum::<F>() / F::from(size).unwrap()
+        if size > 0 {
+            rho_y_s.into_iter().sum::<F>() / F::from(size).unwrap()
+        } else {
+            F::zero()
+        }
     } // end of get_dist_around_node
 
     //
@@ -887,7 +908,12 @@ impl DiffusionMaps {
             .take(nbng)
             .map(|e| e.weight * e.weight)
             .sum();
-        (dist2 / F::from(out_edges.len()).unwrap()).sqrt()
+        //
+        if out_edges.len() > 0 {
+            (dist2 / F::from(out_edges.len()).unwrap()).sqrt()
+        } else {
+            F::zero()
+        }
     }
 
     // useful if we have already hnsw.

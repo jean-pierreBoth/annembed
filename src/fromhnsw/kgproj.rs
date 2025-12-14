@@ -167,7 +167,7 @@ where
                     if vec_tmp.is_empty() {
                         let p_id = point.get_point_id();
                         log::warn!(
-                            " graph will not be connected, isolated point at layer {}  , pos in layer : {} ",
+                            " KGraphProjection::new graph will not be connected, isolated point at layer {}  , pos in layer : {} ",
                             p_id.0,
                             p_id.1
                         );
@@ -324,7 +324,7 @@ where
                     );
                     if vec_tmp.is_empty() {
                         log::warn!(
-                            " graph will not be connected, isolated point at layer {}  , pos in layer : {} ",
+                            " KGraphProjection::new graph will not be connected, isolated point at layer {}  , pos in layer : {} ",
                             p_id.0,
                             p_id.1
                         );

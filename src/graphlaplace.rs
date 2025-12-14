@@ -1,4 +1,5 @@
-//! Graph Laplacian stuff
+//! Graph Laplacian
+//! The Laplacian is computed in module [diffmaps](crate::diffmaps).
 
 use ndarray::{Array, Array1, Array2};
 
@@ -16,7 +17,7 @@ pub(crate) const FULL_SVD_SIZE_LIMIT: usize = 5000;
 /// But we want the left eigenvectors of the normalized R(andom)W(alk) laplacian so we must keep track
 /// of normalizer (rown L1 norms) used in D^{-1/2} * G * D^{-1/2} renormalization
 #[derive(Clone)]
-pub(crate) struct GraphLaplacian {
+pub struct GraphLaplacian {
     // symetrized kernel. Exactly D^{-1/2} * G * D^{-1/2}
     sym_kernel: MatRepr<f32>,
     // the vector giving D of the symetrized graph (it is normed_scales * sqrt(kernel row))
@@ -109,7 +110,8 @@ impl GraphLaplacian {
         log::trace!("exited svd");
         if svd_res.is_err() {
             log::error!("svd approximation failed");
-            std::panic!();
+            let errmsg = svd_res.err().unwrap();
+            std::panic!("error msg : {}", errmsg);
         }
         self.check_norms(svd_res.as_ref().unwrap());
         svd_res
