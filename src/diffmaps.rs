@@ -171,7 +171,7 @@ impl DiffusionParams {
             alfa: -1.,
             beta: -0.5,
             t: Some(5.),
-            gnbn_opt: Some(8),
+            gnbn_opt: Some(16),
             h_layer: None,
         }
     }
@@ -318,6 +318,19 @@ impl DiffusionMaps {
             );
         }
         let kgraph = kgraph_res.unwrap();
+        let sampling_size = 10000;
+        let dim_stat = kgraph.estimate_intrinsic_dim_2nn(sampling_size);
+        if let Ok(dim_stat) = dim_stat {
+            log::info!(
+                "\n estimate_intrinsic_dim_2nn dimension estimation with nbpoints : {}, dim : {:.5e} \n",
+                sampling_size,
+                dim_stat,
+            );
+            println!(
+                " estimate_intrinsic_dim_2nn dimension estimation with nbpoints : {}, dim : {:.5e}",
+                sampling_size, dim_stat
+            );
+        }
         // we store indexset to be able to go back from index (in embedding) to dataId (in hnsw) as kgrap will be deleted
         self.index = Some(kgraph.get_indexset().clone());
         //
@@ -355,8 +368,6 @@ impl DiffusionMaps {
         initial_space: &NodeParams,
         alfa: f32,
     ) -> GraphLaplacian {
-        // TODO:
-        let scale_renormalization = false;
         //
         log::info!(
             "in GraphLaplacian::compute_laplacian, using alfa : {:.2e}",
@@ -410,12 +421,9 @@ impl DiffusionMaps {
                 let mut row = symgraph.row_mut(i);
                 for j in 0..nbnodes {
                     row[[j]] /= (degrees[[i]] * degrees[[j]]).sqrt();
-                    if scale_renormalization {
-                        row[[j]] /= local_scale[i] * local_scale[j];
-                    }
                 }
             }
-            let symetrization_weights = local_scale * degrees.sqrt();
+            let symetrization_weights = degrees.sqrt();
             //
             log::trace!("\n allocating full matrix laplacian");
             GraphLaplacian::new(
@@ -483,9 +491,6 @@ impl DiffusionMaps {
                 let row = rows[i];
                 let col = cols[i];
                 values[i] /= (degrees[row] * degrees[col]).sqrt();
-                if scale_renormalization {
-                    values[i] /= local_scale[row] * local_scale[col];
-                }
             }
             log::trace!("allocating csr laplacian");
             let laplacian = TriMatBase::<Vec<usize>, Vec<f32>>::from_triplets(
@@ -550,7 +555,7 @@ impl DiffusionMaps {
         for i in 0..nb_nodes {
             let neighbours = &neighbour_hood[i];
             // no isolated points !
-            if neighbours.len() == 0 {
+            if neighbours.is_empty() {
                 log::error!("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
                 log::error!("encountered an isolated point, exiting ");
                 std::process::exit(1);
@@ -667,14 +672,23 @@ impl DiffusionMaps {
             nbgh_size
         );
         // compute a scale around each node, mean scale and quantiles on scale
-        let local_scales: Vec<F> = neighbour_hood
+        let mut local_scales: Vec<F> = neighbour_hood
             .par_iter()
             .map(|edges| self.get_dist_l2_from_node(edges, nbgh_size))
             .collect();
         // collect scales quantiles
         let scales_q = self.get_quantiles("scales quantiles first pass", &local_scales);
-        // we keep local scale to possible kernel weighting
+        // normalize , get rid of zero scales (if all neighbours are at same position of point ! It happen!)
         //
+        let sum = local_scales.iter().fold(F::zero(), |acc, s| acc + (*s));
+        assert!(!sum.is_nan());
+        let mean_scale = sum / F::from(local_scales.len()).unwrap();
+        assert!(mean_scale > F::zero());
+        for d in &mut local_scales {
+            if *d <= F::zero() {
+                *d = mean_scale;
+            }
+        }
         // now we have scales we can remap edge length to weights.
         // we choose epsil to put weight on at least 5 neighbours when no shift
         let exponent = 2.0f32;
@@ -688,17 +702,15 @@ impl DiffusionMaps {
             scale_median
         );
         //
-        let mut scales_f: Array1<f32> =
-            Array1::<f32>::from_iter(local_scales.iter().map(|s| (*s).to_f32().unwrap()));
-        let sum = scales_f.sum();
-        assert!(!sum.is_nan());
-        let mean_scale = scales_f.sum() / scales_f.len() as f32;
-        assert!(mean_scale > 0.);
-        scales_f /= mean_scale;
-        self.mean_scale = mean_scale;
+        let scales_f: Array1<f32> = Array1::<f32>::from_iter(
+            local_scales
+                .iter()
+                .map(|s| ((*s) / mean_scale).to_f32().unwrap()),
+        );
+        self.mean_scale = mean_scale.to_f32().unwrap();
         let _ = self.get_quantiles(
             "normalized scales quantiles from first pass",
-            &scales_f.as_slice().unwrap(),
+            scales_f.as_slice().unwrap(),
         );
         self.normed_scales = Some(scales_f);
         //  TODO: someting for which the square is beteen 0.5 and 2
@@ -909,7 +921,7 @@ impl DiffusionMaps {
             .map(|e| e.weight * e.weight)
             .sum();
         //
-        if out_edges.len() > 0 {
+        if !out_edges.is_empty() {
             (dist2 / F::from(out_edges.len()).unwrap()).sqrt()
         } else {
             F::zero()
@@ -1094,16 +1106,19 @@ impl DiffusionMaps {
             time
         );
         // we must renormalize by
-        let sum_diag = laplacian.normalizer.iter().sum::<f32>();
+        let sum_diag = laplacian.normalizer.iter().sum::<f32>() / laplacian.normalizer.len() as f32;
         let scales = self.normed_scales.as_ref().unwrap();
+        let max_coord = 10.0f32;
         for i in 0..u.nrows() {
             let row_i = u.row(i);
             let weight_i = scales[i] * (laplacian.normalizer[i] / sum_diag).sqrt();
             for j in 0..real_dim {
                 // divide j value by diagonal and convert to F. take l_{i}^{t} as in dmap
-                embedded[[i, j]] =
-                    F::from_f32(normalized_lambdas[j + 1].powf(time) * row_i[j + 1] / weight_i)
-                        .unwrap();
+                let clipped_val = crate::tools::clip::clip(
+                    normalized_lambdas[j + 1].powf(time) * row_i[j + 1] / weight_i,
+                    max_coord,
+                );
+                embedded[[i, j]] = F::from_f32(clipped_val).unwrap();
             }
         }
         log::debug!("DiffusionMaps::embed_from_hnsw ended");
@@ -1205,7 +1220,7 @@ where
         _ => 5.0f32.min(0.9f32.ln() / (normalized_lambdas[2] / normalized_lambdas[1]).ln()),
     };
     log::info!("get_dmap_initial_embedding applying dmap time {:.2e}", time);
-    let sum_diag = laplacian.normalizer.iter().sum::<f32>();
+    let sum_diag = laplacian.normalizer.iter().sum::<f32>() / laplacian.normalizer.len() as f32;
     for i in 0..u.nrows() {
         let row_i = u.row(i);
         let weight_i = (laplacian.normalizer[i] / sum_diag).sqrt();

@@ -1,8 +1,7 @@
 # A data embedding tool and related data analysis or clustering
 
-
 <div align="center">
-  <img width="50%" src ="Annembed_logo-small.jpg">
+  <img width="50%" src ="Annembed_logo-small.jpg" alt="">
 </div>
 
 The crate provides mainly in the form of a library (*See documentation of the binary embed for a small executable embedding data in csv files*):
@@ -22,7 +21,6 @@ The crate provides mainly in the form of a library (*See documentation of the bi
 - We also use a cross entropy optimization of this initial layout but take into account the initial local density estimate of each point when computing the cauchy weight of an embedded edge. The corresponding "perplexity" distribution is estimated on the fly. (**See documentation in module EmbedderParams**).
 
 2. A tentative estimation of embedding faithfulness.  
-   
 
    We quantify the stability of neighbourhoods through the embedding as this helps selecting among varying results between runs for a given data set.
    The default dimension of 2 is used for visualization purposes, but for other purposes, increasing the dimension shows a better conservation of neighborhoods.
@@ -36,9 +34,9 @@ The crate provides mainly in the form of a library (*See documentation of the bi
     - an implementation of range approximation and approximated SVD for dense and/or row compressed matrices as described in the svdapprox module and the paper of Halko-Tropp (Cf. [Tsvd](https://arxiv.org/abs/0909.4061)).
 
     - 2 different algorithms to estimate the intrinsic dimension of data, as described in:  
-        -  Levina E. and Bickel P.J NIPS 2004.  See [paper](https://www.stat.berkeley.edu/~bickel/mldim.pdf).  
-        -  Facco E. and al. Nature Scientific reports 2017.  See [paper](https://www.nature.com/articles/s41598-017-11873-y).
-            
+        - Levina E. and Bickel P.J NIPS 2004.  See [paper](https://www.stat.berkeley.edu/~bickel/mldim.pdf).  
+        - Facco E. and al. Nature Scientific reports 2017.  See [paper](https://www.nature.com/articles/s41598-017-11873-y).
+
     - An estimation of the hubness of the graph of the Hnsw structure as described in:
             Radovanovic M., Nanopoulos A. and Ivanovic M. 2010. See [paper](https://www.jmlr.org/papers/volume11/radovanovic10a/radovanovic10a.pdf).
   
@@ -50,7 +48,7 @@ The crate provides mainly in the form of a library (*See documentation of the bi
 
 ## Building
 
-### Blas choice 
+### Blas choice
 
  The crate provides 3 features to choose between openblas-static, intel-mkl-static or openblas-system as defined in the  **ndarray-linalg** crate.
 
@@ -66,10 +64,11 @@ The crate provides mainly in the form of a library (*See documentation of the bi
 
 You can also add the feature you want in default features.
 
-### simd 
+### simd
 
 On Intel cpu the you can add the **simdeez_f** feature to default features, or use the command **cargo build --release --features="openblas-system,simdeez_f"**.
 On non intel cpu it is possible to use the **stdsimd** feature or  **"cargo build --release --features="openblas-system,stdsimd"**.   Note that **stdsimd** requires the nightly compiler.
+
 ## Julia
 
 Julia scripts provide graphic functions.  
@@ -125,15 +124,15 @@ Sources of examples are in corresponding directory.
 3. **Higgs boson** Cf [Higgs-data](https://archive.ics.uci.edu/ml/datasets/HIGGS)
 
     It consists in 11 millions float vectors of dimension 28. First we run  on the first 21 columns, keeping out the last 7 variables constructed by the physicists to help the discrimination in machine learning tasks and then on the 28 variables.
-    
-    In both cases we use hierarchical initialization. 
-    We run 200 batches in the first pass by using layers from layer 1 (included) to the upper layer. The first batches runs thus on about 460000 nodes. Then 40 batches are done on the 11 millions points. 
-     
+
+    In both cases we use hierarchical initialization.
+    We run 200 batches in the first pass by using layers from layer 1 (included) to the upper layer. The first batches runs thus on about 460000 nodes. Then 40 batches are done on the 11 millions points.
+
      Run times are in both cases around 2 hours (45' for the Hnsw construction and 75' for the entropy iterations)
 
     - Images for the 21 and 28 variables full data
- 
-        Quality estimation requires data subsampling due to the size of data (see examples and results). 
+
+        Quality estimation requires data subsampling due to the size of data (see examples and results).
         Moreover a basic exploration of the data can be found in a Notebook at [Higgs.jl](https://github.com/jean-pierreBoth/Higgs.jl) to assess the quality of the embedding via random projections.
 
       21 variables image:
@@ -141,7 +140,7 @@ Sources of examples are in corresponding directory.
     ![higgs-21](Images/Higgs-embedded-21-H-B40S0.75k6-gf5.csv.png.jpg)
 
       28 variables image:
-   
+
     ![higgs-28](Images/higgs_embedded-28-H-B40-S0.75k6-gf5.csv.png.jpg)
 
     - Quality estimation with a subsampling factor of 0.15
@@ -154,10 +153,10 @@ Sources of examples are in corresponding directory.
 
         *quantiles on ratio : distance in embedded space of neighbours of origin space / distance of neighbours in embedded space*
 
-        half of the original neighborhoods are embedded within a factor 1.30 of the radius of neighbourhood in embedded graph 
+        half of the original neighborhoods are embedded within a factor 1.30 of the radius of neighbourhood in embedded graph
 
-       *quantiles at 0.25 : 7.87e-2, 0.5 :  1.30e0, 0.75 : 4.75e0, 0.85 : 7.94e0, 0.95 : 1.62e1*        
-        
+       *quantiles at 0.25 : 7.87e-2, 0.5 :  1.30e0, 0.75 : 4.75e0, 0.85 : 7.94e0, 0.95 : 1.62e1*
+
        *the mean ratio is : 4.36*
 
     28 variables, subsampling 0.15:
@@ -168,14 +167,14 @@ Sources of examples are in corresponding directory.
 
     ![higgs-28-density](Images/Higgs-28-sub0.15-28-H-B40-50S0.75k6-gf5.firstdist.png.jpg)
 
-
     - Diffusion Maps initialization in the non hierarchical case.
 
         In the direct case the initial diffusion maps with approximated svd runs in 1650 sec and produces the following initialization image:
 
     ![higgs_dmap](Images/higgs_initial_dmap.png.jpg)
 
-### **Genomics** applications can be found in the following [paper](https://doi.org/10.1093/nargab/lqae172):  
+### **Genomics** applications can be found in the following [paper](https://doi.org/10.1093/nargab/lqae172)
+
    *Approximate nearest neighbor graph provides fast and efficient embedding with applications for large-scale biological data*.  
   Jianshu Zhao, Jean Pierre Both, Konstantinos T Konstantinidis.  
    NAR Genomics and Bioinformatics, Volume 6, Issue 4, December 2024.
@@ -207,10 +206,13 @@ Sources of examples are in corresponding directory.
     embedder = Embedder::new(&kgraph, embed_params);
     let embed_res = embedder.embed();
 ```
+
 ### Usage in Python
+
 ```bash
 pip install annembed_rs
 ```
+
 ```python
 import annembed, numpy as np
 arr = annembed.embed("fashion-mnist_data.csv", dim=2)
@@ -245,7 +247,7 @@ Two algorithms for range approximation used in approximated SVD are:
   L.MacInnes, J.Healy and J.Melville 2018
 
 - Stochastic Cluster Embedding.
-  Zhirong Yang, Yuwei Chen, Denis Sedov, Samuel Kaski, Jukka Corander.   
+  Zhirong Yang, Yuwei Chen, Denis Sedov, Samuel Kaski, Jukka Corander.
   Statistics and Computing 2023. [SCE](https://link.springer.com/article/10.1007/s11222-022-10186-z)
 
 ## Contributions
@@ -253,7 +255,6 @@ Two algorithms for range approximation used in approximated SVD are:
 Jianshu Zhao designed the logo and implemented the Python interface.
 
 ## Evolutions are described [here](./Changes.md)
-
 
 ## License
 

@@ -276,21 +276,34 @@ where
         let sampled = unweighted_reservoir(sampling_size, 0..size, &mut rng);
 
         let mut ratios = Vec::<f64>::with_capacity(sampling_size);
+        let mut nb_zero = 0;
         // get first 2 neighbours
         sampled.into_iter().for_each(|n| {
             let r1 = neighbours[n][0].weight.to_f64().unwrap();
             let r2 = neighbours[n][1].weight.to_f64().unwrap();
-            assert!(r1 <= r2 && r1 > 0.);
-            ratios.push(r2 / r1);
+            assert!(r1 <= r2 && r1 >= 0.);
+            if r1 > 0. {
+                ratios.push(r2 / r1);
+            } else {
+                nb_zero += 1;
+            }
         });
+        if nb_zero > 0 {
+            log::warn!(
+                "estimate_intrinsic_dim_2nn, sampling size : {} nb null distance to first neighbour encountered : {} ",
+                sampling_size_arg,
+                nb_zero
+            );
+        }
         // get sorting permutation
-        let mut permutation = Permutation::one(sampling_size);
+        let real_size = ratios.len();
+        let mut permutation = Permutation::one(real_size);
         permutation.assign_from_sort_by(&ratios, |a, b| a.partial_cmp(b).unwrap());
         let direct_permutation = permutation.normalize(false); // we want to apply P
-        let mut cumulant: Vec<f64> = vec![0.; sampling_size];
-        for (i, ratio) in ratios.iter().enumerate().take(sampling_size) {
+        let mut cumulant: Vec<f64> = vec![0.; real_size];
+        for (i, ratio) in ratios.iter().enumerate().take(real_size) {
             let rank = direct_permutation.apply_idx(i);
-            cumulant[rank] = rank as f64 / sampling_size as f64;
+            cumulant[rank] = rank as f64 / real_size as f64;
             if i <= 20 {
                 log::debug!(
                     "i: {}, {:.3e}, rank : {}, cumul : {:.3e}",
@@ -304,7 +317,7 @@ where
         // we fit ratio
         let mut num: f64 = 0.0;
         let mut den: f64 = 0.0;
-        for (i, r) in ratios.iter().enumerate().take(sampling_size) {
+        for (i, r) in ratios.iter().enumerate().take(real_size) {
             den += r.ln() * r.ln();
             let ipermut = direct_permutation.apply_idx(i);
             num += -r.ln() * (1. - cumulant[ipermut]).ln();

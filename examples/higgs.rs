@@ -290,7 +290,7 @@ fn dmap_embedding(
     //
     let mut dmapembedder = DiffusionMaps::new(*dmap_params);
     if layer >= 1 {
-        let kgraph = kgraph_from_hnsw_layer::<f32, DistL2, f32>(hnsw, 8, 1).unwrap();
+        let kgraph = kgraph_from_hnsw_layer::<f32, DistL2, f32>(hnsw, 16, 1).unwrap();
         let res = dmapembedder.embed_from_kgraph(&kgraph, dmap_params);
         if res.is_err() {
             log::error!("dmap_embedding failed");
@@ -480,8 +480,8 @@ pub fn main() {
         log::info!("doing diffusion map embedding");
         let mut dmap_params = DiffusionParams::default();
         dmap_params.set_embedding_dimension(5);
-        dmap_params.set_alfa(1.);
-        dmap_params.set_beta(0.);
+        dmap_params.set_alfa(-1.);
+        dmap_params.set_beta(-0.5);
         if sampling_factor >= 0.5 {
             // embed from layer 1 upper to spare memory if full dat are loaded
             dmap_embedding(&labels, &hnsw, 1, &dmap_params);

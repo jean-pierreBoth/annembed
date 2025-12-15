@@ -129,7 +129,7 @@ impl GraphLaplacian {
     /// computes laplacian from kernel and scales
     pub fn compute_laplacian(&mut self) {
         // we must provide laplacian = Kernel - Identity/(scale[i] * scale[i]
-        // and we have a symetrized Kernel by normalizer = scale * q.sqrt()
+        // and we have a symetrized Kernel by normalizer = q.sqrt()
         if self.get_kernel().is_csr() {
             let kernel = self.get_kernel().get_csr().unwrap();
             let mut laplacian = kernel.clone();
@@ -140,10 +140,10 @@ impl GraphLaplacian {
             for (row, mut row_vec) in outer_iter.enumerate() {
                 for (col, val) in row_vec.iter_mut() {
                     *val *=
-                        (scales[row] * self.normalizer[col]) / (scales[col] * self.normalizer[row]);
+                        self.normalizer[col] / (self.normalizer[row] * scales[row] * scales[col]);
 
                     if row == col {
-                        *val -= scales[row] * scales[row]; // diagnal term
+                        *val -= 1. / (scales[row] * scales[row]); // diagnal term
                     }
                 }
             }
@@ -159,9 +159,9 @@ impl GraphLaplacian {
             for i in 0..laplacian.shape()[0] {
                 for j in 0..laplacian.shape()[1] {
                     laplacian[[i, j]] *=
-                        (scales[i] * self.normalizer[j]) / (scales[j] * self.normalizer[i]);
+                        self.normalizer[j] / (self.normalizer[i] * scales[i] * scales[j]);
                 }
-                laplacian[[i, i]] -= scales[i] * scales[i]; // diagnal term
+                laplacian[[i, i]] -= 1. / scales[i] * scales[i]; // diagnal term
             }
             self.laplacian = Some(MatRepr::from_array2(laplacian));
         }
