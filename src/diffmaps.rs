@@ -63,7 +63,7 @@ use hnsw_rs::prelude::*;
 ///    $$ L f = \Delta f + c_{1} \nabla f . \frac{\nabla  q}{q} $$ with $ c_{1} = 2 - 2 \alpha + \beta ( 2 + d) $
 ///
 ///    As we need to keep $ c_{1} \ge 0 $ and  we have $ \beta \lt 0 $ we must choose $  \alpha \lt 0 $.
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 pub struct DiffusionParams {
     /// dimension of embedding
     asked_dim: usize,
@@ -71,6 +71,8 @@ pub struct DiffusionParams {
     alfa: f32,
     /// exponent for going from density to scales
     beta: f32,
+    /// The epsil parameter see doc above
+    epsil: f32,
     /// embedding time
     t: Option<f32>,
     /// number of neighbour used in the laplacian graph. Useful if we want to keep less neighbours than hnsw has.
@@ -90,6 +92,7 @@ impl DiffusionParams {
             asked_dim,
             alfa: -1.,
             beta: -0.5,
+            epsil: 2.0f32,
             t: t_opt,
             gnbn_opt: g_opt,
             h_layer: None,
@@ -138,6 +141,18 @@ impl DiffusionParams {
         }
     }
 
+    /// should be between 0.5 and 4, can be slightly smaller in variable bandwidth case ( beta < 0.). Default to
+    pub fn set_epsil(&mut self, epsil: f32) {
+        let epsil_min = 0.50f32;
+        let epsil_max: f32 = 4.0f32;
+        //
+        self.epsil = epsil.min(epsil_max).max(epsil_min);
+        log::info!(
+            "setting epsil to {:.3e}, should be between 0.5 and 4, can be slightly smaller in variable bandwidth case ( beta < 0.)",
+            epsil
+        );
+    }
+
     pub fn set_hlayer(&mut self, layer: usize) {
         self.h_layer = Some(layer);
     }
@@ -148,6 +163,10 @@ impl DiffusionParams {
 
     pub fn get_beta(&self) -> f32 {
         self.beta
+    }
+
+    pub fn get_epsil(&self) -> f32 {
+        self.epsil
     }
 
     /// returns layer above which diffusion map will run (default is 0)
@@ -170,6 +189,7 @@ impl DiffusionParams {
             asked_dim: 2,
             alfa: -1.,
             beta: -0.5,
+            epsil: 2.0f32,
             t: Some(5.),
             gnbn_opt: Some(16),
             h_layer: None,
@@ -184,10 +204,22 @@ impl Default for DiffusionParams {
             asked_dim: 2,
             alfa: 1.,
             beta: 0.,
+            epsil: 2.0f32,
             t: Some(5.),
             gnbn_opt: Some(16),
             h_layer: None,
         }
+    }
+}
+
+impl std::fmt::Display for DiffusionParams {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        // display main parameters
+        write!(
+            f,
+            "alfa: {:.3e}, beta: {:.3e}, epsil : {:.3e}",
+            self.alfa, self.beta, self.epsil
+        )
     }
 }
 
@@ -659,9 +691,10 @@ impl DiffusionMaps {
             + Into<f64>,
     {
         log::info!(
-            "Diffusion computing kernels with using alfa : {:.2e} , beta : {:.2e}",
+            "Diffusion computing kernels with using alfa : {:.2e} , beta : {:.2e}; epsil : {:.2e}",
             self.params.get_alfa(),
-            self.params.get_beta()
+            self.params.get_beta(),
+            self.params.get_epsil()
         );
         //
         let neighbour_hood = kgraph.get_neighbours();
@@ -678,22 +711,8 @@ impl DiffusionMaps {
             .collect();
         // collect scales quantiles
         let scales_q = self.get_quantiles("scales quantiles first pass", &local_scales);
-        // normalize , get rid of zero scales (if all neighbours are at same position of point ! It happen!)
-        //
-        let sum = local_scales.iter().fold(F::zero(), |acc, s| acc + (*s));
-        assert!(!sum.is_nan());
-        let mean_scale = sum / F::from(local_scales.len()).unwrap();
-        assert!(mean_scale > F::zero());
-        for d in &mut local_scales {
-            if *d <= F::zero() {
-                *d = mean_scale;
-            }
-        }
-        // now we have scales we can remap edge length to weights.
-        // we choose epsil to put weight on at least 5 neighbours when no shift
-        let exponent = 2.0f32;
         let scale_width =
-            (scales_q.query(0.99).unwrap().1 / scales_q.query(0.01).unwrap().1) as f32;
+            (scales_q.query(0.999).unwrap().1 / scales_q.query(0.001).unwrap().1) as f32;
         let scale_median = scales_q.query(0.5).unwrap().1;
         log::info!(
             "compute_dmap_nodeparams knbn : {}, scale_max/min: {:.2e} scale_median : {:.2e}",
@@ -701,35 +720,59 @@ impl DiffusionMaps {
             scale_width,
             scale_median
         );
+        // normalize , get rid of zero scales (if all neighbours are at same position of point ! It happen!)
+        //
+        let sum = local_scales.iter().fold(F::zero(), |acc, s| acc + (*s));
+        assert!(!sum.is_nan());
+        ///////////    let mean_scale = sum / F::from(local_scales.len()).unwrap();
+        let median = F::from(scale_median).unwrap();
+        assert!(median > F::zero());
+        for d in &mut local_scales {
+            if *d <= F::zero() {
+                *d = median;
+            }
+        }
+        // now we have scales we can remap edge length to weights.
+        // we choose epsil to put weight on at least 5 neighbours when no shift
+        let exponent = 2.0f32;
         //
         let scales_f: Array1<f32> = Array1::<f32>::from_iter(
             local_scales
                 .iter()
-                .map(|s| ((*s) / mean_scale).to_f32().unwrap()),
+                .map(|s| ((*s) / median).to_f32().unwrap()),
         );
-        self.mean_scale = mean_scale.to_f32().unwrap();
+        self.mean_scale = median.to_f32().unwrap();
         let _ = self.get_quantiles(
             "normalized scales quantiles from first pass",
             scales_f.as_slice().unwrap(),
         );
         self.normed_scales = Some(scales_f);
-        //  TODO: someting for which the square is beteen 0.5 and 2
-        let epsil = 2.0f32.sqrt();
+        //  See documentation for epsil
+        let epsil = self.params.get_epsil().sqrt();
+        //
+        let beta = self.params.get_beta();
+        if beta > 0. {
+            log::error!("beta cannot be > 0.");
+            std::process::exit(1);
+        }
         let remap_weight = |w: F, shift: f32, scale: f32| {
             let arg = ((w.to_f32().unwrap() - shift) / (epsil * scale)).powf(exponent);
             (-arg).exp()
         };
-        let nodeparams = self.scales_to_nodeparams(kgraph, &local_scales, &remap_weight);
         //
-        let beta = self.params.get_beta();
         if beta < 0. {
             log::info!("using beta : {:.3e}", beta);
+            let nodeparams = self.scales_to_nodeparams(kgraph, &local_scales, &remap_weight);
             let beta_scales = self.kernel0_to_density(beta, &nodeparams);
             let beta_scales_f: Vec<F> = beta_scales.iter().map(|s| F::from(*s).unwrap()).collect();
             let nodeparams = self.scales_to_nodeparams(kgraph, &beta_scales_f, &remap_weight);
             self.beta_scales = Some(beta_scales);
             nodeparams
         } else {
+            log::info!("using beta : {:.3e}", 0.);
+            // beta = 0 means we keep scale constant! so it is in fact fixed bandwidth
+            let local_scales = vec![median; local_scales.len()];
+            let nodeparams = self.scales_to_nodeparams(kgraph, &local_scales, &remap_weight);
             nodeparams
         }
     } // end compute_dmap_nodeparams
@@ -850,12 +893,12 @@ impl DiffusionMaps {
             quant_densities.insert((*q).into());
         }
         log::info!(
-            "quantiles at 0.01 : {:.2e}, 0.05 : {:.2e} , 0.5 :  {:.2e}, 0.95 : {:.2e}, 0.99 : {:.2e}",
-            quant_densities.query(0.01).unwrap().1,
+            "quantiles at 0.001 : {:.2e}, 0.05 : {:.2e} , 0.5 :  {:.2e}, 0.95 : {:.2e}, 0.999 : {:.2e}",
+            quant_densities.query(0.001).unwrap().1,
             quant_densities.query(0.05).unwrap().1,
             quant_densities.query(0.5).unwrap().1,
             quant_densities.query(0.95).unwrap().1,
-            quant_densities.query(0.99).unwrap().1
+            quant_densities.query(0.990).unwrap().1
         );
         log::debug!("");
         //
@@ -1344,8 +1387,9 @@ mod tests {
         let dtime = 5.;
         let gnbn: Option<usize> = None;
         let mut dparams: DiffusionParams = DiffusionParams::new(2, Some(dtime), gnbn);
-        dparams.set_alfa(-1.);
-        dparams.set_beta(-0.5);
+        dparams.set_alfa(0.5);
+        dparams.set_beta(-0.1);
+        println!("DiffusionParams: {}", dparams);
         //
         let cpu_start = ProcessTime::now();
         let sys_now = SystemTime::now();
@@ -1419,8 +1463,9 @@ mod tests {
         let dtime = 5.;
         let gnbn = 16;
         let mut dparams: DiffusionParams = DiffusionParams::new(2, Some(dtime), Some(gnbn));
-        dparams.set_alfa(-1.);
-        dparams.set_beta(-0.5);
+        dparams.set_alfa(0.5);
+        dparams.set_beta(-0.1);
+        println!("DiffusionParams: {}", dparams);
         //
         let cpu_start = ProcessTime::now();
         let sys_now = SystemTime::now();

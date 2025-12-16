@@ -37,7 +37,10 @@
 //! So over 1_600_000 nodes only 100_000 do not retrieve their neighbours. 85% of points have their neighbours retrieved within 0.8 * the radius of
 //! embedded neighbour considered.
 //!
-//!
+
+use cpu_time::ProcessTime;
+use std::time::{Duration, SystemTime};
+
 use annembed::diffmaps::DiffusionParams;
 use annembed::fromhnsw::hubness::Hubness;
 
@@ -57,9 +60,6 @@ use ndarray::{Array2, ArrayView};
 use hnsw_rs::prelude::*;
 
 use annembed::prelude::*;
-
-use cpu_time::ProcessTime;
-use std::time::{Duration, SystemTime};
 
 use annembed::diffmaps::*;
 use annembed::fromhnsw::kgproj::KGraphProjection;
@@ -480,8 +480,9 @@ pub fn main() {
         log::info!("doing diffusion map embedding");
         let mut dmap_params = DiffusionParams::default();
         dmap_params.set_embedding_dimension(5);
-        dmap_params.set_alfa(-1.);
-        dmap_params.set_beta(-0.5);
+        dmap_params.set_alfa(1.);
+        dmap_params.set_beta(-0.2);
+        dmap_params.set_epsil(1.5);
         if sampling_factor >= 0.5 {
             // embed from layer 1 upper to spare memory if full dat are loaded
             dmap_embedding(&labels, &hnsw, 1, &dmap_params);
