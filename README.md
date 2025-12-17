@@ -40,7 +40,7 @@ The crate provides mainly in the form of a library (*See documentation of the bi
     - An estimation of the hubness of the graph of the Hnsw structure as described in:
             Radovanovic M., Nanopoulos A. and Ivanovic M. 2010. See [paper](https://www.jmlr.org/papers/volume11/radovanovic10a/radovanovic10a.pdf).
   
-    - a Diffusion Maps implementation.
+    - a Diffusion Maps implementation, with fixed and variable bandwith.
 
     - A link to the  Topological Data Analysis Julia package Ripserer.jl (See the directory Julia in the crate).  
     The distance matrix between points in a neighbourhood or from a reduced projected graph can be dumped to further processsing (see docs in module *fromhnsw::toripserer*).

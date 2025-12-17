@@ -290,7 +290,7 @@ fn dmap_embedding(
     //
     let mut dmapembedder = DiffusionMaps::new(*dmap_params);
     if layer >= 1 {
-        let kgraph = kgraph_from_hnsw_layer::<f32, DistL2, f32>(hnsw, 16, 1).unwrap();
+        let kgraph = kgraph_from_hnsw_layer::<f32, DistL2, f32>(hnsw, 8, 1).unwrap();
         let res = dmapembedder.embed_from_kgraph(&kgraph, dmap_params);
         if res.is_err() {
             log::error!("dmap_embedding failed");
@@ -422,18 +422,21 @@ pub fn main() {
         drop(data);
     } else {
         // need to construct hnsw
-        log::info!("no Hnsw dump found in directory, reconstructing Hnsw structure");
+        log::info!(
+            "no Hnsw dump found in directory, reconstructing Hnsw structure or subsampling asked"
+        );
         //
         let cpu_start_hnsw = ProcessTime::now();
         let sys_start_hnsw = SystemTime::now();
         //
         let ef_c = 400;
-        let max_nb_connection = 24;
+        let max_nb_connection = 16;
         let nbdata = data.len();
         let nb_layer = 16.min((nbdata as f32).ln().trunc() as usize);
         //
         hnsw = Hnsw::<f32, DistL2>::new(max_nb_connection, nbdata, nb_layer, ef_c, DistL2 {});
         hnsw.set_keeping_pruned(true);
+        //        hnsw.set_extend_candidates(true);
         hnsw.modify_level_scale(0.75);
         // we insert by block of 1_000_000
         let block_size = 1_000_000;
@@ -480,14 +483,15 @@ pub fn main() {
         log::info!("doing diffusion map embedding");
         let mut dmap_params = DiffusionParams::default();
         dmap_params.set_embedding_dimension(5);
-        dmap_params.set_alfa(1.);
+        dmap_params.set_alfa(0.5);
         dmap_params.set_beta(-0.2);
         dmap_params.set_epsil(1.5);
-        if sampling_factor >= 0.5 {
-            // embed from layer 1 upper to spare memory if full dat are loaded
+        // change that to access loading from layer 1
+        if hnsw.get_nb_point() > 20_000_000 {
+            // embed from layer 1 upper to spare memory if large data are loaded
             dmap_embedding(&labels, &hnsw, 1, &dmap_params);
         } else {
-            // embed from layer 1 upper to spare memory if full dat are loaded
+            // embed full data from layer 0
             dmap_embedding(&labels, &hnsw, 0, &dmap_params);
         }
     }

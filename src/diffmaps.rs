@@ -130,7 +130,8 @@ impl DiffusionParams {
         self.alfa = alfa;
     }
 
-    // set beta, must be negative in range -1. 0.
+    /// set beta, must be negative in range -1. 0.
+    /// As beta -> 0, we go nearer to fixed bandwidth
     pub fn set_beta(&mut self, beta: f32) {
         if (-1.01..=0.).contains(&beta) {
             self.beta = beta;
@@ -183,13 +184,26 @@ impl DiffusionParams {
     }
 
     /// build variable density default parameters
-    /// beta is set to - 0.5
-    pub fn build_with_variable_density() -> Self {
+    /// beta is set to -0.5
+    pub fn build_with_variable_bandwidth() -> Self {
         DiffusionParams {
             asked_dim: 2,
             alfa: -1.,
             beta: -0.5,
-            epsil: 2.0f32,
+            epsil: 1.5f32,
+            t: Some(5.),
+            gnbn_opt: Some(16),
+            h_layer: None,
+        }
+    }
+
+    /// aflfa = 1, beta = 0
+    pub fn build_with_fixed_bandwidth() -> Self {
+        DiffusionParams {
+            asked_dim: 2,
+            alfa: 1.,
+            beta: 0.,
+            epsil: 1.0f32,
             t: Some(5.),
             gnbn_opt: Some(16),
             h_layer: None,
