@@ -109,7 +109,7 @@ impl GraphLaplacian {
         let svd_res = svdapprox.direct_svd(svdmode);
         log::trace!("exited svd");
         if svd_res.is_err() {
-            log::error!("svd approximation failed");
+            log::error!("svd approximation failed, possibly increase epsil");
             let errmsg = svd_res.err().unwrap();
             std::panic!("error msg : {}", errmsg);
         }

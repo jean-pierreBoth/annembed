@@ -62,7 +62,7 @@ use hnsw_rs::prelude::*;
 ///     We then get :
 ///    $$ L f = \Delta f + c_{1} \nabla f . \frac{\nabla  q}{q} $$ with $ c_{1} = 2 - 2 \alpha + \beta ( 2 + d) $
 ///
-///    As we need to keep $ c_{1} \ge 0 $ and  we have $ \beta \lt 0 $ we must choose $  \alpha \lt 0 $.
+///    As we need to keep $ c_{1} \ge 0 $ and  we have $ \beta \lt 0 $ we must choose $  \alpha \gt \beta + 0.1 to ensure error control (See Harlim-Berry)$.
 #[derive(Copy, Clone, Debug)]
 pub struct DiffusionParams {
     /// dimension of embedding
@@ -86,12 +86,12 @@ impl DiffusionParams {
     /// - embedding dimension
     /// - optional diffusion time
     /// - optional number of neighbours used in laplacian discretisation
-    /// - alfa is set to 0 and beta to 1.
+    /// - alfa is set to 0.5 and beta to  -0.1, epsil to 2.
     pub fn new(asked_dim: usize, t_opt: Option<f32>, g_opt: Option<usize>) -> Self {
         DiffusionParams {
             asked_dim,
-            alfa: -1.,
-            beta: -0.5,
+            alfa: 0.5,
+            beta: -0.1,
             epsil: 2.0f32,
             t: t_opt,
             gnbn_opt: g_opt,
@@ -154,6 +154,11 @@ impl DiffusionParams {
         );
     }
 
+    /// set desired number of neighbours used in Kgraph (must be less than in Hnsw construction)
+    pub fn set_gnbn(&mut self, nbn: usize) {
+        self.gnbn_opt = Some(nbn);
+    }
+
     pub fn set_hlayer(&mut self, layer: usize) {
         self.h_layer = Some(layer);
     }
@@ -188,11 +193,11 @@ impl DiffusionParams {
     pub fn build_with_variable_bandwidth() -> Self {
         DiffusionParams {
             asked_dim: 2,
-            alfa: -1.,
-            beta: -0.5,
+            alfa: 0.5,
+            beta: -0.1,
             epsil: 1.5f32,
             t: Some(5.),
-            gnbn_opt: Some(16),
+            gnbn_opt: Some(12),
             h_layer: None,
         }
     }
@@ -203,7 +208,7 @@ impl DiffusionParams {
             asked_dim: 2,
             alfa: 1.,
             beta: 0.,
-            epsil: 1.0f32,
+            epsil: 2.0f32,
             t: Some(5.),
             gnbn_opt: Some(16),
             h_layer: None,
@@ -555,6 +560,95 @@ impl DiffusionMaps {
         //
     }
 
+    // building block of scales_to_nodeparams to build nodeparams in //
+    fn build_node_param<F>(
+        &self,
+        node: usize,
+        neighbours: &Vec<OutEdge<F>>,
+        local_scales: &[F],
+        scale_to_kernel: &dyn Fn(F, f32, f32) -> f32,
+        nb_weight_too_low: &mut usize,
+    ) -> NodeParam
+    where
+        F: Float
+            + FromPrimitive
+            + std::marker::Sync
+            + Send
+            + std::fmt::UpperExp
+            + std::iter::Sum
+            + std::ops::AddAssign
+            + std::ops::DivAssign
+            + Into<f64>,
+    {
+        // no isolated points !
+        if neighbours.is_empty() {
+            log::error!("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
+            log::error!("encountered an isolated point, exiting ");
+            std::process::exit(1);
+        }
+        // get rid of case where all neighbours have dist 0 to current node (It happens in Higgs.data!!!)
+        let mut all_equal = false;
+        let last_n = neighbours
+            .iter()
+            .rfind(|&n| n.weight.to_f32().unwrap() > 0.);
+        //
+        if let Some(edge) = last_n {
+            let last_e_w = edge.weight;
+            if last_e_w <= neighbours[0].weight {
+                all_equal = true;
+            }
+        } else {
+            // means all distances are 0! (encountered in Higgs Boson bench)
+            all_equal = true;
+        }
+        // we add each node as a neighbour of itself to enforce ergodicity !!
+        let nb_edges = 1 + neighbours.len();
+        let mut edges = Vec::<OutEdge<f32>>::with_capacity(nb_edges);
+        if all_equal {
+            log::warn!(
+                "all equal for node {}, weight {:.3e}, nb_neighbours {}",
+                node,
+                neighbours[0].weight.into(),
+                neighbours.len()
+            );
+            // all neighbours will have
+            let proba: f32 = 1. / (nb_edges as f32);
+            let self_edge = OutEdge::new(node, proba);
+            edges.push(self_edge);
+            for n in neighbours {
+                edges.push(OutEdge::new(n.node, proba));
+            }
+        } else {
+            let self_edge = OutEdge::<f32>::new(node, 1.);
+            edges.push(self_edge);
+            let _shift = neighbours[0].weight.to_f32().unwrap();
+            let from_scale = local_scales[node];
+            // Recall no shift but could add drift with respect to local_scales variations
+            for n in neighbours {
+                let to_scale = local_scales[n.node];
+                let local_scale = (to_scale * from_scale).sqrt();
+                let mut weight: f32 = scale_to_kernel(n.weight, 0., local_scale.to_f32().unwrap());
+                if weight < PROBA_MIN {
+                    weight = weight.max(PROBA_MIN);
+                    *(nb_weight_too_low) += 1;
+                }
+                let edge = OutEdge::<f32>::new(n.node, weight);
+                edges.push(edge);
+            }
+            // TODO: we adjust self_edge
+            //                edges[0].weight = 1. / nb_edges as f32;
+            if nb_edges > 1 {
+                edges[0].weight = edges[1].weight;
+            } else {
+                edges[0].weight = 1. / 2.;
+            }
+        }
+        //
+        let nodep = NodeParam::new(local_scales[node].to_f32().unwrap(), edges);
+        nodep
+        //
+    }
+
     // This function is called by Self::compute_dmap_nodeparams and Self::density_to_kernel
     // Given scales (rho in Harlim) it computes nodeparams.
     // it is called once with scales deduced from distances and possibly once more with scales
@@ -595,85 +689,27 @@ impl DiffusionMaps {
         //
         // now we have scales we can remap edge length to weights.
         // we choose epsil to put weight on at least 5 neighbours when no shift
-        // TODO: depend on absence of shift
-        let mut nb_weight_to_low = 0usize;
+        // TODO: we can now parallelize with Atomic on nb_weight_too_low
+        let mut nb_weight_too_low = 0usize;
         // now we loop on all nodes
         for i in 0..nb_nodes {
-            let neighbours = &neighbour_hood[i];
-            // no isolated points !
-            if neighbours.is_empty() {
-                log::error!("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
-                log::error!("encountered an isolated point, exiting ");
-                std::process::exit(1);
-            }
-            // get rid of case where all neighbours have dist 0 to current node (It happens in Higgs.data!!!)
-            let mut all_equal = false;
-            let last_n = neighbours
-                .iter()
-                .rfind(|&n| n.weight.to_f32().unwrap() > 0.);
             //
-            if let Some(edge) = last_n {
-                let last_e_w = edge.weight;
-                if last_e_w <= neighbours[0].weight {
-                    all_equal = true;
-                }
-            } else {
-                // means all distances are 0! (encountered in Higgs Boson bench)
-                all_equal = true;
-            }
-            // we add each node as a neighbour of itself to enforce ergodicity !!
-            let nb_edges = 1 + neighbours.len();
-            let mut edges = Vec::<OutEdge<f32>>::with_capacity(nb_edges);
-            if all_equal {
-                log::warn!(
-                    "all equal for node {}, weight {:.3e}, nb_neighbours {}",
-                    i,
-                    neighbours[0].weight.into(),
-                    neighbours.len()
-                );
-                // all neighbours will have
-                let proba: f32 = 1. / (nb_edges as f32);
-                let self_edge = OutEdge::new(i, proba);
-                edges.push(self_edge);
-                for n in neighbours {
-                    edges.push(OutEdge::new(n.node, proba));
-                }
-            } else {
-                let self_edge = OutEdge::<f32>::new(i, 1.);
-                edges.push(self_edge);
-                let _shift = neighbours[0].weight.to_f32().unwrap();
-                let from_scale = local_scales[i];
-                // Recall no shift but could add drift with respect to local_scales variations
-                for n in neighbours {
-                    let to_scale = local_scales[n.node];
-                    let local_scale = (to_scale * from_scale).sqrt();
-                    let mut weight: f32 =
-                        scale_to_kernel(n.weight, 0., local_scale.to_f32().unwrap());
-                    if weight < PROBA_MIN {
-                        weight = weight.max(PROBA_MIN);
-                        nb_weight_to_low += 1;
-                    }
-                    let edge = OutEdge::<f32>::new(n.node, weight);
-                    edges.push(edge);
-                }
-                // TODO: we adjust self_edge
-                //                edges[0].weight = 1. / nb_edges as f32;
-                if nb_edges > 1 {
-                    edges[0].weight = edges[1].weight;
-                } else {
-                    edges[0].weight = 1. / 2.;
-                }
-            }
-            // allocate a NodeParam and keep track of real scale of node
-            let nodep = NodeParam::new(local_scales[i].to_f32().unwrap(), edges);
+            let neighbours = &neighbour_hood[i];
+            let nodep = self.build_node_param(
+                i,
+                neighbours,
+                local_scales,
+                scale_to_kernel,
+                &mut nb_weight_too_low,
+            );
             nodeparams.push(nodep);
         }
         //
         let low_weight =
-            nb_weight_to_low as f32 / (kgraph.get_max_nbng() * nodeparams.len()) as f32;
+            nb_weight_too_low as f32 / (kgraph.get_max_nbng() * nodeparams.len()) as f32;
         if low_weight > 0. {
             log::info!(
-                "to_dmap_nodeparams: proba of weight < {:.2e} = {:.2e}",
+                "to_dmap_nodeparams: proba of weight < {:.2e} = {:.2e}, possibly increase epsil",
                 PROBA_MIN,
                 low_weight
             );
@@ -738,8 +774,8 @@ impl DiffusionMaps {
         //
         let sum = local_scales.iter().fold(F::zero(), |acc, s| acc + (*s));
         assert!(!sum.is_nan());
-        ///////////    let mean_scale = sum / F::from(local_scales.len()).unwrap();
-        let median = F::from(scale_median).unwrap();
+        let median = sum / F::from(local_scales.len()).unwrap();
+        ///////        let median = F::from(scale_median).unwrap();
         assert!(median > F::zero());
         for d in &mut local_scales {
             if *d <= F::zero() {
@@ -774,8 +810,8 @@ impl DiffusionMaps {
             (-arg).exp()
         };
         //
+        log::info!("using beta : {:.3e}", beta);
         if beta < 0. {
-            log::info!("using beta : {:.3e}", beta);
             let nodeparams = self.scales_to_nodeparams(kgraph, &local_scales, &remap_weight);
             let beta_scales = self.kernel0_to_density(beta, &nodeparams);
             let beta_scales_f: Vec<F> = beta_scales.iter().map(|s| F::from(*s).unwrap()).collect();
@@ -783,7 +819,6 @@ impl DiffusionMaps {
             self.beta_scales = Some(beta_scales);
             nodeparams
         } else {
-            log::info!("using beta : {:.3e}", 0.);
             // beta = 0 means we keep scale constant! so it is in fact fixed bandwidth
             let local_scales = vec![median; local_scales.len()];
             let nodeparams = self.scales_to_nodeparams(kgraph, &local_scales, &remap_weight);
@@ -1399,10 +1434,11 @@ mod tests {
         //
         // do dmap embedding, laplacian computation
         let dtime = 5.;
-        let gnbn: Option<usize> = None;
+        let gnbn: Option<usize> = Some(12);
         let mut dparams: DiffusionParams = DiffusionParams::new(2, Some(dtime), gnbn);
         dparams.set_alfa(0.5);
         dparams.set_beta(-0.1);
+        dparams.set_epsil(2.0);
         println!("DiffusionParams: {}", dparams);
         //
         let cpu_start = ProcessTime::now();
@@ -1475,10 +1511,11 @@ mod tests {
         //
         // do dmap embedding, laplacian computation
         let dtime = 5.;
-        let gnbn = 16;
+        let gnbn = 12;
         let mut dparams: DiffusionParams = DiffusionParams::new(2, Some(dtime), Some(gnbn));
         dparams.set_alfa(0.5);
         dparams.set_beta(-0.1);
+        dparams.set_epsil(2.0);
         println!("DiffusionParams: {}", dparams);
         //
         let cpu_start = ProcessTime::now();

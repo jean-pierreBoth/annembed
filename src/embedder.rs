@@ -47,7 +47,7 @@ use crate::tools::{clip::clip, dichotomy::*, kdumap::*, nodeparam::*};
 use hnsw_rs::prelude::*;
 
 /// do not consider probabilities under PROBA_MIN, thresolded!!
-pub(crate) const PROBA_MIN: f32 = 1.0E-5;
+pub(crate) const PROBA_MIN: f32 = 1.0E-4;
 
 // to be used in emdedded space so small dimension. no need for simd and
 #[inline]

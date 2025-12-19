@@ -484,8 +484,10 @@ pub fn main() {
         let mut dmap_params = DiffusionParams::default();
         dmap_params.set_embedding_dimension(5);
         dmap_params.set_alfa(0.5);
-        dmap_params.set_beta(-0.2);
-        dmap_params.set_epsil(1.5);
+        dmap_params.set_beta(-0.1);
+        dmap_params.set_epsil(2.0);
+        dmap_params.set_gnbn(12);
+        println!("DiffusionParams: {}", dmap_params);
         // change that to access loading from layer 1
         if hnsw.get_nb_point() > 20_000_000 {
             // embed from layer 1 upper to spare memory if large data are loaded
