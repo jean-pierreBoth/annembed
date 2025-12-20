@@ -16,6 +16,7 @@
 
 use num_traits::Float;
 use num_traits::cast::FromPrimitive;
+use std::sync::atomic::{AtomicU32, Ordering};
 
 use indexmap::IndexSet;
 use quantiles::ckms::CKMS;
@@ -225,7 +226,7 @@ impl Default for DiffusionParams {
             beta: 0.,
             epsil: 2.0f32,
             t: Some(5.),
-            gnbn_opt: Some(16),
+            gnbn_opt: Some(12),
             h_layer: None,
         }
     }
@@ -561,13 +562,13 @@ impl DiffusionMaps {
     }
 
     // building block of scales_to_nodeparams to build nodeparams in //
-    fn build_node_param<F>(
+    fn build_node_param<F, FUN>(
         &self,
         node: usize,
         neighbours: &Vec<OutEdge<F>>,
         local_scales: &[F],
-        scale_to_kernel: &dyn Fn(F, f32, f32) -> f32,
-        nb_weight_too_low: &mut usize,
+        scale_to_kernel: FUN,
+        nb_weight_too_low: &AtomicU32,
     ) -> NodeParam
     where
         F: Float
@@ -579,6 +580,7 @@ impl DiffusionMaps {
             + std::ops::AddAssign
             + std::ops::DivAssign
             + Into<f64>,
+        FUN: Send + Sync + Fn(F, f32, f32) -> f32,
     {
         // no isolated points !
         if neighbours.is_empty() {
@@ -630,7 +632,7 @@ impl DiffusionMaps {
                 let mut weight: f32 = scale_to_kernel(n.weight, 0., local_scale.to_f32().unwrap());
                 if weight < PROBA_MIN {
                     weight = weight.max(PROBA_MIN);
-                    *(nb_weight_too_low) += 1;
+                    nb_weight_too_low.fetch_add(1, Ordering::SeqCst);
                 }
                 let edge = OutEdge::<f32>::new(n.node, weight);
                 edges.push(edge);
@@ -663,11 +665,11 @@ impl DiffusionMaps {
     //  - scale_to_kernel : kernel function
     //
     // The function returns Nodeparams corresponding to new kernel and associated density (computed as mean transition proba)
-    fn scales_to_nodeparams<F>(
+    fn scales_to_nodeparams<F, FUN>(
         &self,
         kgraph: &KGraph<F>,
         local_scales: &[F],
-        scale_to_kernel: &dyn Fn(F, f32, f32) -> f32,
+        scale_to_kernel: &FUN,
     ) -> NodeParams
     where
         F: Float
@@ -679,34 +681,35 @@ impl DiffusionMaps {
             + std::ops::AddAssign
             + std::ops::DivAssign
             + Into<f64>,
+        FUN: Send + Sync + Fn(F, f32, f32) -> f32,
     {
         log::debug!("in DiffusionMaps::scales_to_kernel");
         //
         let nb_nodes = kgraph.get_nb_nodes();
         let neighbour_hood = kgraph.get_neighbours();
         //
-        let mut nodeparams = Vec::<NodeParam>::with_capacity(nb_nodes);
+        //let mut nodeparams = Vec::<NodeParam>::with_capacity(nb_nodes);
         //
         // now we have scales we can remap edge length to weights.
         // we choose epsil to put weight on at least 5 neighbours when no shift
         // TODO: we can now parallelize with Atomic on nb_weight_too_low
-        let mut nb_weight_too_low = 0usize;
+        let nb_weight_too_low = AtomicU32::new(0);
         // now we loop on all nodes
-        for i in 0..nb_nodes {
-            //
-            let neighbours = &neighbour_hood[i];
-            let nodep = self.build_node_param(
-                i,
-                neighbours,
-                local_scales,
-                scale_to_kernel,
-                &mut nb_weight_too_low,
-            );
-            nodeparams.push(nodep);
-        }
+        let nodeparams: Vec<NodeParam> = (0..nb_nodes)
+            .into_par_iter()
+            .map(|i| {
+                self.build_node_param(
+                    i,
+                    &neighbour_hood[i],
+                    local_scales,
+                    scale_to_kernel,
+                    &nb_weight_too_low,
+                )
+            })
+            .collect();
         //
-        let low_weight =
-            nb_weight_too_low as f32 / (kgraph.get_max_nbng() * nodeparams.len()) as f32;
+        let low_weight = nb_weight_too_low.into_inner() as f32
+            / (kgraph.get_max_nbng() * nodeparams.len()) as f32;
         if low_weight > 0. {
             log::info!(
                 "to_dmap_nodeparams: proba of weight < {:.2e} = {:.2e}, possibly increase epsil",
@@ -1460,7 +1463,7 @@ mod tests {
         };
         //
         log::info!(
-            " dmap embed time {:.2e} s, cpu time : {}",
+            " dmap embed sys time {:.2e} s, cpu time : {}",
             sys_now.elapsed().unwrap().as_secs(),
             cpu_start.elapsed().as_secs()
         );
@@ -1538,7 +1541,7 @@ mod tests {
         };
         //
         log::info!(
-            " dmap embed time {:.2e} s, cpu time : {}",
+            " dmap embed sys time {:.2e} s, cpu time : {}",
             sys_now.elapsed().unwrap().as_secs(),
             cpu_start.elapsed().as_secs()
         );

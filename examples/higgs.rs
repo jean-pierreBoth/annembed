@@ -122,7 +122,7 @@ fn read_higgs_csv(
                 record.len()
             ));
         }
-        let mut new_data = Vec::<f32>::with_capacity(21);
+        let mut new_data = Vec::<f32>::with_capacity(nb_fields);
         for j in 0..to_parse {
             let field = record.get(j).unwrap();
             // decode into Ix type
@@ -430,7 +430,7 @@ pub fn main() {
         let sys_start_hnsw = SystemTime::now();
         //
         let ef_c = 400;
-        let max_nb_connection = 16;
+        let max_nb_connection = 12;
         let nbdata = data.len();
         let nb_layer = 16.min((nbdata as f32).ln().trunc() as usize);
         //
@@ -486,7 +486,7 @@ pub fn main() {
         dmap_params.set_alfa(0.5);
         dmap_params.set_beta(-0.1);
         dmap_params.set_epsil(2.0);
-        dmap_params.set_gnbn(12);
+        dmap_params.set_gnbn(8);
         println!("DiffusionParams: {}", dmap_params);
         // change that to access loading from layer 1
         if hnsw.get_nb_point() > 20_000_000 {
