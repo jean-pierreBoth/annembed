@@ -1,17 +1,19 @@
-//! test of embedding for HIGGS boson data that consists in 11 millions of points in dimension 21 or 28 if we use
-//! also the variables hand crafted by physicists.    
-//! The data is described and can be retrieved at <https://archive.ics.uci.edu/ml/datasets/HIGGS>.
-//! An example of this data set processing is given in the paper by Amid and Warmuth
-//! Cf <https://arxiv.org/abs/1910.00204>
+//! 1. umap like embedding:
 //!
-//! We run quality estimation with a subsampling factor of 0.15 so we keep about 1_600_000 pointq
+//!   test of embedding for HIGGS boson data that consists in 11 millions of points in dimension 21 or 28 if we use
+//!   also the variables hand crafted by physicists.    
+//!  The data is described and can be retrieved at <https://archive.ics.uci.edu/ml/datasets/HIGGS>.
+//!  An example of this data set processing is given in the paper by Amid and Warmuth
+//!  Cf <https://arxiv.org/abs/1910.00204>
 //!
-//! - With embedding **dimension 2** and embedding neighbourhood size 100 we get :
+//!  We run quality estimation with a subsampling factor of 0.15 so we keep about 1_600_000 pointq
+//!
+//!  - With embedding **dimension 2** and embedding neighbourhood size 100 we get :
 //! ```text
-//! a guess at quality
-//! neighbourhood size used in embedding : 6
-//! nb neighbourhoods without a match : 925763,  mean number of neighbours conserved when match : 5.136e0
-//! embedded radii quantiles at 0.05 : 1.09e-2 , 0.25 : 1.41e-2, 0.5 :  2.30e-2, 0.75 : 1.11e-1, 0.85 : 1.62e-1, 0.95 : 2.62e-1
+//!  a guess at quality
+//!  neighbourhood size used in embedding : 6
+//!  nb neighbourhoods without a match : 925763,  mean number of neighbours conserved when match : 5.136e0
+//!  embedded radii quantiles at 0.05 : 1.09e-2 , 0.25 : 1.41e-2, 0.5 :  2.30e-2, 0.75 : 1.11e-1, 0.85 : 1.62e-1, 0.95 : 2.62e-1
 //!
 //! statistics on conservation of neighborhood (of size nbng)
 //! neighbourhood size used in target space : 100
@@ -19,8 +21,8 @@
 //! quantiles at 0.05 : 9.88e-2 , 0.25 : 5.09e-1, 0.5 :  1.72e0, 0.75 : 4.77e0, 0.85 : 7.78e0, 0.95 : 1.57e1
 //! ```
 //!
-//! Only 43% of points have some neighbours conserved and 50% of points need at 1.7 * the radius of embedded neighbour considered to retrieve all
-//! their neighbours.
+//!  Only 43% of points have some neighbours conserved and 50% of points need at 1.7 * the radius of embedded neighbour considered to retrieve all
+//!  their neighbours.
 //!
 //! - With embedding **dimension 15** and embedding neighbourhood size 100 we get :
 //! ```text
@@ -35,8 +37,10 @@
 //! quantiles at 0.05 : 4.43e-2 , 0.25 : 1.11e-1, 0.5 :  2.49e-1, 0.75 : 5.50e-1, 0.85 : 7.70e-1, 0.95 : 1.27e0
 //! ```
 //! So over 1_600_000 nodes only 100_000 do not retrieve their neighbours. 85% of points have their neighbours retrieved within 0.8 * the radius of
-//! embedded neighbour considered.
+//!  embedded neighbour considered.
 //!
+//! 2. Diffusion Maps embedding:
+//!  We can run on  60% of the data on 16 cores AMD Ryzen 9 7950X 16-Core Processor within 700s (cpu), 220s (sys)
 
 use cpu_time::ProcessTime;
 use std::time::{Duration, SystemTime};
@@ -318,7 +322,9 @@ fn dmap_embedding(
 ///  * --dmap is used it is a dmap embedding
 ///   
 ///  * --factor sampling_factor
-///       sampling_factor : if >= 1. full data is embedded, but quality runs only with 64Gb for sampling_factor <= 0.15  
+///       sampling_factor :
+///         if >= 1. full data is embedded, but  with 64Gb of memory, umap quality check  runs only with sampling_factor <= 0.15.
+///         With 64Gb memory, Diffusion Maps runs with ampling_factor = 0.6 in 700s with 16 core AMD Ryzen 9 7950X 16-Core Processor
 ///  * --dist "DistL2" or "DistL1"
 ///
 ///  The others variables can be modified in the code
@@ -396,18 +402,15 @@ pub fn main() {
     let mut reloader = HnswIo::new(&directory, &basename);
     let mut hnsw_opt: Option<Hnsw<f32, DistL2>> = None;
     let mut hnsw: Hnsw<f32, DistL2>;
-    //
-    // if we do not sub sample we try reloading
-    if sampling_factor >= 1. {
-        let res_reload = reloader.load_hnsw::<f32, DistL2>();
-        println!(
-            " higgs ann reload sys time(s) {:?} cpu time {:?}",
-            sys_now.elapsed().unwrap().as_secs(),
-            cpu_time.elapsed().as_secs()
-        );
-        if res_reload.is_ok() {
-            hnsw_opt = Some(res_reload.unwrap());
-        }
+    // We always reload. So if sampling factor is changed hnsw.graph and data must be cleaned
+    let res_reload = reloader.load_hnsw::<f32, DistL2>();
+    println!(
+        " higgs ann reload sys time(s) {:?} cpu time {:?}",
+        sys_now.elapsed().unwrap().as_secs(),
+        cpu_time.elapsed().as_secs()
+    );
+    if res_reload.is_ok() {
+        hnsw_opt = Some(res_reload.unwrap());
     }
     //
     if hnsw_opt.is_some() {
@@ -483,8 +486,8 @@ pub fn main() {
         log::info!("doing diffusion map embedding");
         let mut dmap_params = DiffusionParams::default();
         dmap_params.set_embedding_dimension(5);
-        dmap_params.set_alfa(0.5);
-        dmap_params.set_beta(-0.1);
+        dmap_params.set_alfa(1.0);
+        dmap_params.set_beta(0.);
         dmap_params.set_epsil(2.0);
         dmap_params.set_gnbn(8);
         println!("DiffusionParams: {}", dmap_params);
