@@ -6,7 +6,7 @@ repository = "https://github.com/jean-pierreBoth/annembed"
 description = "a Rust implementation of a dimension reduction à la Umap "
 license = "MIT/Apache-2.0"
 readme = "README.md"
-keywords = ["algorithms", "ann", "embedding", "dimension-reduction", "umap"]
+keywords = ["ann", "embedding", "dimension-reduction", "umap", "diffusion-maps"]
 documentation = "https://docs.rs/annembed"
 edition = "2024"
 

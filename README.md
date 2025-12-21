@@ -40,7 +40,7 @@ The crate provides mainly in the form of a library (*See documentation of the bi
     - An estimation of the hubness of the graph of the Hnsw structure as described in:
             Radovanovic M., Nanopoulos A. and Ivanovic M. 2010. See [paper](https://www.jmlr.org/papers/volume11/radovanovic10a/radovanovic10a.pdf).
   
-    - a Diffusion Maps implementation, with fixed and variable bandwith.
+    - a Diffusion Maps implementation, with fixed and variable bandwith. (**See the bibliography in module Diffmaps**)
 
     - A link to the  Topological Data Analysis Julia package Ripserer.jl (See the directory Julia in the crate).  
     The distance matrix between points in a neighbourhood or from a reduced projected graph can be dumped to further processsing (see docs in module *fromhnsw::toripserer*).
@@ -167,11 +167,13 @@ Sources of examples are in corresponding directory.
 
     ![higgs-28-density](Images/Higgs-28-sub0.15-28-H-B40-50S0.75k6-gf5.firstdist.png.jpg)
 
-    - Diffusion Maps initialization in the non hierarchical case.
+    - Diffusion Maps with the example higgs.rs built with module diffmap .
 
-        In the direct case the initial diffusion maps with approximated svd runs in 1650 sec and produces the following initialization image:
+        We run on 60% of data in 1700 sec and get the following image:
 
-    ![higgs_dmap](Images/higgs_initial_dmap.png.jpg)
+    ![higgs_dmap](Images/higgs_dmap_embedded-0.6-1.0-0.0-eps2-pmin-4-nbg8-mean-par.csv.png.jpg)
+
+    yellow  : label 0, black label 1.
 
 ### **Genomics** applications can be found in the following [paper](https://doi.org/10.1093/nargab/lqae172)
 

@@ -63,7 +63,9 @@ use hnsw_rs::prelude::*;
 ///     We then get :
 ///    $$ L f = \Delta f + c_{1} \nabla f . \frac{\nabla  q}{q} $$ with $ c_{1} = 2 - 2 \alpha + \beta ( 2 + d) $
 ///
-///    As we need to keep $ c_{1} \ge 0 $ and  we have $ \beta \lt 0 $ we must choose $  \alpha \gt \beta + 0.1 to ensure error control (See Harlim-Berry)$.
+///    As we need to keep $ c_{1} \ge 0 $ and  we have $ \beta \lt 0 $ we must choose $  \alpha \gt \beta + 0.1 $ to ensure error control (See Harlim-Berry).  
+///    For $ \beta = 0 $ ,  $ \alpha = 0.5 $ or $ \alpha = 1. $ are standard choices.  
+///    For $\beta \ne 0$ , $ \beta \in \[ -0.1, -0.5\]$ and $ \alpha = 0.5 $ are standard choices.
 #[derive(Copy, Clone, Debug)]
 pub struct DiffusionParams {
     /// dimension of embedding
