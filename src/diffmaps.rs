@@ -409,7 +409,12 @@ impl DiffusionMaps {
             self.index = Some(kgraph.get_indexset().clone());
         }
         // get NodeParams. fill fields local_scale, mean_scale and  beta_scales if necessary
-        let nodeparams = self.compute_dmap_nodeparams::<F>(kgraph, kgraph.get_max_nbng());
+        let nbng = if let Some(asked_nbng) = self.params.get_gnbn() {
+            asked_nbng.min(kgraph.get_max_nbng())
+        } else {
+            kgraph.get_max_nbng()
+        };
+        let nodeparams = self.compute_dmap_nodeparams::<F>(kgraph, nbng);
         //
         self.compute_laplacian(&nodeparams, self.params.get_alfa())
     } // end of laplacian_from_kgraph

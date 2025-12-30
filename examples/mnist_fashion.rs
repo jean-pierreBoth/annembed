@@ -103,7 +103,7 @@ pub fn main() {
     let graphprojection;
     let hierarchical = false;
     if !hierarchical {
-        let knbn = 16;
+        let knbn = 12;
         kgraph = kgraph_from_hnsw_all(&hnsw, knbn).unwrap();
         embedder = Embedder::new(&kgraph, embed_params);
         let embed_res = embedder.embed();

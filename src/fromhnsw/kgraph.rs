@@ -444,7 +444,7 @@ where
     F: Float + FromPrimitive,
 {
     //
-    log::debug!("entering kgraph_from_hnsw_all");
+    log::debug!("entering kgraph_from_hnsw_all, nbng : {}", nbng);
     //
     let mut nb_point_below_nbng = 0;
     let mut mean_deficient_neighbour_size: usize = 0;
