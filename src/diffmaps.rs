@@ -29,8 +29,10 @@ use sprs::{CsMat, TriMatBase};
 use crate::embedder::*;
 use crate::fromhnsw::{kgraph::KGraph, kgraph_from_hnsw_all};
 use crate::graphlaplace::*;
+
 #[allow(unused)]
 use crate::tools::{clip, kdumap::*, matrepr::*, nodeparam::*, svdapprox::*};
+
 use anyhow::Result;
 use hnsw_rs::prelude::*;
 

@@ -2,6 +2,7 @@
 
 use lazy_static::lazy_static;
 
+pub mod cdcop;
 pub mod diffmaps;
 pub mod embedder;
 pub mod embedparams;
