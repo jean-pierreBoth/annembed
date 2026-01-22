@@ -61,14 +61,11 @@ impl GraphLaplacian {
         self.normed_scales.as_ref()
     }
 
-    #[allow(unused)]
     pub fn get_laplacian(&self) -> Option<&MatRepr<f32>> {
-        log::error!("not yet implemented");
         self.laplacian.as_ref()
     }
 
-    #[allow(unused)]
-    pub fn get_kernel(&self) -> &MatRepr<f32> {
+    pub(crate) fn get_sym_kernel(&self) -> &MatRepr<f32> {
         &self.sym_kernel
     }
 
@@ -130,8 +127,8 @@ impl GraphLaplacian {
     pub fn compute_laplacian(&mut self) {
         // we must provide laplacian = Kernel - Identity/(scale[i] * scale[i]
         // and we have a symetrized Kernel by normalizer = q.sqrt()
-        if self.get_kernel().is_csr() {
-            let kernel = self.get_kernel().get_csr().unwrap();
+        if self.get_sym_kernel().is_csr() {
+            let kernel = self.get_sym_kernel().get_csr().unwrap();
             let mut laplacian = kernel.clone();
             assert_eq!(laplacian.shape().0, laplacian.shape().1);
             let scales = self.normed_scales.as_ref().unwrap();
@@ -150,7 +147,7 @@ impl GraphLaplacian {
             self.laplacian = Some(MatRepr::from_csrmat(laplacian));
         } else {
             // full matrix
-            let kernel = self.get_kernel().get_full().unwrap();
+            let kernel = self.get_sym_kernel().get_full().unwrap();
             let mut laplacian = kernel.clone();
             let scales = self.normed_scales.as_ref().unwrap();
             assert_eq!(laplacian.shape()[0], laplacian.shape()[1]);
@@ -161,9 +158,44 @@ impl GraphLaplacian {
                     laplacian[[i, j]] *=
                         self.normalizer[j] / (self.normalizer[i] * scales[i] * scales[j]);
                 }
-                laplacian[[i, i]] -= 1. / scales[i] * scales[i]; // diagnal term
+                laplacian[[i, i]] -= 1. / scales[i] * scales[i]; // diagonal term
             }
             self.laplacian = Some(MatRepr::from_array2(laplacian));
+        }
+        //
+    }
+
+    // TODO: optimize
+    /// apply the kernel transition matrix to a vector.
+    /// Note: we use a symetrize transition probability (So a symetric neighborhood graph)
+    pub fn apply_kernel(&self, v_in: &Array1<f32>) -> Array1<f32> {
+        // do no forget to un-symetrize to get a probability transition matrix
+        // kernel[i,j] = sym_kernel[i,j] * (self.normalizer[i] /  self.normalizer[j]) + delta_{i,j})
+        // We use alfa = 0, beta = 0.
+        //
+        if self.get_sym_kernel().is_csr() {
+            let kernel = self.get_sym_kernel().get_csr().unwrap();
+            let (nrow, _ncol) = kernel.shape();
+            let mut v_out = Array1::<f32>::zeros(nrow);
+            let outer_iter = kernel.outer_iterator();
+            for (row, row_vec) in outer_iter.enumerate() {
+                for (col, val) in row_vec.iter() {
+                    v_out[row] +=
+                        *val * (self.normalizer[col] / self.normalizer[row]).sqrt() * v_in[col];
+                }
+            }
+            v_out
+        } else {
+            // full matrix
+            let kernel = self.get_sym_kernel().get_full().unwrap();
+            let mut v_out = Array1::<f32>::zeros(kernel.shape()[0]);
+            for i in 0..kernel.shape()[0] {
+                for j in 0..kernel.shape()[1] {
+                    v_out[i] +=
+                        kernel[[i, j]] * (self.normalizer[j] / self.normalizer[i]).sqrt() * v_in[j];
+                }
+            }
+            v_out
         }
         //
     }

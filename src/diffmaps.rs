@@ -786,24 +786,21 @@ impl DiffusionMaps {
         //
         let sum = local_scales.iter().fold(F::zero(), |acc, s| acc + (*s));
         assert!(!sum.is_nan());
-        let median = sum / F::from(local_scales.len()).unwrap();
+        let mean = sum / F::from(local_scales.len()).unwrap();
         ///////        let median = F::from(scale_median).unwrap();
-        assert!(median > F::zero());
+        assert!(mean > F::zero());
         for d in &mut local_scales {
             if *d <= F::zero() {
-                *d = median;
+                *d = mean;
             }
         }
         // now we have scales we can remap edge length to weights.
         // we choose epsil to put weight on at least 5 neighbours when no shift
         let exponent = 2.0f32;
         //
-        let scales_f: Array1<f32> = Array1::<f32>::from_iter(
-            local_scales
-                .iter()
-                .map(|s| ((*s) / median).to_f32().unwrap()),
-        );
-        self.mean_scale = median.to_f32().unwrap();
+        let scales_f: Array1<f32> =
+            Array1::<f32>::from_iter(local_scales.iter().map(|s| ((*s) / mean).to_f32().unwrap()));
+        self.mean_scale = mean.to_f32().unwrap();
         let _ = self.get_quantiles(
             "normalized scales quantiles from first pass",
             scales_f.as_slice().unwrap(),
@@ -832,7 +829,7 @@ impl DiffusionMaps {
             nodeparams
         } else {
             // beta = 0 means we keep scale constant! so it is in fact fixed bandwidth
-            let local_scales = vec![median; local_scales.len()];
+            let local_scales = vec![mean; local_scales.len()];
             let nodeparams = self.scales_to_nodeparams(kgraph, &local_scales, &remap_weight);
             nodeparams
         }
