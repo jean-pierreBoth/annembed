@@ -165,10 +165,30 @@ impl GraphLaplacian {
         //
     }
 
+    pub(crate) fn get_kernel_row(&self, row: usize) -> Array1<f32> {
+        if self.get_sym_kernel().is_csr() {
+            let kernel = self.get_sym_kernel().get_csr().unwrap();
+            let range = kernel.indptr().outer_inds_sz(row);
+            for i in range {
+                let j = kernel.indices()[i];
+                let proba = kernel.data()[j];
+                panic!("not, yet implemented");
+            }
+        } else {
+            let kernel = self.get_sym_kernel().get_full().unwrap();
+            let mut v_out = Array1::<f32>::zeros(kernel.shape()[0]);
+            for j in 0..kernel.shape()[1] {
+                v_out[j] += kernel[[row, j]] * (self.normalizer[j] / self.normalizer[row]).sqrt();
+            }
+        }
+        //
+        panic!("not, yet implemented");
+    } // end of _get_kernel_row
+
     // TODO: optimize
     /// apply the kernel transition matrix to a vector.
     /// Note: we use a symetrize transition probability (So a symetric neighborhood graph)
-    pub fn apply_kernel(&self, v_in: &Array1<f32>) -> Array1<f32> {
+    pub fn apply_kernel(&self, v_in: &ndarray::ArrayView1<f32>) -> Array1<f32> {
         // do no forget to un-symetrize to get a probability transition matrix
         // kernel[i,j] = sym_kernel[i,j] * (self.normalizer[i] /  self.normalizer[j]) + delta_{i,j})
         // We use alfa = 0, beta = 0.
@@ -199,6 +219,8 @@ impl GraphLaplacian {
         }
         //
     }
+
+    //==================================================================================
 
     #[allow(unused)]
     pub(crate) fn check_norms(&self, svd_res: &SvdResult<f32>) {
