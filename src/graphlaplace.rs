@@ -4,6 +4,7 @@
 use ndarray::{Array, Array1, Array2};
 
 use lax::{JobSvd, Lapack, layout::MatrixLayout};
+use sprs::CsVecBase;
 // use ndarray_linalg::SVDDC;
 
 use crate::tools::matrepr::*;
@@ -165,25 +166,74 @@ impl GraphLaplacian {
         //
     }
 
+    // returns a row of kernel as transition probability as standard vector
+    #[allow(unused)]
     pub(crate) fn get_kernel_row(&self, row: usize) -> Array1<f32> {
+        //
         if self.get_sym_kernel().is_csr() {
             let kernel = self.get_sym_kernel().get_csr().unwrap();
+            let mut v_out = Array1::<f32>::zeros(kernel.shape().0);
             let range = kernel.indptr().outer_inds_sz(row);
             for i in range {
                 let j = kernel.indices()[i];
                 let proba = kernel.data()[j];
-                panic!("not, yet implemented");
+                v_out[j] = proba;
             }
+            v_out
         } else {
             let kernel = self.get_sym_kernel().get_full().unwrap();
             let mut v_out = Array1::<f32>::zeros(kernel.shape()[0]);
             for j in 0..kernel.shape()[1] {
                 v_out[j] += kernel[[row, j]] * (self.normalizer[j] / self.normalizer[row]).sqrt();
             }
+            v_out
         }
         //
-        panic!("not, yet implemented");
     } // end of _get_kernel_row
+
+    // returns a row of kernel as transition probability as compressed vector
+    #[allow(unused)]
+    pub(crate) fn get_kernel_row_csvec(
+        &self,
+        row: usize,
+    ) -> CsVecBase<Vec<usize>, Vec<f32>, f32, usize> {
+        //
+        if self.get_sym_kernel().is_csr() {
+            let kernel = self.get_sym_kernel().get_csr().unwrap();
+            let range = kernel.indptr().outer_inds_sz(row);
+            let size = range.len();
+            let mut values: Vec<f32> = Vec::new();
+            values.reserve_exact(size);
+            let mut indices = Vec::<usize>::new();
+            indices.reserve_exact(size);
+            for i in range {
+                let j = kernel.indices()[i];
+                indices.push(j);
+                let proba = kernel.data()[j];
+                values.push(proba);
+            }
+            let v_out: CsVecBase<Vec<usize>, Vec<f32>, f32, usize> =
+                CsVecBase::new(kernel.shape().0, indices, values);
+            v_out
+        } else {
+            let kernel = self.get_sym_kernel().get_full().unwrap();
+            let mut values: Vec<f32> = Vec::new();
+            values.reserve(1000);
+            let mut indices = Vec::<usize>::new();
+            indices.reserve_exact(1000);
+            for j in 0..kernel.shape()[1] {
+                if kernel[[row, j]] > 0. {
+                    indices.push(j);
+                    let proba =
+                        kernel[[row, j]] * (self.normalizer[j] / self.normalizer[row]).sqrt();
+                    values.push(proba);
+                }
+            }
+            let v_out: CsVecBase<Vec<usize>, Vec<f32>, f32, usize> =
+                CsVecBase::new(kernel.shape()[0], indices, values);
+            v_out
+        }
+    } // end of _get_kernel_row_csvec
 
     // TODO: optimize
     /// apply the kernel transition matrix to a vector.
