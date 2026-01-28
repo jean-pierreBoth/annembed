@@ -103,14 +103,27 @@ impl CarreDuChamp {
 
     /// compute carre du champ at point given its rank
     pub fn get_cdc_at_point(&self, point_idx: usize) -> Array2<f32> {
+        //
+        let glaplacian = self.glaplacian.as_ref().unwrap();
         // retrieve point
         let point_in = self.data.row(point_idx);
         // compute mean
-        let mean = self.glaplacian.as_ref().unwrap().apply_kernel(&point_in);
+        let mean = glaplacian.apply_kernel(&point_in);
         // check distance between point_in and point_out
 
-        // compute covariance
-
+        // compute covariance along data dimension
+        let dim = self.data.shape()[1];
+        let mut cov = Array2::<f32>::zeros((dim, dim));
+        // get list of index conscerned by row point_idx
+        let neighbours = glaplacian.get_kernel_row_csvec(point_idx);
+        for (n, proba) in neighbours.iter() {
+            for i in 0..dim {
+                for j in 0..=i {
+                    cov[[i, j]] +=
+                        proba * (self.data[[n, i]] - mean[i]) * (self.data[[n, j]] - mean[j]);
+                }
+            }
+        }
         // compute trace, eigenvalue and possible renormalization
         panic!("not yet implemented")
     }
