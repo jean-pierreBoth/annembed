@@ -103,6 +103,21 @@ where
         }
     } // end of get_csr
 
+    /// retrieve the CsMat (if mat is in this format) and consume MatRepr
+    pub fn retrieve_csr(self) -> Result<CsMat<F>, usize> {
+        match self.data {
+            MatMode::CSR(mat) => Ok(mat),
+            _ => Err(1),
+        }
+    }
+
+    /// consume MatRepr and retrieve the Full mat (if mat is in this format)
+    pub fn retrieve_array(self) -> Result<Array2<F>, usize> {
+        match self.data {
+            MatMode::FULL(mat) => Ok(mat),
+            _ => Err(1),
+        }
+    }
     /// get a reference to matrix representation
     pub fn get_data(&self) -> &MatMode<F> {
         &self.data

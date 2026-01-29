@@ -19,10 +19,12 @@ use hnsw_rs::prelude::*;
 use crate::diffmaps::*;
 use crate::fromhnsw::{kgraph::KGraph, kgraph_from_hnsw_all};
 use crate::graphlaplace::*;
+use crate::tools::{matrepr::*, svdapprox::*};
 
-/// The structure computes the transition kernel to neighbours using DiffusionMaps with adhoc parameters.
+/// The structure first computes the transition kernel to neighbours using DiffusionMaps with adhoc parameters.  
 /// Then it computes the Covariance of the transition kernel at each asked for point.
 /// This provides the best local normal approximation of the data and gives information on the geometry of the data
+/// as proved in Bamberger and al.
 ///   
 pub struct CarreDuChamp {
     dparams: DiffusionParams,
@@ -57,7 +59,7 @@ impl CarreDuChamp {
         Self::from_hnsw_ref(&hnsw)
     }
 
-    /// Construct the CarreDuChamp, consuming the Hnsw structure
+    /// Construct the CarreDuChamp
     pub fn from_hnsw_ref<T, D>(hnsw: &Hnsw<T, D>) -> CarreDuChamp
     where
         T: Copy + Clone + Send + Sync + Into<f32>,
@@ -68,9 +70,7 @@ impl CarreDuChamp {
         dparams.set_beta(0.);
         //
         // We need to collect point coordintates. (Cf Kgraph construction)
-        // TODO: do we drop hnsw after that
         //
-
         let point_indexation = hnsw.get_point_indexation();
         let nb_point = point_indexation.get_nb_point();
         let mut index_set = IndexSet::<DataId>::with_capacity(nb_point);
@@ -101,7 +101,7 @@ impl CarreDuChamp {
     }
     //
 
-    /// compute carre du champ at point given its rank
+    /// compute carre du champ at point given its rank. Returns a symetric matrix.
     pub fn get_cdc_at_point(&self, point_idx: usize) -> Array2<f32> {
         //
         let glaplacian = self.glaplacian.as_ref().unwrap();
@@ -116,6 +116,7 @@ impl CarreDuChamp {
         let mut cov = Array2::<f32>::zeros((dim, dim));
         // get list of index conscerned by row point_idx
         let neighbours = glaplacian.get_kernel_row_csvec(point_idx);
+        let mut cumul = 0.;
         for (n, proba) in neighbours.iter() {
             for i in 0..dim {
                 for j in 0..=i {
@@ -123,8 +124,47 @@ impl CarreDuChamp {
                         proba * (self.data[[n, i]] - mean[i]) * (self.data[[n, j]] - mean[j]);
                 }
             }
+            cumul += proba;
         }
         // compute trace, eigenvalue and possible renormalization
-        panic!("not yet implemented")
+        let trace = (0..dim).fold(0., |acc, i| acc + self.data[[i, i]]);
+        log::info!(" cdc trace at point {}, {:.3e}", point_idx, trace);
+        let matrepr = MatRepr::from_array2(cov);
+        let mut svdapprox = SvdApprox::new(&matrepr);
+        let precision = RangePrecision::new(0.1, 5, dim);
+        let svdmode = RangeApproxMode::EPSIL(precision);
+        let svd_res = svdapprox.direct_svd(svdmode).unwrap();
+        if let Some(s) = svd_res.get_sigma() {
+            let dump_size = if log::log_enabled!(log::Level::Debug) {
+                dim
+            } else {
+                20
+            };
+            for i in 0..dump_size {
+                log::info!(" i = {}, s =  {:.3e}", i, s[i]);
+            }
+        } else {
+            log::error!(
+                "get_cdc_at_point failed to get s in svd at point : {}",
+                point_idx
+            )
+        }
+        // consume matrepr and get back array
+        matrepr.retrieve_array().unwrap()
     }
+}
+
+#[cfg_attr(doc, katexit::katexit)]
+
+/// computes the Wasserstein (or Bures) distance between 2 symetric matrices
+/// obtained by [CarreDuChamp::get_cdc_at_point()]
+/// according to:   
+///     *On the Bures–Wasserstein distance between positive definite matrices*
+///     See [Bhatia](https://www.sciencedirect.com/science/article/pii/S0723086918300021)
+///
+/// The distance between 2 symetric matrices A and B is defined by:
+/// $$ d(A,B) = \left( tr (A) + tr(B) - 2 \ tr(A^{1/2} B A^{1/2} \right)^{1/2} $$
+///
+pub fn psd_dist(mat1: &Array2<f32>, mat2: &Array2<f32>) -> f32 {
+    panic!("not yet implemented");
 }

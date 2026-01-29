@@ -206,11 +206,21 @@ impl GraphLaplacian {
             values.reserve_exact(size);
             let mut indices = Vec::<usize>::new();
             indices.reserve_exact(size);
+            let mut cumul = 0.0f32;
             for i in range {
                 let j = kernel.indices()[i];
                 indices.push(j);
                 let proba = kernel.data()[j];
                 values.push(proba);
+                cumul += proba;
+            }
+            if log::log_enabled!(log::Level::Debug) {
+                if (cumul - 1.).abs() > 0.001 {
+                    log::error!(
+                        "get_kernel_row_csvec, bad proba normalisation : {:.3e}",
+                        cumul
+                    );
+                }
             }
             let v_out: CsVecBase<Vec<usize>, Vec<f32>, f32, usize> =
                 CsVecBase::new(kernel.shape().0, indices, values);
@@ -221,12 +231,22 @@ impl GraphLaplacian {
             values.reserve(1000);
             let mut indices = Vec::<usize>::new();
             indices.reserve_exact(1000);
+            let mut cumul = 0.0f32;
             for j in 0..kernel.shape()[1] {
                 if kernel[[row, j]] > 0. {
                     indices.push(j);
                     let proba =
                         kernel[[row, j]] * (self.normalizer[j] / self.normalizer[row]).sqrt();
                     values.push(proba);
+                    cumul += proba;
+                }
+            }
+            if log::log_enabled!(log::Level::Debug) {
+                if (cumul - 1.).abs() > 0.001 {
+                    log::error!(
+                        "get_kernel_row_csvec, bad proba normalisation : {:.3e}",
+                        cumul
+                    );
                 }
             }
             let v_out: CsVecBase<Vec<usize>, Vec<f32>, f32, usize> =
