@@ -106,7 +106,6 @@ impl CarreDuChamp {
         // retrieve point
         let point_in = self.data.row(point_idx);
         // compute mean
-        let mean = glaplacian.apply_kernel(&point_in);
         // check distance between point_in and point_out
 
         // compute covariance along data dimension
@@ -114,6 +113,13 @@ impl CarreDuChamp {
         let mut cov = Array2::<f32>::zeros((dim, dim));
         // get list of index conscerned by row point_idx
         let neighbours = glaplacian.get_kernel_row_csvec(point_idx);
+        // compute mean
+        let mut mean = Array1::<f32>::zeros(dim);
+        for (n, proba) in neighbours.iter() {
+            for i in 0..dim {
+                mean[i] += proba * self.data[[n, i]];
+            }
+        }
         let mut cumul = 0.;
         for (n, proba) in neighbours.iter() {
             for i in 0..dim {

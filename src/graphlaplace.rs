@@ -249,48 +249,6 @@ impl GraphLaplacian {
         }
     } // end of _get_kernel_row_csvec
 
-    // TODO: optimize
-    /// apply the kernel transition matrix to a vector.
-    /// Note: we use a symetrize transition probability (So a symetric neighborhood graph)
-    pub fn apply_kernel(&self, v_in: &ndarray::ArrayView1<f32>) -> Array1<f32> {
-        // do no forget to un-symetrize to get a probability transition matrix
-        // kernel[i,j] = sym_kernel[i,j] * (self.normalizer[i] /  self.normalizer[j]) + delta_{i,j})
-        // We use alfa = 0, beta = 0.
-        //
-        if self.get_sym_kernel().is_csr() {
-            log::debug!("apply_kernel , kernel csr mode");
-            let kernel = self.get_sym_kernel().get_csr().unwrap();
-            let (nrow, _ncol) = kernel.shape();
-            log::debug!("kernel shape ({},{})", nrow, _ncol);
-            let mut v_out = Array1::<f32>::zeros(nrow);
-            let outer_iter = kernel.outer_iterator();
-            for (row, row_vec) in outer_iter.enumerate() {
-                for (col, val) in row_vec.iter() {
-                    v_out[row] +=
-                        *val * (self.normalizer[col] / self.normalizer[row]).sqrt() * v_in[col];
-                }
-            }
-            v_out
-        } else {
-            // full matrix
-            let kernel = self.get_sym_kernel().get_full().unwrap();
-            log::debug!(
-                "applying kernel, shape : {:?}, v_in size {}",
-                kernel.shape(),
-                v_in.len()
-            );
-            let mut v_out = Array1::<f32>::zeros(kernel.shape()[0]);
-            for i in 0..kernel.shape()[0] {
-                for j in 0..kernel.shape()[1] {
-                    v_out[i] +=
-                        kernel[[i, j]] * (self.normalizer[j] / self.normalizer[i]).sqrt() * v_in[j];
-                }
-            }
-            v_out
-        }
-        //
-    }
-
     //==================================================================================
 
     #[allow(unused)]
