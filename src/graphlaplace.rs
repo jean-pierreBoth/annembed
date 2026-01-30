@@ -214,23 +214,19 @@ impl GraphLaplacian {
                 values.push(proba);
                 cumul += proba;
             }
-            if log::log_enabled!(log::Level::Debug) {
-                if (cumul - 1.).abs() > 0.001 {
-                    log::error!(
-                        "get_kernel_row_csvec, bad proba normalisation : {:.3e}",
-                        cumul
-                    );
-                }
+            if log::log_enabled!(log::Level::Debug) && (cumul - 1.).abs() > 0.001 {
+                log::error!(
+                    "get_kernel_row_csvec, bad proba normalisation : {:.3e}",
+                    cumul
+                );
             }
             let v_out: CsVecBase<Vec<usize>, Vec<f32>, f32, usize> =
                 CsVecBase::new(kernel.shape().0, indices, values);
             v_out
         } else {
             let kernel = self.get_sym_kernel().get_full().unwrap();
-            let mut values: Vec<f32> = Vec::new();
-            values.reserve(1000);
-            let mut indices = Vec::<usize>::new();
-            indices.reserve_exact(1000);
+            let mut values: Vec<f32> = Vec::with_capacity(1000);
+            let mut indices = Vec::<usize>::with_capacity(1000);
             let mut cumul = 0.0f32;
             for j in 0..kernel.shape()[1] {
                 if kernel[[row, j]] > 0. {
@@ -241,13 +237,11 @@ impl GraphLaplacian {
                     cumul += proba;
                 }
             }
-            if log::log_enabled!(log::Level::Debug) {
-                if (cumul - 1.).abs() > 0.001 {
-                    log::error!(
-                        "get_kernel_row_csvec, bad proba normalisation : {:.3e}",
-                        cumul
-                    );
-                }
+            if log::log_enabled!(log::Level::Debug) && (cumul - 1.).abs() > 0.001 {
+                log::error!(
+                    "get_kernel_row_csvec, bad proba normalisation : {:.3e}",
+                    cumul
+                );
             }
             let v_out: CsVecBase<Vec<usize>, Vec<f32>, f32, usize> =
                 CsVecBase::new(kernel.shape()[0], indices, values);
@@ -264,8 +258,10 @@ impl GraphLaplacian {
         // We use alfa = 0, beta = 0.
         //
         if self.get_sym_kernel().is_csr() {
+            log::debug!("apply_kernel , kernel csr mode");
             let kernel = self.get_sym_kernel().get_csr().unwrap();
             let (nrow, _ncol) = kernel.shape();
+            log::debug!("kernel shape ({},{})", nrow, _ncol);
             let mut v_out = Array1::<f32>::zeros(nrow);
             let outer_iter = kernel.outer_iterator();
             for (row, row_vec) in outer_iter.enumerate() {
@@ -278,6 +274,11 @@ impl GraphLaplacian {
         } else {
             // full matrix
             let kernel = self.get_sym_kernel().get_full().unwrap();
+            log::debug!(
+                "applying kernel, shape : {:?}, v_in size {}",
+                kernel.shape(),
+                v_in.len()
+            );
             let mut v_out = Array1::<f32>::zeros(kernel.shape()[0]);
             for i in 0..kernel.shape()[0] {
                 for j in 0..kernel.shape()[1] {

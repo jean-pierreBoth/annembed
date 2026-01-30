@@ -378,7 +378,7 @@ impl DiffusionMaps {
         let dim_stat = kgraph.estimate_intrinsic_dim_2nn(sampling_size);
         if let Ok(dim_stat) = dim_stat {
             log::info!(
-                "\n estimate_intrinsic_dim_2nn dimension estimation with nbpoints : {}, dim : {:.5e} \n",
+                "\n DiffusionMaps::laplacian_from_hnsw estimate_intrinsic_dim_2nn dimension estimation with nbpoints : {}, dim : {:.5e} \n",
                 sampling_size,
                 dim_stat,
             );
@@ -655,9 +655,7 @@ impl DiffusionMaps {
             }
         }
         //
-        let nodep = NodeParam::new(local_scales[node].to_f32().unwrap(), edges);
-        nodep
-        //
+        NodeParam::new(local_scales[node].to_f32().unwrap(), edges)
     }
 
     // This function is called by Self::compute_dmap_nodeparams and Self::density_to_kernel
@@ -830,8 +828,7 @@ impl DiffusionMaps {
         } else {
             // beta = 0 means we keep scale constant! so it is in fact fixed bandwidth
             let local_scales = vec![mean; local_scales.len()];
-            let nodeparams = self.scales_to_nodeparams(kgraph, &local_scales, &remap_weight);
-            nodeparams
+            self.scales_to_nodeparams(kgraph, &local_scales, &remap_weight)
         }
     } // end compute_dmap_nodeparams
 

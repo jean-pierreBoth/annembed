@@ -89,15 +89,13 @@ impl CarreDuChamp {
         }
         //
         let mut dmap = DiffusionMaps::new(dparams);
-        let laplacian = dmap.laplacian_from_hnsw::<T, D, f32>(&hnsw, &dparams);
-        let cdc = CarreDuChamp {
-            dparams: dparams.clone(),
+        let laplacian = dmap.laplacian_from_hnsw::<T, D, f32>(hnsw, &dparams);
+        CarreDuChamp {
+            dparams,
             glaplacian: Some(laplacian),
             index: Some(index_set),
             data,
-        };
-        //
-        cdc
+        }
     }
     //
 
@@ -155,7 +153,6 @@ impl CarreDuChamp {
 }
 
 #[cfg_attr(doc, katexit::katexit)]
-
 /// computes the Wasserstein (or Bures) distance between 2 symetric matrices
 /// obtained by [CarreDuChamp::get_cdc_at_point()]
 /// according to:   
@@ -165,6 +162,90 @@ impl CarreDuChamp {
 /// The distance between 2 symetric matrices A and B is defined by:
 /// $$ d(A,B) = \left( tr (A) + tr(B) - 2 \ tr(A^{1/2} B A^{1/2} \right)^{1/2} $$
 ///
-pub fn psd_dist(mat1: &Array2<f32>, mat2: &Array2<f32>) -> f32 {
-    panic!("not yet implemented");
+pub fn psd_dist(mata: &Array2<f32>, matb: &Array2<f32>) -> f32 {
+    assert_eq!(mata.shape(), matb.shape());
+    assert_eq!(mata.shape()[0], matb.shape()[1]);
+    //
+    let mut tra: f32 = 0.0f32;
+    let mut trb: f32 = 0.0f32;
+    let mut trab: f32 = 0.0f32;
+    //
+    for i in 0..mata.shape()[0] {
+        tra += mata[[i, i]];
+        trb += matb[[i, i]];
+        for j in 0..mata.shape()[0] {
+            trab += mata[[i, j]] * mata[[j, i]];
+        }
+    }
+    let d2 = tra + trb - 2.0 * trab;
+    log::debug!("d2 = {:.3e}", d2);
+    assert!(d2 >= 0.);
+    d2.sqrt()
+}
+
+#[cfg(test)]
+
+mod tests {
+
+    use super::*;
+    use rand::Rng;
+    use rand_distr::Uniform;
+
+    use cpu_time::ProcessTime;
+    use std::time::SystemTime;
+
+    use hnsw_rs::anndists::dist;
+
+    fn log_init_test() {
+        let _ = env_logger::builder().is_test(true).try_init();
+    }
+
+    #[test]
+    fn test_cdc_full() {
+        //
+        log_init_test();
+        println!("\n\n test_cdc_full");
+        //
+        let mut rng = rand::rng();
+        let unif = Uniform::<f32>::new(0., 1.).unwrap();
+        let nbdata = 5000;
+        let dim = 256;
+        let mut xsi;
+        let mut data: Vec<Vec<f32>> = Vec::with_capacity(nbdata);
+        for i in 0..nbdata {
+            data.push(Vec::<f32>::with_capacity(dim));
+            for j in 0..dim {
+                xsi = rng.sample(unif);
+                data[i].push(xsi);
+            }
+        }
+        // hnsw
+        let ef_construct = 25;
+        let nb_connection = 10;
+        let start = ProcessTime::now();
+        let hnsw = Hnsw::<f32, dist::DistL1>::new(
+            nb_connection,
+            nbdata,
+            16,
+            ef_construct,
+            dist::DistL1 {},
+        );
+        for (i, d) in data.iter().enumerate() {
+            hnsw.insert((d, i));
+        }
+        log::debug!("hnsw built");
+        //
+        let cdc = CarreDuChamp::from_hnsw_ref(&hnsw);
+        let cdc_point_5 = cdc.get_cdc_at_point(5);
+        let cdc_point_6 = cdc.get_cdc_at_point(6);
+        //
+        let d_5_6 = psd_dist(&cdc_point_5, &cdc_point_6);
+    }
+
+    // TODO: test with nbdata > 5000 to check csr
+    #[test]
+    fn test_cdc_csr() {
+        println!("\n\n test_cdc_csr");
+        std::process::exit(1);
+    }
 }
