@@ -38,6 +38,9 @@ path = "examples/toripser.rs"
 name = "higgs"
 path = "examples/higgs.rs"
 
+[[examples]]
+name = "digitscdc"
+path = "examples/digitscdc.rs"
 
 [[bin]]
 name = "embed"

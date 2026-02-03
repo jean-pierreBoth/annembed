@@ -100,7 +100,7 @@ impl CarreDuChamp {
     //
 
     /// compute carre du champ at point given its rank. Returns a symetric matrix.
-    pub fn get_cdc_at_point(&self, point_idx: usize) -> Array2<f32> {
+    pub fn get_cdc_at_point(&self, point_idx: usize) -> (Array1<f32>, Array2<f32>) {
         //
         let glaplacian = self.glaplacian.as_ref().unwrap();
         // retrieve point
@@ -131,7 +131,7 @@ impl CarreDuChamp {
             cumul += proba;
         }
         // compute trace, eigenvalue and possible renormalization
-        let trace = (0..dim).fold(0., |acc, i| acc + self.data[[i, i]]);
+        let trace = (0..dim).fold(0., |acc, i| acc + cov[[i, i]]);
         log::info!(" cdc trace at point {}, {:.3e}", point_idx, trace);
         let matrepr = MatRepr::from_array2(cov);
         let mut svdapprox = SvdApprox::new(&matrepr);
@@ -157,7 +157,7 @@ impl CarreDuChamp {
             )
         }
         // consume matrepr and get back array
-        matrepr.retrieve_array().unwrap()
+        (mean, matrepr.retrieve_array().unwrap())
     }
 }
 
@@ -245,8 +245,8 @@ mod tests {
         log::debug!("hnsw built");
         //
         let cdc = CarreDuChamp::from_hnsw_ref(&hnsw);
-        let cdc_point_5 = cdc.get_cdc_at_point(5);
-        let cdc_point_6 = cdc.get_cdc_at_point(6);
+        let (mean_at_5, cdc_point_5) = cdc.get_cdc_at_point(5);
+        let (mean_at_6, cdc_point_6) = cdc.get_cdc_at_point(6);
         //
         let d_5_6 = psd_dist(&cdc_point_5, &cdc_point_6);
     }
