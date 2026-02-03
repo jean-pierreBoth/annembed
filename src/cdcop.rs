@@ -138,14 +138,17 @@ impl CarreDuChamp {
         let precision = RangePrecision::new(0.1, 5, dim);
         let svdmode = RangeApproxMode::EPSIL(precision);
         let svd_res = svdapprox.direct_svd(svdmode).unwrap();
+        log::info!(" cdc spectrum at point {}", point_idx);
         if let Some(s) = svd_res.get_sigma() {
             let dump_size = if log::log_enabled!(log::Level::Debug) {
                 dim
             } else {
                 20
             };
-            for i in 0..dump_size {
+            let mut i = 0;
+            while i < dump_size && s[i] > s[0] / 10. {
                 log::info!(" i = {}, s =  {:.3e}", i, s[i]);
+                i += 1;
             }
         } else {
             log::error!(

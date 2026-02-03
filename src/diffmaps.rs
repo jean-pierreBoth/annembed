@@ -476,15 +476,28 @@ impl DiffusionMaps {
                     row[[j]] /= (q[[i]] * q[[j]]).powf(alfa);
                 }
                 degrees[[i]] = row.sum();
+                //
             }
             // now we normalize rows according to D^-1/2 * G * D^-1/2. See Berry-Harlim P 82
+            let symetrization_weights = degrees.sqrt();
             for i in 0..nbnodes {
                 let mut row = symgraph.row_mut(i);
                 for j in 0..nbnodes {
-                    row[[j]] /= (degrees[[i]] * degrees[[j]]).sqrt();
+                    row[[j]] /= symetrization_weights[[i]] * symetrization_weights[[j]];
+                }
+                if log::log_enabled!(log::Level::Debug) {
+                    // check normalization
+                    let mut check = 0.0f32;
+                    for j in 0..nbnodes {
+                        check += row[[j]] * symetrization_weights[[j]];
+                    }
+                    check /= symetrization_weights[[i]];
+                    if (check - 1.0).abs() > 1.0e-3 {
+                        log::debug!(" check = {:.3e}", check);
+                        panic!("bad normalization");
+                    }
                 }
             }
-            let symetrization_weights = degrees.sqrt();
             //
             log::trace!("\n allocating full matrix laplacian");
             GraphLaplacian::new(
@@ -548,10 +561,11 @@ impl DiffusionMaps {
                 let row = rows[i];
                 degrees[row] += v;
             }
+            let symetrization_weights = degrees.sqrt();
             for i in 0..values.len() {
                 let row = rows[i];
                 let col = cols[i];
-                values[i] /= (degrees[row] * degrees[col]).sqrt();
+                values[i] /= symetrization_weights[row] * symetrization_weights[col];
             }
             log::trace!("allocating csr laplacian");
             let laplacian = TriMatBase::<Vec<usize>, Vec<f32>>::from_triplets(
@@ -563,7 +577,7 @@ impl DiffusionMaps {
             let csr_mat: CsMat<f32> = laplacian.to_csr();
             GraphLaplacian::new(
                 MatRepr::from_csrmat(csr_mat),
-                degrees,
+                symetrization_weights,
                 Some(local_scale.clone()),
             )
         } // end case CsMat

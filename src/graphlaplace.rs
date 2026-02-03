@@ -192,13 +192,13 @@ impl GraphLaplacian {
     } // end of _get_kernel_row
 
     // returns a row of kernel as transition probability as compressed vector
-    #[allow(unused)]
     pub(crate) fn get_kernel_row_csvec(
         &self,
         row: usize,
     ) -> CsVecBase<Vec<usize>, Vec<f32>, f32, usize> {
         //
         if self.get_sym_kernel().is_csr() {
+            log::debug!("cdc get_kernel_row_csvec csr kernel");
             let kernel = self.get_sym_kernel().get_csr().unwrap();
             let range = kernel.indptr().outer_inds_sz(row);
             let size = range.len();
@@ -214,16 +214,21 @@ impl GraphLaplacian {
                 values.push(proba);
                 cumul += proba;
             }
-            if log::log_enabled!(log::Level::Debug) && (cumul - 1.).abs() > 0.001 {
-                log::error!(
-                    "get_kernel_row_csvec, bad proba normalisation : {:.3e}",
-                    cumul
-                );
+            if log::log_enabled!(log::Level::Debug) {
+                log::debug!("cumul proba : {:.3e}", cumul);
+                if (cumul - 1.).abs() > 1.0e-3 {
+                    log::error!(
+                        "get_kernel_row_csvec, item : {}, bad proba normalisation : {:.3e}",
+                        row,
+                        cumul,
+                    );
+                }
             }
             let v_out: CsVecBase<Vec<usize>, Vec<f32>, f32, usize> =
                 CsVecBase::new(kernel.shape().0, indices, values);
             v_out
         } else {
+            log::debug!("cdc get_kernel_row_csvec full kernel");
             let kernel = self.get_sym_kernel().get_full().unwrap();
             let mut values: Vec<f32> = Vec::with_capacity(1000);
             let mut indices = Vec::<usize>::with_capacity(1000);
@@ -231,17 +236,25 @@ impl GraphLaplacian {
             for j in 0..kernel.shape()[1] {
                 if kernel[[row, j]] > 0. {
                     indices.push(j);
-                    let proba =
-                        kernel[[row, j]] * (self.normalizer[j] / self.normalizer[row]).sqrt();
+                    let proba = if row != j {
+                        kernel[[row, j]] * (self.normalizer[j] / self.normalizer[row])
+                    } else {
+                        kernel[[row, j]]
+                    };
+
                     values.push(proba);
                     cumul += proba;
-                }
+                };
             }
-            if log::log_enabled!(log::Level::Debug) && (cumul - 1.).abs() > 0.001 {
-                log::error!(
-                    "get_kernel_row_csvec, bad proba normalisation : {:.3e}",
-                    cumul
-                );
+            if log::log_enabled!(log::Level::Debug) {
+                log::debug!("cumul proba : {:.3e}", cumul);
+                if (cumul - 1.).abs() > 1.0e-3 {
+                    log::error!(
+                        "get_kernel_row_csvec, item : {}  bad proba normalisation : {:.3e}",
+                        row,
+                        cumul
+                    );
+                }
             }
             let v_out: CsVecBase<Vec<usize>, Vec<f32>, f32, usize> =
                 CsVecBase::new(kernel.shape()[0], indices, values);
