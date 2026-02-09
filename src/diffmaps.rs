@@ -663,7 +663,7 @@ impl DiffusionMaps {
             // TODO: we adjust self_edge
             //                edges[0].weight = 1. / nb_edges as f32;
             if nb_edges > 1 {
-                edges[0].weight = edges[1].weight;
+                edges[0].weight = 1.;
             } else {
                 edges[0].weight = 1. / 2.;
             }
@@ -799,7 +799,7 @@ impl DiffusionMaps {
         let sum = local_scales.iter().fold(F::zero(), |acc, s| acc + (*s));
         assert!(!sum.is_nan());
         let mean = sum / F::from(local_scales.len()).unwrap();
-        ///////        let median = F::from(scale_median).unwrap();
+        let _median = F::from(scale_median).unwrap();
         assert!(mean > F::zero());
         for d in &mut local_scales {
             if *d <= F::zero() {
@@ -852,7 +852,7 @@ impl DiffusionMaps {
     // stores estimated density in field q_density and return new scales adjusted to previous mean scale
     fn kernel0_to_density(&mut self, beta: f32, initial_space: &NodeParams) -> Array1<f32> {
         //
-        log::info!("using beta : {:.3e}", beta);
+        log::info!("kernel0_to_density using beta : {:.3e}", beta);
         //
         let nbnodes = initial_space.get_nb_nodes();
         // get stats

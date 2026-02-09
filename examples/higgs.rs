@@ -40,7 +40,7 @@
 //!  embedded neighbour considered.
 //!
 //! 2. Diffusion Maps embedding:
-//!  We can run on  60% of the data on 16 cores AMD Ryzen 9 7950X 16-Core Processor within 700s (cpu), 220s (sys)
+//! We can run on  60% of the data on 16 cores AMD Ryzen 9 7950X 16-Core Processor within 700s (cpu), 220s (sys)
 
 use cpu_time::ProcessTime;
 use std::time::{Duration, SystemTime};
@@ -114,7 +114,7 @@ fn read_higgs_csv(
             continue;
         }
         //
-        if num_record % 1_000_000 == 0 {
+        if num_record.is_multiple_of(1_000_000) {
             log::info!("read {} record", num_record);
         }
         let record = result?;
@@ -222,7 +222,7 @@ fn entropy_embedding(labels: &Vec<u8>, hnsw: &Hnsw<f32, DistL2>, sampling_factor
     if !hierarchical {
         let knbn = 6;
         log::info!("embedding from neighbourhood of size : {}", knbn);
-        kgraph = kgraph_from_hnsw_all(&hnsw, knbn).unwrap();
+        kgraph = kgraph_from_hnsw_all(hnsw, knbn).unwrap();
         embedder = Embedder::new(&kgraph, embed_params);
         let embed_res = embedder.embed();
         assert!(embed_res.is_ok());
@@ -234,7 +234,7 @@ fn entropy_embedding(labels: &Vec<u8>, hnsw: &Hnsw<f32, DistL2>, sampling_factor
         embed_params.nb_grad_batch = 40;
         embed_params.grad_factor = 5;
         log::info!("graph projection on layer : {}", projection_layer);
-        graphprojection = KGraphProjection::<f32>::new(&hnsw, knbn, projection_layer);
+        graphprojection = KGraphProjection::<f32>::new(hnsw, knbn, projection_layer);
         embedder = Embedder::from_hkgraph(&graphprojection, embed_params);
         let embed_res = embedder.embed();
         assert!(embed_res.is_ok());
@@ -322,9 +322,10 @@ fn dmap_embedding(
 ///  * --dmap is used it is a dmap embedding
 ///   
 ///  * --factor sampling_factor
-///       sampling_factor :
-///         if >= 1. full data is embedded, but  with 64Gb of memory, umap quality check  runs only with sampling_factor <= 0.15.
-///         With 64Gb memory, Diffusion Maps runs with ampling_factor = 0.6 in 700s with 16 core AMD Ryzen 9 7950X 16-Core Processor
+///    sampling_factor :
+///    if >= 1. full data is embedded, but  with 64Gb of memory, umap quality check  runs only with sampling_factor <= 0.15.
+///    With 64Gb memory, Diffusion Maps runs with ampling_factor = 0.6 in 700s with 16 core AMD Ryzen 9 7950X 16-Core Processor.
+///
 ///  * --dist "DistL2" or "DistL1"
 ///
 ///  The others variables can be modified in the code

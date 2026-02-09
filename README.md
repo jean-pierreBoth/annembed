@@ -169,7 +169,7 @@ Sources of examples are in corresponding directory.
 
     - Diffusion Maps with the example higgs.rs built with module diffmap .
 
-        We run on 60% of data in 1700 sec and get the following image:
+        We run on 60% of data in 700 sec(cpu), 200s(sys) and get the following image:
 
     ![higgs_dmap](Images/higgs_dmap_embedded-0.6-1.0-0.0-eps2-pmin-4-nbg8-mean-par.csv.png.jpg)
 

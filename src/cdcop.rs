@@ -3,21 +3,17 @@
 //!
 //! Bibliography
 //! - *Diffusion Maps*. Coifman Lafon Appl. Comput. Harmon. Anal. 21 (2006) 5–30
-//! - *Diffusion Geometry*. Ioo Jones 2024 https://arxiv.org/abs/2405.10858
-//! - *Bamberger.J Jones.I Carre du Champ 2025. https://arxiv.org/abs/2510.05930
+//! - *Diffusion Geometry*. Iolo Jones 2024 <https://arxiv.org/abs/2405.10858>
+//! - *Bamberger.J Jones.I* Carre du Champ 2025. <https://arxiv.org/abs/2510.05930>
 //!
 
-#![allow(unused)]
-
+use anyhow::*;
 use indexmap::IndexSet;
-use ndarray::{Array1, Array2, ArrayView};
-use num_traits::Float;
-use num_traits::cast::FromPrimitive;
+use ndarray::{Array1, Array2};
 
 use hnsw_rs::prelude::*;
 
 use crate::diffmaps::*;
-use crate::fromhnsw::{kgraph::KGraph, kgraph_from_hnsw_all};
 use crate::graphlaplace::*;
 use crate::tools::{matrepr::*, svdapprox::*};
 
@@ -27,26 +23,13 @@ use crate::tools::{matrepr::*, svdapprox::*};
 /// as proved in Bamberger and al.
 ///   
 pub struct CarreDuChamp {
-    dparams: DiffusionParams,
+    _params: DiffusionParams,
     //
     glaplacian: Option<GraphLaplacian>,
     // to keep track of rank DataId conversion
     index: Option<IndexSet<DataId>>,
     // We need coordinates to compute cdc
     data: Array2<f32>,
-}
-
-fn graph_laplacian_from_hnsw<T, D>(hnsw: &Hnsw<T, D>) -> GraphLaplacian
-where
-    T: Send + Sync + Clone + Float + FromPrimitive + Into<f32>,
-    D: Distance<T> + Send + Sync,
-{
-    let mut dparams = DiffusionParams::build_with_variable_bandwidth();
-    dparams.set_alfa(0.);
-    dparams.set_beta(0.);
-    //
-    let mut dmap = DiffusionMaps::new(dparams);
-    dmap.laplacian_from_hnsw::<T, D, f32>(hnsw, &dparams)
 }
 
 impl CarreDuChamp {
@@ -82,7 +65,7 @@ impl CarreDuChamp {
             let point_id = point.get_origin_id();
             // remap _point_id
             let (index, _) = index_set.insert_full(point_id);
-            let mut coord = ndarray::ArrayView1::from(point.get_v());
+            let coord = ndarray::ArrayView1::from(point.get_v());
             for i in 0..dimension {
                 data.index_axis_mut(ndarray::Axis(0), index)[i] = coord[i].into();
             }
@@ -91,7 +74,7 @@ impl CarreDuChamp {
         let mut dmap = DiffusionMaps::new(dparams);
         let laplacian = dmap.laplacian_from_hnsw::<T, D, f32>(hnsw, &dparams);
         CarreDuChamp {
-            dparams,
+            _params: dparams,
             glaplacian: Some(laplacian),
             index: Some(index_set),
             data,
@@ -100,19 +83,14 @@ impl CarreDuChamp {
     //
 
     /// compute carre du champ at point given its rank. Returns a symetric matrix.
-    pub fn get_cdc_at_point(&self, point_idx: usize) -> (Array1<f32>, Array2<f32>) {
+    pub fn get_cdc_at_point(&self, point_rank: usize) -> (Array1<f32>, Array2<f32>) {
         //
         let glaplacian = self.glaplacian.as_ref().unwrap();
-        // retrieve point
-        let point_in = self.data.row(point_idx);
-        // compute mean
-        // check distance between point_in and point_out
-
         // compute covariance along data dimension
         let dim = self.data.shape()[1];
         let mut cov = Array2::<f32>::zeros((dim, dim));
         // get list of index conscerned by row point_idx
-        let neighbours = glaplacian.get_kernel_row_csvec(point_idx);
+        let neighbours = glaplacian.get_kernel_row_csvec(point_rank);
         // compute mean
         let mut mean = Array1::<f32>::zeros(dim);
         for (n, proba) in neighbours.iter() {
@@ -132,13 +110,13 @@ impl CarreDuChamp {
         }
         // compute trace, eigenvalue and possible renormalization
         let trace = (0..dim).fold(0., |acc, i| acc + cov[[i, i]]);
-        log::info!(" cdc trace at point {}, {:.3e}", point_idx, trace);
+        log::info!(" cdc trace at point {}, {:.3e}", point_rank, trace);
         let matrepr = MatRepr::from_array2(cov);
         let mut svdapprox = SvdApprox::new(&matrepr);
         let precision = RangePrecision::new(0.1, 5, dim);
         let svdmode = RangeApproxMode::EPSIL(precision);
         let svd_res = svdapprox.direct_svd(svdmode).unwrap();
-        log::info!(" cdc spectrum at point {}", point_idx);
+        log::info!(" cdc spectrum at point {}", point_rank);
         if let Some(s) = svd_res.get_sigma() {
             let dump_size = if log::log_enabled!(log::Level::Debug) {
                 dim
@@ -153,11 +131,33 @@ impl CarreDuChamp {
         } else {
             log::error!(
                 "get_cdc_at_point failed to get s in svd at point : {}",
-                point_idx
+                point_rank
             )
         }
         // consume matrepr and get back array
         (mean, matrepr.retrieve_array().unwrap())
+    }
+
+    /// computes distances between cdc operator at 2 different points.
+    /// A cpu intensive function ...
+    pub fn get_cdc_dist(&self, point_id1: DataId, point_id2: DataId) -> anyhow::Result<f32> {
+        let index_ref = self.index.as_ref().unwrap();
+        // convert index to rank
+        let rank1 = index_ref.get_index_of(&point_id1);
+        let rank2 = index_ref.get_index_of(&point_id2);
+        if rank1.is_none() {
+            return Err(anyhow!("point {} not found in indexset", point_id1));
+        }
+        if rank2.is_none() {
+            return Err(anyhow!("point {} not found in indexset", point_id2));
+        }
+        let rank1 = rank1.unwrap();
+        let rank2 = rank2.unwrap();
+        //
+        let (_, cov1) = self.get_cdc_at_point(rank1);
+        let (_, cov2) = self.get_cdc_at_point(rank2);
+        // use psd_dist function
+        Ok(psd_dist(&cov1, &cov2))
     }
 }
 
@@ -186,7 +186,7 @@ pub fn psd_dist(mata: &Array2<f32>, matb: &Array2<f32>) -> f32 {
             trab += mata[[i, j]] * mata[[j, i]];
         }
     }
-    let d2 = tra + trb - 2.0 * trab;
+    let d2 = tra + trb - 2.0 * trab.sqrt();
     log::debug!("d2 = {:.3e}", d2);
     assert!(d2 >= 0.);
     d2.sqrt()
