@@ -17,6 +17,9 @@ use crate::diffmaps::*;
 use crate::graphlaplace::*;
 use crate::tools::{matrepr::*, svdapprox::*};
 
+/// just an encapsulation of thr (covariance) matrix
+pub struct CdcM(Array2<f32>);
+
 /// The structure first computes the transition kernel to neighbours using DiffusionMaps with adhoc parameters.  
 /// Then it computes the Covariance of the transition kernel at each asked for point.
 /// This provides the best local normal approximation of the data and gives information on the geometry of the data
@@ -28,7 +31,7 @@ pub struct CarreDuChamp {
     glaplacian: Option<GraphLaplacian>,
     // to keep track of rank DataId conversion
     index: Option<IndexSet<DataId>>,
-    // We need coordinates to compute cdc
+    // We need coordinates to compute cdc. shape is (nb_data , dim)
     data: Array2<f32>,
 }
 
@@ -116,7 +119,7 @@ impl CarreDuChamp {
         let precision = RangePrecision::new(0.1, 5, dim);
         let svdmode = RangeApproxMode::EPSIL(precision);
         let svd_res = svdapprox.direct_svd(svdmode).unwrap();
-        log::info!(" cdc spectrum at point {}", point_rank);
+        log::debug!(" cdc spectrum at point {}", point_rank);
         if let Some(s) = svd_res.get_sigma() {
             let dump_size = if log::log_enabled!(log::Level::Debug) {
                 dim
@@ -125,7 +128,7 @@ impl CarreDuChamp {
             };
             let mut i = 0;
             while i < dump_size && s[i] > s[0] / 10. {
-                log::info!(" i = {}, s =  {:.3e}", i, s[i]);
+                log::debug!(" i = {}, s =  {:.3e}", i, s[i]);
                 i += 1;
             }
         } else {
@@ -223,7 +226,7 @@ mod tests {
         let mut data: Vec<Vec<f32>> = Vec::with_capacity(nbdata);
         for i in 0..nbdata {
             data.push(Vec::<f32>::with_capacity(dim));
-            for j in 0..dim {
+            for _ in 0..dim {
                 xsi = rng.sample(unif);
                 data[i].push(xsi);
             }

@@ -1,7 +1,9 @@
-//! Run Carre Du Champ computations on Mnist Digits data
+//! Run Carre Du Champ computations on Mnist Digits/Fashion data
+use std::env;
 
 use indexmap::IndexMap;
 use ndarray::{Array1, Array2, s};
+use rand::distr::{Distribution, Uniform};
 
 use hnsw_rs::prelude::*;
 
@@ -20,7 +22,20 @@ pub fn main() {
     //
     let _ = env_logger::builder().is_test(true).try_init();
     //
-    let digits_data = load_mnist_train_data(MNIST_DIGITS_DIR).unwrap();
+    let args: Vec<String> = env::args().collect();
+    log::info!("args : {:?}", &args);
+    //
+    let dirpath = if args.len() <= 1 {
+        println!(
+            "expecting a directory path containing mnist data, default is {}",
+            MNIST_DIGITS_DIR
+        );
+        MNIST_DIGITS_DIR
+    } else {
+        &args[0]
+    };
+
+    let digits_data = load_mnist_train_data(&dirpath).unwrap();
     let mut labels = digits_data.get_labels().to_vec();
     let images = digits_data.get_images();
     // convert images as vectors
@@ -133,6 +148,92 @@ pub fn main() {
         "correlation between dists : {:.3e}",
         correlation(&p_dist_vec, &cdc_dist_vec)
     );
+    //
+    let nb_sample = 1000;
+    contingency(&cdc, nb_sample, &labels, &images_as_v);
+}
+
+// We build 2 contingency tables for labels couples and computes mean and std deviations for data points and cdc points
+// try assess distances separation power
+#[allow(unused)]
+fn contingency(cdc_op: &CarreDuChamp, nbsample: usize, labels: &[u8], images: &[Vec<f32>]) {
+    assert_eq!(labels.len(), images.len());
+    //
+    let dist = DistL2 {};
+    //
+    let nbdata = images.len();
+    let nblabels = 10;
+    //
+    let mut contingency_p = IndexMap::<(u8, u8), Vec<f32>>::new();
+    let mut contingency_cdc = IndexMap::<(u8, u8), Vec<f32>>::new();
+
+    let mut rng = rand::rng();
+    //
+    let between = Uniform::try_from(0..nbdata).unwrap();
+    let mut nb_done = 0;
+    while nb_done < nbsample {
+        let i = between.sample(&mut rng);
+        let point_i = &images[i];
+        let label_i = labels[i];
+        assert!((label_i as usize) < nblabels);
+        let j = between.sample(&mut rng);
+        let point_j = &images[j];
+        let label_j = labels[j];
+        assert!((label_j as usize) < nblabels);
+        let key = if label_i <= label_j {
+            (label_i, label_j)
+        } else {
+            (label_j, label_i)
+        };
+        // computes and store distances between points
+        let dist_point = dist.eval(point_i, point_j);
+        if let Some(item) = contingency_p.get_mut(&key) {
+            item.push(dist_point);
+        } else {
+            let mut item = Vec::<f32>::with_capacity(100);
+            item.push(dist_point);
+            contingency_p.insert(key, item);
+        };
+        // computes and store distances between cdc points
+        let (_, cdc_at_point_i) = cdc_op.get_cdc_at_point(i);
+        let (_, cdc_at_point_j) = cdc_op.get_cdc_at_point(j);
+        let dist_cdc = psd_dist(&cdc_at_point_i, &cdc_at_point_j);
+        if let Some(item) = contingency_cdc.get_mut(&key) {
+            item.push(dist_cdc);
+        } else {
+            let mut item = Vec::<f32>::with_capacity(100);
+            item.push(dist_cdc);
+            contingency_cdc.insert(key, item);
+        };
+        //
+        nb_done += 1;
+        if nb_done.is_multiple_of(10) {
+            log::info!("nb couples done : {}", nb_done);
+        };
+    }
+    // gather means and std dev
+    let mut means_p = Array2::<f32>::zeros((nblabels, nblabels));
+    let mut std_dev_p = Array2::<f32>::zeros((nblabels, nblabels));
+    let mut means_cdc = Array2::<f32>::zeros((nblabels, nblabels));
+    let mut std_dev_cdc = Array2::<f32>::zeros((nblabels, nblabels));
+    //
+    let keys = contingency_p.keys();
+    for key in keys {
+        // points
+        let v_p = contingency_p.get(key).unwrap();
+        let m = v_p.iter().sum::<f32>() / v_p.len() as f32;
+        means_p[[key.0 as usize, key.1 as usize]] = m;
+        let stddev =
+            ((v_p.iter().map(|x| (*x - m) * (*x - m)).sum::<f32>()) / v_p.len() as f32).sqrt();
+        std_dev_p[[key.0 as usize, key.1 as usize]] = stddev;
+        // cdc points
+        let v_cdc = contingency_cdc.get(key).unwrap();
+        means_cdc[[key.0 as usize, key.1 as usize]] =
+            v_cdc.iter().sum::<f32>() / v_cdc.len() as f32;
+        let stddev =
+            ((v_cdc.iter().map(|x| (*x - m) * (*x - m)).sum::<f32>()) / v_cdc.len() as f32).sqrt();
+        std_dev_cdc[[key.0 as usize, key.1 as usize]] = stddev;
+    }
 }
 
 /// choose index corresponding to different digits
