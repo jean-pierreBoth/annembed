@@ -39,8 +39,8 @@ name = "higgs"
 path = "examples/higgs.rs"
 
 [[examples]]
-name = "digitscdc"
-path = "examples/digitscdc.rs"
+name = "mnistcdc"
+path = "examples/mnistcdc.rs"
 
 [[bin]]
 name = "embed"

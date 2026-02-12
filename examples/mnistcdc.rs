@@ -155,6 +155,7 @@ pub fn main() {
 
 // We build 2 contingency tables for labels couples and computes mean and std deviations for data points and cdc points
 // try assess distances separation power
+// TODO: make //
 #[allow(unused)]
 fn contingency(cdc_op: &CarreDuChamp, nbsample: usize, labels: &[u8], images: &[Vec<f32>]) {
     assert_eq!(labels.len(), images.len());
