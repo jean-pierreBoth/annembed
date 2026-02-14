@@ -136,3 +136,4 @@ macos-accelerate = ["blas-src", "ndarray/blas"]
 
 [dev-dependencies]
 statrs = { version = "0.18" }
+dashmap = { version = "6.1"}

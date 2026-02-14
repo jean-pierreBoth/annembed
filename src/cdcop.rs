@@ -107,35 +107,41 @@ impl CarreDuChamp {
                 for j in 0..=i {
                     cov[[i, j]] +=
                         proba * (self.data[[n, i]] - mean[i]) * (self.data[[n, j]] - mean[j]);
+                    cov[[j, i]] = cov[[i, j]];
                 }
             }
             cumul += proba;
         }
         // compute trace, eigenvalue and possible renormalization
         let trace = (0..dim).fold(0., |acc, i| acc + cov[[i, i]]);
-        log::info!(" cdc trace at point {}, {:.3e}", point_rank, trace);
+        log::debug!(" cdc trace at point {}, {:.3e}", point_rank, trace);
         let matrepr = MatRepr::from_array2(cov);
-        let mut svdapprox = SvdApprox::new(&matrepr);
-        let precision = RangePrecision::new(0.1, 5, dim);
-        let svdmode = RangeApproxMode::EPSIL(precision);
-        let svd_res = svdapprox.direct_svd(svdmode).unwrap();
-        log::debug!(" cdc spectrum at point {}", point_rank);
-        if let Some(s) = svd_res.get_sigma() {
-            let dump_size = if log::log_enabled!(log::Level::Debug) {
-                dim
+        let do_svd = false;
+        if do_svd {
+            let mut svdapprox = SvdApprox::new(&matrepr);
+            let precision = RangePrecision::new(0.1, 5, dim);
+            let svdmode = RangeApproxMode::EPSIL(precision);
+            let svd_res = svdapprox.direct_svd(svdmode).unwrap();
+            log::debug!(" cdc spectrum at point {}", point_rank);
+            if let Some(s) = svd_res.get_sigma() {
+                let nb_l = s.len();
+                log::debug!("got nb eigenvalues : {}", s.len());
+                let dump_size = if log::log_enabled!(log::Level::Debug) {
+                    nb_l
+                } else {
+                    20.min(nb_l)
+                };
+                let mut i = 0;
+                while i < dump_size && s[i] > s[0] / 10. {
+                    log::debug!(" i = {}, s =  {:.3e}", i, s[i]);
+                    i += 1;
+                }
             } else {
-                20
-            };
-            let mut i = 0;
-            while i < dump_size && s[i] > s[0] / 10. {
-                log::debug!(" i = {}, s =  {:.3e}", i, s[i]);
-                i += 1;
+                log::error!(
+                    "get_cdc_at_point failed to get s in svd at point : {}",
+                    point_rank
+                )
             }
-        } else {
-            log::error!(
-                "get_cdc_at_point failed to get s in svd at point : {}",
-                point_rank
-            )
         }
         // consume matrepr and get back array
         (mean, matrepr.retrieve_array().unwrap())
@@ -186,7 +192,7 @@ pub fn psd_dist(mata: &Array2<f32>, matb: &Array2<f32>) -> f32 {
         tra += mata[[i, i]];
         trb += matb[[i, i]];
         for j in 0..mata.shape()[0] {
-            trab += mata[[i, j]] * mata[[j, i]];
+            trab += mata[[i, j]] * matb[[j, i]];
         }
     }
     let d2 = tra + trb - 2.0 * trab.sqrt();
