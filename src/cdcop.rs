@@ -17,8 +17,44 @@ use crate::diffmaps::*;
 use crate::graphlaplace::*;
 use crate::tools::{matrepr::*, svdapprox::*};
 
-/// just an encapsulation of thr (covariance) matrix
-pub struct CdcM(Array2<f32>);
+/// just an encapsulation of the (symetric covariance) matrix
+pub struct CdcMat(Array2<f32>);
+
+impl CdcMat {
+    pub(crate) fn get_array_ref(&self) -> &Array2<f32> {
+        &self.0
+    }
+
+    pub fn get_spectrum(&self) -> anyhow::Result<Array1<f32>> {
+        let matrepr = MatRepr::from_array2(self.0.clone()); // TODO: avoid the clone
+        let (nrow, ncol) = self.0.dim();
+        assert_eq!(nrow, ncol);
+        let dim = nrow;
+        let mut svdapprox = SvdApprox::new(&matrepr);
+        let precision = RangePrecision::new(0.02, 5, dim);
+        let svdmode = RangeApproxMode::EPSIL(precision);
+        let svd_res = svdapprox.direct_svd(svdmode).unwrap();
+        if let Some(s) = svd_res.get_sigma() {
+            let nb_l = s.len();
+            log::debug!("got nb eigenvalues : {}", s.len());
+            let dump_size = if log::log_enabled!(log::Level::Debug) {
+                nb_l
+            } else {
+                20.min(nb_l)
+            };
+            let mut i = 0;
+            while i < dump_size && s[i] > s[0] / 10. {
+                log::debug!(" i = {}, s =  {:.3e}", i, s[i]);
+                i += 1;
+            }
+            return Ok(s.clone());
+        } else {
+            log::error!("get_cdc_at_point failed to get s in svd",);
+            Err(anyhow!("svd failed"))
+        }
+        //
+    }
+}
 
 /// The structure first computes the transition kernel to neighbours using DiffusionMaps with adhoc parameters.  
 /// Then it computes the Covariance of the transition kernel at each asked for point.
@@ -86,7 +122,7 @@ impl CarreDuChamp {
     //
 
     /// compute carre du champ at point given its rank. Returns a symetric matrix.
-    pub fn get_cdc_at_point(&self, point_rank: usize) -> (Array1<f32>, Array2<f32>) {
+    pub fn get_cdc_at_point(&self, point_rank: usize) -> (Array1<f32>, CdcMat) {
         //
         let glaplacian = self.glaplacian.as_ref().unwrap();
         // compute covariance along data dimension
@@ -116,35 +152,9 @@ impl CarreDuChamp {
         let trace = (0..dim).fold(0., |acc, i| acc + cov[[i, i]]);
         log::debug!(" cdc trace at point {}, {:.3e}", point_rank, trace);
         let matrepr = MatRepr::from_array2(cov);
-        let do_svd = false;
-        if do_svd {
-            let mut svdapprox = SvdApprox::new(&matrepr);
-            let precision = RangePrecision::new(0.1, 5, dim);
-            let svdmode = RangeApproxMode::EPSIL(precision);
-            let svd_res = svdapprox.direct_svd(svdmode).unwrap();
-            log::debug!(" cdc spectrum at point {}", point_rank);
-            if let Some(s) = svd_res.get_sigma() {
-                let nb_l = s.len();
-                log::debug!("got nb eigenvalues : {}", s.len());
-                let dump_size = if log::log_enabled!(log::Level::Debug) {
-                    nb_l
-                } else {
-                    20.min(nb_l)
-                };
-                let mut i = 0;
-                while i < dump_size && s[i] > s[0] / 10. {
-                    log::debug!(" i = {}, s =  {:.3e}", i, s[i]);
-                    i += 1;
-                }
-            } else {
-                log::error!(
-                    "get_cdc_at_point failed to get s in svd at point : {}",
-                    point_rank
-                )
-            }
-        }
         // consume matrepr and get back array
-        (mean, matrepr.retrieve_array().unwrap())
+        let mat = CdcMat(matrepr.retrieve_array().unwrap());
+        (mean, mat)
     }
 
     /// computes distances between cdc operator at 2 different points.
@@ -180,8 +190,11 @@ impl CarreDuChamp {
 /// The distance between 2 symetric matrices A and B is defined by:
 /// $$ d(A,B) = \left( tr (A) + tr(B) - 2 \ tr(A^{1/2} B A^{1/2} \right)^{1/2} $$
 ///
-pub fn psd_dist(mata: &Array2<f32>, matb: &Array2<f32>) -> f32 {
-    assert_eq!(mata.shape(), matb.shape());
+pub fn psd_dist(mata: &CdcMat, matb: &CdcMat) -> f32 {
+    //
+    let mata = mata.get_array_ref();
+    let matb = matb.get_array_ref();
+    //
     assert_eq!(mata.shape()[0], matb.shape()[1]);
     //
     let mut tra: f32 = 0.0f32;
@@ -208,9 +221,6 @@ mod tests {
     use super::*;
     use rand::Rng;
     use rand_distr::Uniform;
-
-    use cpu_time::ProcessTime;
-    use std::time::SystemTime;
 
     use hnsw_rs::anndists::dist;
 
@@ -240,7 +250,6 @@ mod tests {
         // hnsw
         let ef_construct = 25;
         let nb_connection = 10;
-        let start = ProcessTime::now();
         let hnsw = Hnsw::<f32, dist::DistL1>::new(
             nb_connection,
             nbdata,
@@ -254,10 +263,22 @@ mod tests {
         log::debug!("hnsw built");
         //
         let cdc = CarreDuChamp::from_hnsw_ref(&hnsw);
-        let (mean_at_5, cdc_point_5) = cdc.get_cdc_at_point(5);
-        let (mean_at_6, cdc_point_6) = cdc.get_cdc_at_point(6);
+        let p_5 = 5;
+        let (_mean_at_5, cdc_point_5) = cdc.get_cdc_at_point(p_5);
+        let spectrum = cdc_point_5.get_spectrum().unwrap();
+        log::info!("spectrum at point : {} is : {:?}", p_5, spectrum);
+        let p_6 = 6;
+        let (_mean_at_6, cdc_point_6) = cdc.get_cdc_at_point(p_6);
+        let spectrum = cdc_point_5.get_spectrum().unwrap();
+        log::info!("spectrum at point : {} is : {:?}", p_6, spectrum);
         //
         let d_5_6 = psd_dist(&cdc_point_5, &cdc_point_6);
+        log::info!(
+            "cdc distance between points  : {} and {} is : {:?}",
+            p_5,
+            p_6,
+            d_5_6
+        );
     }
 
     // TODO: test with nbdata > 5000 to check csr

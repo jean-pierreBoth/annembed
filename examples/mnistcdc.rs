@@ -1,11 +1,11 @@
 //! Run Carre Du Champ computations on Mnist Digits/Fashion data
-use std::env;
-use std::sync::atomic::{AtomicU32, Ordering};
-
 use dashmap::DashMap;
 use indexmap::IndexMap;
 use ndarray::{Array1, Array2, s};
 use rand::distr::{Distribution, Uniform};
+use rayon::iter::{IntoParallelIterator, ParallelIterator};
+use std::env;
+use std::sync::atomic::{AtomicU32, Ordering};
 
 use hnsw_rs::prelude::*;
 
@@ -96,7 +96,7 @@ pub fn main() {
     let cdc = CarreDuChamp::from_hnsw_ref(&hnsw);
     // choose some images at different labels.
     let points = choose_points(&labels);
-    let mut cdc_points = Vec::<(Array1<f32>, Array2<f32>)>::with_capacity(points.len());
+    let mut cdc_points = Vec::<(Array1<f32>, CdcMat)>::with_capacity(points.len());
     let distl2 = DistL2 {};
     for (l, p) in points.as_slice() {
         log::info!("\n\n label : {}, point : {}", l, p);
@@ -152,7 +152,7 @@ pub fn main() {
         correlation(&p_dist_vec, &cdc_dist_vec)
     );
     //
-    let nb_sample = 1000;
+    let nb_sample = 10_000;
     contingency(&cdc, nb_sample, &labels, &images_as_v);
 }
 
@@ -175,8 +175,12 @@ fn contingency(cdc_op: &CarreDuChamp, nbsample: usize, labels: &[u8], images: &[
     //
     let between = Uniform::try_from(0..nbdata).unwrap();
     let nb_done = AtomicU32::new(0);
-
-    for icouple in 0..nbsample {
+    //
+    let cpu_start = ProcessTime::now();
+    let sys_now = SystemTime::now();
+    //
+    (0..nbsample).into_par_iter().for_each(|icouple| {
+        let mut rng = rand::rng();
         let i = between.sample(&mut rng);
         let point_i = &images[i];
         let label_i = labels[i];
@@ -215,7 +219,15 @@ fn contingency(cdc_op: &CarreDuChamp, nbsample: usize, labels: &[u8], images: &[
         if icouple.is_multiple_of(10) {
             log::info!("nb couples done : {}", icouple);
         };
-    }
+    });
+    //
+    let cpu_time: Duration = cpu_start.elapsed();
+    println!(
+        "contingency estimation  nb samples = {}, sys time(s) : {:.3e},  cpu time(s) {:?}",
+        nbsample,
+        sys_now.elapsed().unwrap().as_secs(),
+        cpu_time.as_secs()
+    );
     // gather means and std dev
     let mut means_p = Array2::<f32>::zeros((nblabels, nblabels));
     let mut std_dev_p = Array2::<f32>::zeros((nblabels, nblabels));
