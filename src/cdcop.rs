@@ -25,8 +25,18 @@ impl CdcMat {
         &self.0
     }
 
-    pub fn get_spectrum(&self) -> anyhow::Result<Array1<f32>> {
+    pub fn get_trace(&self) -> f32 {
+        let (nrow, ncol) = self.0.dim();
+        assert_eq!(nrow, ncol);
+        (0..nrow).into_iter().map(|i| self.0[[i, i]]).sum::<f32>()
+    }
+
+    /// returns spectrum by approximated svd.
+    /// If fraction is >= 1, return all eigenvalues computed.  
+    /// If fraction < 1 returns eigenvalues up to rank such that sum of largest eigenvlaues exceeds fraction * total trace
+    pub fn get_spectrum(&self, info: bool) -> anyhow::Result<Array1<f32>> {
         let matrepr = MatRepr::from_array2(self.0.clone()); // TODO: avoid the clone
+        //
         let (nrow, ncol) = self.0.dim();
         assert_eq!(nrow, ncol);
         let dim = nrow;
@@ -35,17 +45,16 @@ impl CdcMat {
         let svdmode = RangeApproxMode::EPSIL(precision);
         let svd_res = svdapprox.direct_svd(svdmode).unwrap();
         if let Some(s) = svd_res.get_sigma() {
-            let nb_l = s.len();
-            log::debug!("got nb eigenvalues : {}", s.len());
-            let dump_size = if log::log_enabled!(log::Level::Debug) {
-                nb_l
-            } else {
-                20.min(nb_l)
-            };
-            let mut i = 0;
-            while i < dump_size && s[i] > s[0] / 10. {
-                log::debug!(" i = {}, s =  {:.3e}", i, s[i]);
-                i += 1;
+            let full_trace = self.get_trace();
+            let partial_trace = s.sum();
+            log::info!(
+                "got nb eigenvalues : {}, partial_trace : {:.3e} , full trace : {:.3e}",
+                s.len(),
+                partial_trace,
+                full_trace
+            );
+            if info {
+                spectrum_quantiles(full_trace, s);
             }
             return Ok(s.clone());
         } else {
@@ -54,6 +63,23 @@ impl CdcMat {
         }
         //
     }
+}
+
+// simple quantiles reached
+fn spectrum_quantiles(full_trace: f32, s: &Array1<f32>) {
+    let q: Vec<f32> = vec![0., 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.];
+    let mut partial_trace = 0.;
+    let mut reached = 0;
+    println!(" lambda index    lambda        trace fraction");
+    for i in 0..s.len() {
+        partial_trace += s[i];
+        let f = partial_trace / full_trace;
+        if f >= q[reached] {
+            println!("     {:4}        {:.3e}      {:.3e}", i, s[i], f);
+            reached += 1
+        }
+    }
+    println!("");
 }
 
 /// The structure first computes the transition kernel to neighbours using DiffusionMaps with adhoc parameters.  
@@ -265,12 +291,18 @@ mod tests {
         let cdc = CarreDuChamp::from_hnsw_ref(&hnsw);
         let p_5 = 5;
         let (_mean_at_5, cdc_point_5) = cdc.get_cdc_at_point(p_5);
-        let spectrum = cdc_point_5.get_spectrum().unwrap();
+        let info = true;
+        let spectrum = cdc_point_5.get_spectrum(info).unwrap();
         log::info!("spectrum at point : {} is : {:?}", p_5, spectrum);
         let p_6 = 6;
         let (_mean_at_6, cdc_point_6) = cdc.get_cdc_at_point(p_6);
-        let spectrum = cdc_point_5.get_spectrum().unwrap();
-        log::info!("spectrum at point : {} is : {:?}", p_6, spectrum);
+        let spectrum = cdc_point_6.get_spectrum(info).unwrap();
+        log::info!(
+            "spectrum at point : {} , nb eigenvalues: {},  {:?}",
+            p_6,
+            spectrum.len(),
+            spectrum
+        );
         //
         let d_5_6 = psd_dist(&cdc_point_5, &cdc_point_6);
         log::info!(

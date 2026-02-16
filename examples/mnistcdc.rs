@@ -139,7 +139,7 @@ pub fn main() {
             p_dist_vec.push(dist_p);
             cdc_dist_vec.push(dist_cdc);
             log::info!(
-                "dist between lables ({}, {}), point dist : {:.3e}, cdc dist {:.3e}",
+                "dist between labels ({}, {}), point dist : {:.3e}, cdc dist {:.3e}",
                 *l_i,
                 *l_j,
                 dist_p,
@@ -159,7 +159,6 @@ pub fn main() {
 // We build 2 contingency tables for labels couples and computes mean and std deviations for data points and cdc points
 // try assess distances separation power
 // Note : parallel iter do not provide speed up.
-#[allow(unused)]
 fn contingency(cdc_op: &CarreDuChamp, nbsample: usize, labels: &[u8], images: &[Vec<f32>]) {
     assert_eq!(labels.len(), images.len());
     //
@@ -168,10 +167,9 @@ fn contingency(cdc_op: &CarreDuChamp, nbsample: usize, labels: &[u8], images: &[
     let nbdata = images.len();
     let nblabels = 10;
     //
-    let mut contingency_p = DashMap::<(u8, u8), Vec<f32>>::new();
-    let mut contingency_cdc = DashMap::<(u8, u8), Vec<f32>>::new();
+    let contingency_p = DashMap::<(u8, u8), Vec<f32>>::new();
+    let contingency_cdc = DashMap::<(u8, u8), Vec<f32>>::new();
 
-    let mut rng = rand::rng();
     //
     let between = Uniform::try_from(0..nbdata).unwrap();
     let nb_done = AtomicU32::new(0);
@@ -179,7 +177,7 @@ fn contingency(cdc_op: &CarreDuChamp, nbsample: usize, labels: &[u8], images: &[
     let cpu_start = ProcessTime::now();
     let sys_now = SystemTime::now();
     //
-    (0..nbsample).into_par_iter().for_each(|icouple| {
+    (0..nbsample).into_par_iter().for_each(|_| {
         let mut rng = rand::rng();
         let i = between.sample(&mut rng);
         let point_i = &images[i];
@@ -215,9 +213,9 @@ fn contingency(cdc_op: &CarreDuChamp, nbsample: usize, labels: &[u8], images: &[
             contingency_cdc.insert(key, item);
         };
         //
-        nb_done.fetch_add(1, Ordering::SeqCst);
-        if icouple.is_multiple_of(10) {
-            log::info!("nb couples done : {}", icouple);
+        let old = 1 + nb_done.fetch_add(1, Ordering::SeqCst);
+        if (old).is_multiple_of(500) {
+            log::info!("nb couples done : {}", old);
         };
     });
     //
