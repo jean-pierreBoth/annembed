@@ -38,9 +38,9 @@ pub fn main() {
         &args[1]
     };
 
-    let digits_data = load_mnist_train_data(&dirpath).unwrap();
-    let mut labels = digits_data.get_labels().to_vec();
-    let images = digits_data.get_images();
+    let mnist_data = load_mnist_train_data(&dirpath).unwrap();
+    let mut labels = mnist_data.get_labels().to_vec();
+    let images = mnist_data.get_images();
     // convert images as vectors
     let (_, _, nbimages) = images.dim();
     let mut images_as_v = Vec::<Vec<f32>>::with_capacity(nbimages);
@@ -56,9 +56,9 @@ pub fn main() {
     //
     // load test data
     // ===============
-    let digits_test_data = load_mnist_test_data(MNIST_DIGITS_DIR).unwrap();
-    labels.append(&mut digits_test_data.get_labels().to_vec());
-    let images = digits_test_data.get_images();
+    let mnist_test_data = load_mnist_test_data(&dirpath).unwrap();
+    labels.append(&mut mnist_test_data.get_labels().to_vec());
+    let images = mnist_test_data.get_images();
     // convert images as vectors
     let (_, _, nbimages) = images.dim();
     //
@@ -101,6 +101,8 @@ pub fn main() {
     for (l, p) in points.as_slice() {
         log::info!("\n\n label : {}, point : {}", l, p);
         let (mean, cdc_at_point) = cdc.get_cdc_at_point(*p);
+        let info = true;
+        let _sp = cdc_at_point.get_spectrum(info);
         // get dist between mean and data point
         let dist_to_mean = distl2.eval(mean.as_slice().unwrap(), &images_as_v[*p]);
 
@@ -272,7 +274,7 @@ fn dump_lows(mat: &Array2<f32>) {
     println!();
     for i in 0..nrow {
         println!();
-        for j in 0..i {
+        for j in 0..=i {
             print!("{:.3e} ", mat[[i, j]]);
         }
     }
@@ -290,7 +292,7 @@ fn choose_points(labels: &[u8]) -> IndexMap<u8, usize> {
             && !index.contains_key(key)
         {
             index.insert(*key, rank);
-            log::info!("inserting digits : {}, rank : {}", *key, rank);
+            log::info!("inserting mnist label : {}, rank : {}", *key, rank);
             if index.len() >= nb_digits {
                 break;
             }
