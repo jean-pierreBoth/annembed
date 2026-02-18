@@ -478,7 +478,7 @@ where
     log::debug!(" adaptative_range_finder_matrep stop_val : {}", stop_val);
     let proba_failure = 1.0E-3;
     let block_iter = ((m as f64 / proba_failure).ln() / 10.0f64.ln()) as usize;
-    log::info!(
+    log::debug!(
         " adaptative_range_finder_matrep suggestion for block_iter {} ",
         block_iter
     );

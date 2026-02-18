@@ -3,31 +3,33 @@
 //!
 //!
 
+use std::path::Path;
+
 use anyhow::anyhow;
-use ndarray::{s, Array1, Array3};
+use ndarray::{Array1, Array3, s};
 use std::fs::OpenOptions;
-use std::io::prelude::*;
 use std::io::BufReader;
+use std::io::prelude::*;
 use std::path::PathBuf;
 
 /// A struct to load/store [MNIST data](https://www.kaggle.com/datasets/hojjatk/mnist-dataset)  
 /// stores labels (i.e : digits between 0 and 9) coming from file train-labels-idx1-ubyte      
 /// and hand written characters as 28*28 images with values between 0 and 255 coming from train-images-idx3-ubyte
 pub struct MnistData {
-    _image_filename: String,
-    _label_filename: String,
+    _image_filename: PathBuf,
+    _label_filename: PathBuf,
     pub(crate) images: Array3<u8>,
     pub(crate) labels: Array1<u8>,
 }
 
 impl MnistData {
-    pub fn new(image_filename: String, label_filename: String) -> std::io::Result<MnistData> {
-        let image_path = PathBuf::from(image_filename.clone());
+    pub fn new(image_filename: PathBuf, label_filename: PathBuf) -> std::io::Result<MnistData> {
+        let image_path = image_filename.clone();
         let image_file = OpenOptions::new().read(true).open(image_path)?;
         let mut image_io = BufReader::new(image_file);
         let images = read_image_file(&mut image_io);
         // labels
-        let label_path = PathBuf::from(label_filename.clone());
+        let label_path = label_filename.clone();
         let labels_file = OpenOptions::new().read(true).open(label_path)?;
         let mut labels_io = BufReader::new(labels_file);
         let labels = read_label_file(&mut labels_io);
@@ -145,20 +147,15 @@ pub fn read_label_file(io_in: &mut dyn Read) -> Array1<u8> {
 } // end of fn read_label
 
 /// load mnist data from Directory
-pub fn load_mnist_train_data(dname: &str) -> anyhow::Result<MnistData> {
-    let mut image_fname = String::from(dname);
-    image_fname.push_str("train-images-idx3-ubyte");
-    let image_path = PathBuf::from(image_fname.clone());
-    let image_file_res = OpenOptions::new().read(true).open(&image_path);
+pub fn load_mnist_train_data(dname: &Path) -> anyhow::Result<MnistData> {
+    let image_fname = dname.join("train-images-idx3-ubyte");
+    let image_file_res = OpenOptions::new().read(true).open(&image_fname);
     if image_file_res.is_err() {
         log::error!("could not open image file : {:?}", image_fname);
         return Err(anyhow!("io error"));
     }
-
-    let mut label_fname = String::from(dname);
-    label_fname.push_str("train-labels-idx1-ubyte");
-    let label_path = PathBuf::from(label_fname.clone());
-    let label_file_res = OpenOptions::new().read(true).open(&label_path);
+    let label_fname: PathBuf = Path::new(dname).join("train-labels-idx1-ubyte");
+    let label_file_res = OpenOptions::new().read(true).open(&label_fname);
     if label_file_res.is_err() {
         log::error!("could not open label file : {:?}", label_fname);
         return Err(anyhow!("io error"));
@@ -167,20 +164,16 @@ pub fn load_mnist_train_data(dname: &str) -> anyhow::Result<MnistData> {
     Ok(MnistData::new(image_fname, label_fname).unwrap())
 }
 
-pub fn load_mnist_test_data(dname: &str) -> anyhow::Result<MnistData> {
-    let mut image_fname = String::from(dname);
-    image_fname.push_str("t10k-images-idx3-ubyte");
-    let image_path = PathBuf::from(image_fname.clone());
-    let image_file_res = OpenOptions::new().read(true).open(&image_path);
+pub fn load_mnist_test_data(dname: &Path) -> anyhow::Result<MnistData> {
+    let image_fname = dname.join("t10k-images-idx3-ubyte");
+    let image_file_res = OpenOptions::new().read(true).open(&image_fname);
     if image_file_res.is_err() {
         log::error!("could not open image file : {:?}", image_fname);
         return Err(anyhow!("io error"));
     }
 
-    let mut label_fname = String::from(dname);
-    label_fname.push_str("t10k-labels-idx1-ubyte");
-    let label_path = PathBuf::from(label_fname.clone());
-    let label_file_res = OpenOptions::new().read(true).open(&label_path);
+    let label_fname = dname.join("t10k-labels-idx1-ubyte");
+    let label_file_res = OpenOptions::new().read(true).open(&label_fname);
     if label_file_res.is_err() {
         log::error!("could not open label file : {:?}", label_fname);
         return Err(anyhow!("io error"));

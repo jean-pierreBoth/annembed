@@ -28,7 +28,7 @@ impl CdcMat {
     pub fn get_trace(&self) -> f32 {
         let (nrow, ncol) = self.0.dim();
         assert_eq!(nrow, ncol);
-        (0..nrow).into_iter().map(|i| self.0[[i, i]]).sum::<f32>()
+        (0..nrow).map(|i| self.0[[i, i]]).sum::<f32>()
     }
 
     /// returns spectrum by approximated svd.
@@ -56,7 +56,7 @@ impl CdcMat {
             if info {
                 spectrum_quantiles(full_trace, s);
             }
-            return Ok(s.clone());
+            Ok(s.clone())
         } else {
             log::error!("get_cdc_at_point failed to get s in svd",);
             Err(anyhow!("svd failed"))
@@ -79,7 +79,7 @@ fn spectrum_quantiles(full_trace: f32, s: &Array1<f32>) {
             reached += 1
         }
     }
-    println!("");
+    println!();
 }
 
 /// The structure first computes the transition kernel to neighbours using DiffusionMaps with adhoc parameters.  
@@ -254,12 +254,7 @@ mod tests {
         let _ = env_logger::builder().is_test(true).try_init();
     }
 
-    #[test]
-    fn test_cdc_full() {
-        //
-        log_init_test();
-        println!("\n\n test_cdc_full");
-        //
+    fn base_test(sample: usize) {
         let mut rng = rand::rng();
         let unif = Uniform::<f32>::new(0., 1.).unwrap();
         let nbdata = 5000;
@@ -313,10 +308,21 @@ mod tests {
         );
     }
 
+    #[test]
+    fn test_cdc_full() {
+        //
+        let nbdata = 5000;
+        log_init_test();
+        println!("\n\n test_cdc_full");
+        base_test(nbdata);
+    }
+
     // TODO: test with nbdata > 5000 to check csr
     #[test]
     fn test_cdc_csr() {
+        let nbdata = 5500;
+        log_init_test();
         println!("\n\n test_cdc_csr");
-        std::process::exit(1);
+        base_test(nbdata);
     }
 }

@@ -1436,7 +1436,7 @@ mod tests {
         //
         log::info!("running mnist_digits");
         //
-        let mnist_data = load_mnist_train_data(MNIST_DIGITS_DIR).unwrap();
+        let mnist_data = load_mnist_train_data(&std::path::Path::new(MNIST_DIGITS_DIR)).unwrap();
         let labels = mnist_data.get_labels().to_vec();
         let images = mnist_data.get_images();
         // convert images as vectors
@@ -1497,7 +1497,8 @@ mod tests {
         //
         log::info!("running mnist_fashion");
         //
-        let fashion_train_data = load_mnist_train_data(MNIST_FASHION_DIR).unwrap();
+        let fashion_train_data =
+            load_mnist_train_data(&std::path::Path::new(MNIST_FASHION_DIR)).unwrap();
         let mut labels = fashion_train_data.get_labels().to_vec();
         let images = fashion_train_data.get_images();
         // convert images as vectors
@@ -1514,7 +1515,8 @@ mod tests {
         }
         // load test data
         // ===============
-        let fashion_test_data = load_mnist_test_data(MNIST_FASHION_DIR).unwrap();
+        let fashion_test_data =
+            load_mnist_test_data(&std::path::Path::new(MNIST_FASHION_DIR)).unwrap();
         labels.append(&mut fashion_test_data.get_labels().to_vec());
         let images = fashion_test_data.get_images();
         // convert images as vectors

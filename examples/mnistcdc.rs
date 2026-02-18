@@ -1,10 +1,12 @@
 //! Run Carre Du Champ computations on Mnist Digits/Fashion data
+
 use dashmap::DashMap;
 use indexmap::IndexMap;
 use ndarray::{Array1, Array2, s};
 use rand::distr::{Distribution, Uniform};
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use std::env;
+use std::path::Path;
 use std::sync::atomic::{AtomicU32, Ordering};
 
 use hnsw_rs::prelude::*;
@@ -32,10 +34,10 @@ pub fn main() {
             "expecting a directory path containing mnist data, default is {}",
             MNIST_DIGITS_DIR
         );
-        MNIST_DIGITS_DIR
+        Path::new(MNIST_DIGITS_DIR)
     } else {
         log::info!("using dir path : {}", &args[1]);
-        &args[1]
+        Path::new(&args[1])
     };
 
     let mnist_data = load_mnist_train_data(&dirpath).unwrap();
@@ -56,7 +58,7 @@ pub fn main() {
     //
     // load test data
     // ===============
-    let mnist_test_data = load_mnist_test_data(&dirpath).unwrap();
+    let mnist_test_data = load_mnist_test_data(dirpath).unwrap();
     labels.append(&mut mnist_test_data.get_labels().to_vec());
     let images = mnist_test_data.get_images();
     // convert images as vectors
@@ -154,7 +156,7 @@ pub fn main() {
         correlation(&p_dist_vec, &cdc_dist_vec)
     );
     //
-    let nb_sample = 10_000;
+    let nb_sample = 20_000;
     contingency(&cdc, nb_sample, &labels, &images_as_v);
 }
 

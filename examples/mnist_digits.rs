@@ -30,7 +30,7 @@ pub fn main() {
     //
     let _ = env_logger::builder().is_test(true).try_init();
     //
-    let digits_data = load_mnist_train_data(MNIST_DIGITS_DIR).unwrap();
+    let digits_data = load_mnist_train_data(std::path::Path::new(MNIST_DIGITS_DIR)).unwrap();
     let mut labels = digits_data.get_labels().to_vec();
     let images = digits_data.get_images();
     // convert images as vectors
@@ -48,7 +48,7 @@ pub fn main() {
     //
     // load test data
     // ===============
-    let digits_test_data = load_mnist_test_data(MNIST_DIGITS_DIR).unwrap();
+    let digits_test_data = load_mnist_test_data(&std::path::Path::new(MNIST_DIGITS_DIR)).unwrap();
     labels.append(&mut digits_test_data.get_labels().to_vec());
     let images = digits_test_data.get_images();
     // convert images as vectors

@@ -34,7 +34,8 @@ pub fn main() {
     //
     let _ = env_logger::builder().is_test(true).try_init();
     //
-    let fashion_data = load_mnist_train_data(MNIST_FASHION_DIR).unwrap();
+    let dir = std::path::Path::new(MNIST_FASHION_DIR);
+    let fashion_data = load_mnist_train_data(dir).unwrap();
     let mut labels = fashion_data.get_labels().to_vec();
     let images = fashion_data.get_images();
     // convert images as vectors
@@ -51,7 +52,8 @@ pub fn main() {
     }
     // load test data
     // ===============
-    let fashion_test_data = load_mnist_test_data(MNIST_FASHION_DIR).unwrap();
+    let dir = std::path::Path::new(MNIST_FASHION_DIR);
+    let fashion_test_data = load_mnist_test_data(dir).unwrap();
     labels.append(&mut fashion_test_data.get_labels().to_vec());
     let images = fashion_test_data.get_images();
     // convert images as vectors
@@ -244,19 +246,17 @@ mod tests {
 
     #[test]
     fn test_load_mnist_fashion() {
-        let mut image_fname = String::from(MNIST_FASHION_DIR);
-        image_fname.push_str("train-images-idx3-ubyte");
-        let image_path = PathBuf::from(image_fname.clone());
+        let image_fname = std::path::Path::new(MNIST_FASHION_DIR).join("train-images-idx3-ubyte");
+        let image_path = image_fname.clone();
         let image_file_res = OpenOptions::new().read(true).open(&image_path);
         if image_file_res.is_err() {
             println!("could not open image file : {:?}", image_fname);
             return;
         }
 
-        let mut label_fname = String::from(MNIST_FASHION_DIR);
-        label_fname.push_str("train-labels-idx1-ubyte");
-        let label_path = PathBuf::from(label_fname.clone());
-        let label_file_res = OpenOptions::new().read(true).open(&label_path);
+        let mut label_fname =
+            std::path::Path::new(MNIST_FASHION_DIR).join("train-labels-idx1-ubyte");
+        let label_file_res = OpenOptions::new().read(true).open(&label_fname);
         if label_file_res.is_err() {
             println!("could not open label file : {:?}", label_fname);
             return;
