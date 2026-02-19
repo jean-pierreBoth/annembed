@@ -202,21 +202,26 @@ impl CarreDuChamp {
         let (_, cov1) = self.get_cdc_at_point(rank1);
         let (_, cov2) = self.get_cdc_at_point(rank2);
         // use psd_dist function
-        Ok(psd_dist(&cov1, &cov2))
+        Ok(psd_dist_upper_bound(&cov1, &cov2))
     }
 }
 
 #[cfg_attr(doc, katexit::katexit)]
-/// computes the Wasserstein (or Bures) distance between 2 symetric matrices
+/// computes an upper bound of the Wasserstein (or Bures) distance between 2 symetric matrices
 /// obtained by [CarreDuChamp::get_cdc_at_point()]
+///
 /// according to:   
 ///     *On the Bures–Wasserstein distance between positive definite matrices*
 ///     See [Bhatia](https://www.sciencedirect.com/science/article/pii/S0723086918300021)
 ///
-/// The distance between 2 symetric matrices A and B is defined by:
-/// $$ d(A,B) = \left( tr (A) + tr(B) - 2 \ tr(A^{1/2} B A^{1/2} \right)^{1/2} $$
+/// The distance between 2 symetric matrices A and B is defined by:  
+/// $$ d(A,B) = \left( tr (A) + tr(B) - 2 \times  tr \left( {A}^{1/2} B {A}^{1/2} \right)^{1/2} \right)^{1/2} $$
+///  
+/// To avoid a  compute an upper bound
+///  $$ dupper(A,B) = {\left( tr (A) + tr(B) - 2 \times  \sqrt{tr(A \cdot B)}   \right)}^{1/2} $$  
+
 ///
-pub fn psd_dist(mata: &CdcMat, matb: &CdcMat) -> f32 {
+pub fn psd_dist_upper_bound(mata: &CdcMat, matb: &CdcMat) -> f32 {
     //
     let mata = mata.get_array_ref();
     let matb = matb.get_array_ref();
@@ -254,10 +259,9 @@ mod tests {
         let _ = env_logger::builder().is_test(true).try_init();
     }
 
-    fn base_test(sample: usize) {
+    fn base_test(nbdata: usize) {
         let mut rng = rand::rng();
         let unif = Uniform::<f32>::new(0., 1.).unwrap();
-        let nbdata = 5000;
         let dim = 256;
         let mut xsi;
         let mut data: Vec<Vec<f32>> = Vec::with_capacity(nbdata);
@@ -299,7 +303,7 @@ mod tests {
             spectrum
         );
         //
-        let d_5_6 = psd_dist(&cdc_point_5, &cdc_point_6);
+        let d_5_6 = psd_dist_upper_bound(&cdc_point_5, &cdc_point_6);
         log::info!(
             "cdc distance between points  : {} and {} is : {:?}",
             p_5,
@@ -317,7 +321,6 @@ mod tests {
         base_test(nbdata);
     }
 
-    // TODO: test with nbdata > 5000 to check csr
     #[test]
     fn test_cdc_csr() {
         let nbdata = 5500;

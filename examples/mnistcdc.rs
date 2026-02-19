@@ -139,7 +139,7 @@ pub fn main() {
         for j in 0..i {
             let (l_j, idx_j) = p_slice.get_index(j).unwrap();
             let dist_p = distl2.eval(&images_as_v[*idx_i], &images_as_v[*idx_j]);
-            let dist_cdc = psd_dist(&cdc_points[i].1, &cdc_points[j].1);
+            let dist_cdc = psd_dist_upper_bound(&cdc_points[i].1, &cdc_points[j].1);
             p_dist_vec.push(dist_p);
             cdc_dist_vec.push(dist_cdc);
             log::info!(
@@ -208,7 +208,7 @@ fn contingency(cdc_op: &CarreDuChamp, nbsample: usize, labels: &[u8], images: &[
         // computes and store distances between cdc points
         let (_, cdc_at_point_i) = cdc_op.get_cdc_at_point(i);
         let (_, cdc_at_point_j) = cdc_op.get_cdc_at_point(j);
-        let dist_cdc = psd_dist(&cdc_at_point_i, &cdc_at_point_j);
+        let dist_cdc = psd_dist_upper_bound(&cdc_at_point_i, &cdc_at_point_j);
         if let Some(mut item) = contingency_cdc.get_mut(&key) {
             item.push(dist_cdc);
         } else {
