@@ -107,6 +107,11 @@ impl CarreDuChamp {
         Self::from_hnsw_ref(&hnsw)
     }
 
+    /// retrurns data dimension
+    pub fn dim(&self) -> usize {
+        self.data.shape()[1]
+    }
+
     /// Construct the CarreDuChamp
     pub fn from_hnsw_ref<T, D>(hnsw: &Hnsw<T, D>) -> CarreDuChamp
     where
@@ -152,7 +157,7 @@ impl CarreDuChamp {
         //
         let glaplacian = self.glaplacian.as_ref().unwrap();
         // compute covariance along data dimension
-        let dim = self.data.shape()[1];
+        let dim = self.dim();
         let mut cov = Array2::<f32>::zeros((dim, dim));
         // get list of index conscerned by row point_idx
         let neighbours = glaplacian.get_kernel_row_csvec(point_rank);
@@ -183,7 +188,54 @@ impl CarreDuChamp {
         (mean, mat)
     }
 
-    /// computes distances between cdc operator at 2 different points.
+    //
+
+    #[cfg_attr(doc, katexit::katexit)]
+    /// compute general carre du champ operator on a couple of functions.
+    /// f and g are functions from $ {R}^{d} \rightarrow {R}^{out_dim} $ with d : dimension of data.
+    pub fn apply<Function>(
+        &self,
+        point_id: DataId,
+        out_dim: usize,
+        f_: Function,
+        g_: Function,
+    ) -> Array1<f32>
+    where
+        Function: Fn(&[f32]) -> Array1<f32>,
+    {
+        let f = |v: &[f32]| {
+            assert_eq!(v.len(), self.dim());
+            let w = f_(&self.data.row(0).as_slice().unwrap());
+            assert_eq!(w.len(), out_dim);
+            w
+        };
+        let g = |v: &[f32]| {
+            assert_eq!(v.len(), self.dim());
+            let w = g_(&self.data.row(0).as_slice().unwrap());
+            assert_eq!(w.len(), out_dim);
+            w
+        };
+        //
+        let dim = self.dim();
+        let index_ref = self.index.as_ref().unwrap();
+        let glaplacian = self.glaplacian.as_ref().unwrap();
+        let point_rank = index_ref.get_index_of(&point_id).unwrap();
+        // get list of index conscerned by row point_idx
+        let neighbours = glaplacian.get_kernel_row_csvec(point_rank);
+        // compute mean
+        let mut mean_f = Array1::<f32>::zeros(dim);
+        let mut mean_g = Array1::<f32>::zeros(dim);
+        for (n, proba) in neighbours.iter() {
+            for j in 0..out_dim {
+                mean_f[j] += proba * f(self.data.row(n).as_slice().unwrap())[j];
+                mean_g[j] += proba * g(self.data.row(n).as_slice().unwrap())[j];
+            }
+        }
+        //
+        panic!("not yet implemented")
+    }
+
+    /// computes an upper bound of distances between cdc operator at 2 different points.
     /// A cpu intensive function ...
     pub fn get_cdc_dist(&self, point_id1: DataId, point_id2: DataId) -> anyhow::Result<f32> {
         let index_ref = self.index.as_ref().unwrap();
@@ -217,7 +269,7 @@ impl CarreDuChamp {
 /// The distance between 2 symetric matrices A and B is defined by:  
 /// $$ d(A,B) = \left( tr (A) + tr(B) - 2 \times  tr \left( {A}^{1/2} B {A}^{1/2} \right)^{1/2} \right)^{1/2} $$
 ///  
-/// To avoid a  compute an upper bound
+/// To avoid a svd compute we compute an upper bound
 ///  $$ dupper(A,B) = {\left( tr (A) + tr(B) - 2 \times  \sqrt{tr(A \cdot B)}   \right)}^{1/2} $$  
 
 ///
