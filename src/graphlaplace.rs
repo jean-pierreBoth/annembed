@@ -28,6 +28,8 @@ pub struct GraphLaplacian {
     pub(crate) svd_res: Option<SvdResult<f32>>,
     // normed scales if not constant (constant means 1. everywhere).
     normed_scales: Option<Array1<f32>>,
+    ///
+    mean_scale: f32,
     // The laplacian used to get Carre Du Champ
     pub(crate) laplacian: Option<MatRepr<f32>>,
 }
@@ -37,12 +39,14 @@ impl GraphLaplacian {
         sym_kernel: MatRepr<f32>,
         normalizer: Array1<f32>,
         scales: Option<Array1<f32>>,
+        mean_scale: f32,
     ) -> Self {
         GraphLaplacian {
             sym_kernel,
             normalizer,
             svd_res: None,
             normed_scales: scales,
+            mean_scale,
             laplacian: None,
         }
     } // end of new for GraphLaplacian
@@ -58,8 +62,13 @@ impl GraphLaplacian {
 
     // returns scales if any
     #[allow(unused)]
-    fn get_scales(&self) -> Option<&Array1<f32>> {
+    pub(crate) fn get_scales(&self) -> Option<&Array1<f32>> {
         self.normed_scales.as_ref()
+    }
+
+    #[allow(unused)]
+    pub(crate) fn get_mean_scale(&self) -> f32 {
+        self.mean_scale
     }
 
     pub fn get_laplacian(&self) -> Option<&MatRepr<f32>> {

@@ -504,6 +504,7 @@ impl DiffusionMaps {
                 MatRepr::from_array2(symgraph),
                 symetrization_weights,
                 Some(local_scale.clone()),
+                self.mean_scale,
             )
         } else {
             log::debug!("Embedder using csr matrix");
@@ -579,6 +580,7 @@ impl DiffusionMaps {
                 MatRepr::from_csrmat(csr_mat),
                 symetrization_weights,
                 Some(local_scale.clone()),
+                self.mean_scale,
             )
         } // end case CsMat
         //

@@ -408,8 +408,8 @@ where
     /// This methods fails if data_id do not exist. Use KGraph.get_data_id_from_idx to check before if necessary.
     pub fn get_embedded_by_dataid(&self, data_id: &DataId) -> ArrayView1<'_, F> {
         // we must get data index as stored in IndexSet
-        let kgraph = if self.hkgraph.is_some() {
-            self.hkgraph.as_ref().unwrap().get_large_graph()
+        let kgraph = if let Some(hkgraph) = &self.hkgraph {
+            hkgraph.get_large_graph()
         } else {
             self.kgraph.as_ref().unwrap()
         };

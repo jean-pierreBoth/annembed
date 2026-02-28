@@ -7,6 +7,8 @@
 //! - *Bamberger.J Jones.I* Carre du Champ 2025. <https://arxiv.org/abs/2510.05930>
 //!
 
+use std::usize;
+
 use anyhow::*;
 use indexmap::IndexSet;
 use ndarray::{Array1, Array2};
@@ -17,27 +19,58 @@ use crate::diffmaps::*;
 use crate::graphlaplace::*;
 use crate::tools::{matrepr::*, svdapprox::*};
 
+/// just an encapsulation of the cdc spectrum at a point
+#[derive(Debug, Clone)]
+pub struct Spectrum {
+    lambda: Array1<f32>,
+}
+
+impl Spectrum {
+    pub fn new(lambda: Array1<f32>) -> Self {
+        Spectrum { lambda }
+    }
+
+    pub fn len(&self) -> usize {
+        self.lambda.len()
+    }
+}
+
 /// just an encapsulation of the (symetric covariance) matrix
-pub struct CdcMat(Array2<f32>);
+pub struct CdcMat {
+    mat: Array2<f32>,
+    spectrum: Option<Spectrum>,
+}
 
 impl CdcMat {
+    pub(crate) fn new(mat: Array2<f32>) -> Self {
+        CdcMat {
+            mat,
+            spectrum: None,
+        }
+    }
+
+    /// store spectrum obtained by [Self::get_spectrum()] if necessary
+    pub fn store_spectrum(&mut self, sp: Spectrum) {
+        self.spectrum = Some(sp);
+    }
+
     pub(crate) fn get_array_ref(&self) -> &Array2<f32> {
-        &self.0
+        &self.mat
     }
 
     pub fn get_trace(&self) -> f32 {
-        let (nrow, ncol) = self.0.dim();
+        let (nrow, ncol) = self.mat.dim();
         assert_eq!(nrow, ncol);
-        (0..nrow).map(|i| self.0[[i, i]]).sum::<f32>()
+        (0..nrow).map(|i| self.mat[[i, i]]).sum::<f32>()
     }
 
     /// returns spectrum by approximated svd.
     /// If fraction is >= 1, return all eigenvalues computed.  
     /// If fraction < 1 returns eigenvalues up to rank such that sum of largest eigenvlaues exceeds fraction * total trace
-    pub fn get_spectrum(&self, info: bool) -> anyhow::Result<Array1<f32>> {
-        let matrepr = MatRepr::from_array2(self.0.clone()); // TODO: avoid the clone
+    pub fn get_spectrum(&self, info: bool) -> anyhow::Result<Spectrum> {
+        let matrepr = MatRepr::from_array2(self.mat.clone()); // TODO: avoid the clone
         //
-        let (nrow, ncol) = self.0.dim();
+        let (nrow, ncol) = self.mat.dim();
         assert_eq!(nrow, ncol);
         let dim = nrow;
         let mut svdapprox = SvdApprox::new(&matrepr);
@@ -56,7 +89,7 @@ impl CdcMat {
             if info {
                 spectrum_quantiles(full_trace, s);
             }
-            Ok(s.clone())
+            Ok(Spectrum::new(s.clone()))
         } else {
             log::error!("get_cdc_at_point failed to get s in svd",);
             Err(anyhow!("svd failed"))
@@ -179,60 +212,129 @@ impl CarreDuChamp {
             }
             cumul += proba;
         }
+        //
+        let scale = if glaplacian.get_scales().is_none() {
+            1.
+        } else {
+            let normed_scales = glaplacian.get_scales().unwrap();
+            normed_scales[point_rank]
+        };
+
+        for i in 0..dim {
+            for j in 0..=i {
+                cov[[i, j]] /= 2. * scale * scale;
+                cov[[j, i]] = cov[[i, j]]
+            }
+        }
         // compute trace, eigenvalue and possible renormalization
         let trace = (0..dim).fold(0., |acc, i| acc + cov[[i, i]]);
         log::debug!(" cdc trace at point {}, {:.3e}", point_rank, trace);
         let matrepr = MatRepr::from_array2(cov);
         // consume matrepr and get back array
-        let mat = CdcMat(matrepr.retrieve_array().unwrap());
+        let mat = CdcMat::new(matrepr.retrieve_array().unwrap());
         (mean, mat)
     }
 
     //
 
     #[cfg_attr(doc, katexit::katexit)]
-    /// compute general carre du champ operator on a couple of functions.
-    /// f and g are functions from $ {R}^{d} \rightarrow {R}^{out_dim} $ with d : dimension of data.
-    pub fn apply<Function>(
+    /// compute general carre du champ operator on a couple of functions with vectorial values.
+    /// f and g are functions from $ \mathbb{R}^{d} \rightarrow \mathbb{R}^{outdim} $ with d : dimension of data.
+    pub fn apply_fvec<Function>(
         &self,
         point_id: DataId,
         out_dim: usize,
         f_: Function,
         g_: Function,
-    ) -> Array1<f32>
+    ) -> Array2<f32>
     where
         Function: Fn(&[f32]) -> Array1<f32>,
     {
         let f = |v: &[f32]| {
             assert_eq!(v.len(), self.dim());
-            let w = f_(&self.data.row(0).as_slice().unwrap());
+            let w = f_(self.data.row(0).as_slice().unwrap());
             assert_eq!(w.len(), out_dim);
             w
         };
         let g = |v: &[f32]| {
             assert_eq!(v.len(), self.dim());
-            let w = g_(&self.data.row(0).as_slice().unwrap());
+            let w = g_(self.data.row(0).as_slice().unwrap());
             assert_eq!(w.len(), out_dim);
             w
         };
         //
-        let dim = self.dim();
         let index_ref = self.index.as_ref().unwrap();
         let glaplacian = self.glaplacian.as_ref().unwrap();
         let point_rank = index_ref.get_index_of(&point_id).unwrap();
         // get list of index conscerned by row point_idx
         let neighbours = glaplacian.get_kernel_row_csvec(point_rank);
         // compute mean
-        let mut mean_f = Array1::<f32>::zeros(dim);
-        let mut mean_g = Array1::<f32>::zeros(dim);
+        let mut mean_f = Array1::<f32>::zeros(out_dim);
+        let mut mean_g = Array1::<f32>::zeros(out_dim);
+        let mut cov_fg = Array2::<f32>::zeros((out_dim, out_dim));
         for (n, proba) in neighbours.iter() {
             for j in 0..out_dim {
                 mean_f[j] += proba * f(self.data.row(n).as_slice().unwrap())[j];
                 mean_g[j] += proba * g(self.data.row(n).as_slice().unwrap())[j];
             }
         }
+        for (n, proba) in neighbours.iter() {
+            for i in 0..out_dim {
+                for j in 0..=i {
+                    cov_fg[[i, j]] += proba
+                        * (f(self.data.row(n).as_slice().unwrap())[i] - mean_f[i])
+                        * (g(self.data.row(n).as_slice().unwrap())[j] - mean_g[j]);
+                }
+            }
+        }
         //
-        panic!("not yet implemented")
+        for i in 0..out_dim {
+            for j in 0..=i {
+                cov_fg[[j, i]] = cov_fg[[i, j]];
+            }
+        }
+        //
+        cov_fg
+    }
+
+    #[cfg_attr(doc, katexit::katexit)]
+    /// compute general carre du champ operator on a couple of functions with numeric values.
+    /// f and g are functions from $ \mathbb{R}^{d} \rightarrow \mathbb{R} $ with d : dimension of data.
+    pub fn apply_f1d<Function>(&self, point_id: DataId, f_: Function, g_: Function) -> f32
+    where
+        Function: Fn(&[f32]) -> f32,
+    {
+        let f = |v: &[f32]| {
+            assert_eq!(v.len(), self.dim());
+            let w = f_(self.data.row(0).as_slice().unwrap());
+            w
+        };
+        let g = |v: &[f32]| {
+            assert_eq!(v.len(), self.dim());
+            let w = g_(self.data.row(0).as_slice().unwrap());
+            w
+        };
+        //
+        let index_ref = self.index.as_ref().unwrap();
+        let glaplacian = self.glaplacian.as_ref().unwrap();
+        let point_rank = index_ref.get_index_of(&point_id).unwrap();
+        // get list of index conscerned by row point_idx
+        let neighbours = glaplacian.get_kernel_row_csvec(point_rank);
+        // compute mean
+        let mut mean_f = 0.0f32;
+        let mut mean_g = 0.0f32;
+        let mut cov_fg = 0.0f32;
+        for (n, proba) in neighbours.iter() {
+            mean_f += proba * f(self.data.row(n).as_slice().unwrap());
+            mean_g += proba * g(self.data.row(n).as_slice().unwrap());
+        }
+        for (n, proba) in neighbours.iter() {
+            cov_fg += proba
+                * (f(self.data.row(n).as_slice().unwrap()) - mean_f)
+                * (g(self.data.row(n).as_slice().unwrap()) - mean_g);
+        }
+        //
+        cov_fg
     }
 
     /// computes an upper bound of distances between cdc operator at 2 different points.
@@ -271,7 +373,6 @@ impl CarreDuChamp {
 ///  
 /// To avoid a svd compute we compute an upper bound
 ///  $$ dupper(A,B) = {\left( tr (A) + tr(B) - 2 \times  \sqrt{tr(A \cdot B)}   \right)}^{1/2} $$  
-
 ///
 pub fn psd_dist_upper_bound(mata: &CdcMat, matb: &CdcMat) -> f32 {
     //

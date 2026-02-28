@@ -104,7 +104,7 @@ pub fn main() {
         log::info!("\n\n label : {}, point : {}", l, p);
         let (mean, cdc_at_point) = cdc.get_cdc_at_point(*p);
         let info = true;
-        let _sp = cdc_at_point.get_spectrum(info);
+        let _sp = cdc_at_point.get_spectrum(info).unwrap();
         // get dist between mean and data point
         let dist_to_mean = distl2.eval(mean.as_slice().unwrap(), &images_as_v[*p]);
 
